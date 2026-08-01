@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { aiInputs, createAiMemory, createGame, restartGame, stepGame, TICK_RATE, type GameState, type MatchConfig } from '@pongapp/game-core'
-import { GameAudio } from './audio'
 import { GameCourt } from './GameCourt'
 import type { CourtEffectsSettings } from './PixiCourt'
 
@@ -20,10 +19,7 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
   const abilities = useRef(new Set<string>())
   const gamepadButtons = useRef<Record<number, boolean>>({})
   const listeners = useRef(new Set<(state: GameState) => void>())
-  const audio = useMemo(() => new GameAudio(), [])
   const resultRecorded = useRef(false)
-
-  useEffect(() => { audio.setMuted(muted) }, [audio, muted])
 
   useEffect(() => {
     let frame = 0
@@ -50,7 +46,6 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
           inputs[id] = { target: targets.current[id] ?? 0.5, abilityPressed: abilities.current.delete(id) }
         }
         stepGame(state, inputs)
-        for (const event of state.events) audio.play(event)
         if (state.phase === 'finished' && !resultRecorded.current) {
           resultRecorded.current = true
           onResult(state)
@@ -65,7 +60,7 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
     }
     frame = requestAnimationFrame(run)
     return () => cancelAnimationFrame(frame)
-  }, [audio, humanPlayerIds, onResult])
+  }, [humanPlayerIds, onResult])
 
   const getState = useCallback(() => stateRef.current, [])
   const subscribe = useCallback((listener: (state: GameState) => void) => {
@@ -76,9 +71,8 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
     targets.current[id] = Math.max(0, Math.min(1, target))
   }, [])
   const useAbility = useCallback((id: string) => {
-    void audio.unlock()
     abilities.current.add(id)
-  }, [audio])
+  }, [])
   const rematch = useCallback(() => {
     stateRef.current = restartGame(stateRef.current)
     aiMemory.current = createAiMemory()
@@ -96,6 +90,7 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
       onExit={onExit}
       localPlayerIds={humanPlayerIds}
       settings={effects}
+      muted={muted}
       title={config.mode === 'duel' ? 'Classic Duel' : config.mode === 'arena' ? 'Four-Side Arena' : 'Crosscourt Doubles'}
       subtitle={`${config.itemIntensity} items · ${Object.values(config.players).filter((player) => player.isAi).length} AI`}
       onRematch={rematch}

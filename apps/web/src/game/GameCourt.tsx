@@ -33,10 +33,12 @@ import {
   BASE_PADDLE_LENGTH,
   GROWN_PADDLE_LENGTH,
   PADDLE_SPEED,
+  POWER_UP_IDENTITIES,
   TICK_RATE,
   secondsRemaining,
   seatIdentityForColor,
 } from '@pongapp/game-core'
+import { GameAudio } from './audio'
 import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
 
 interface Props {
@@ -47,6 +49,8 @@ interface Props {
   onExit: () => void
   localPlayerIds: string[]
   settings: CourtEffectsSettings
+  muted: boolean
+  extrapolate?: boolean
   title: string
   subtitle: string
   onRematch?: () => void
@@ -123,6 +127,10 @@ export function GameCourt(props: Props) {
   const rendererRef = useRef<PixiCourt | null>(null)
   const [state, setState] = useState(() => props.getState())
   const [servePrompt, setServePrompt] = useState(false)
+  const [moment, setMoment] = useState<{ label: string; kind: 'perfect' | 'score' | 'skill' | 'power'; tick: number } | null>(null)
+  const momentTimer = useRef(0)
+  const audio = useMemo(() => new GameAudio(), [])
+  const localPlayerKey = props.localPlayerIds.join('\u001f')
 
   const localPlayers = useMemo(
     () => props.localPlayerIds.map((id) => state.players[id]).filter((player): player is PlayerState => Boolean(player)),
@@ -150,6 +158,18 @@ export function GameCourt(props: Props) {
   useEffect(() => props.subscribe(setState), [props.subscribe])
 
   useEffect(() => {
+    audio.setMuted(props.muted)
+  }, [audio, props.muted])
+
+  useEffect(() => {
+    void audio.unlock()
+    return () => {
+      window.clearTimeout(momentTimer.current)
+      void audio.destroy()
+    }
+  }, [audio])
+
+  useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
     const renderer = new PixiCourt(props.settings)
@@ -160,7 +180,7 @@ export function GameCourt(props: Props) {
     void renderer.mount(mount).then(() => {
       const draw = (now: number) => {
         if (disposed) return
-        renderer.render(props.getState(), Math.min(0.05, (now - previous) / 1000))
+        renderer.render(props.getState(), Math.min(0.05, (now - previous) / 1000), props.extrapolate !== false)
         previous = now
         frame = requestAnimationFrame(draw)
       }
@@ -172,7 +192,7 @@ export function GameCourt(props: Props) {
       renderer.destroy()
       rendererRef.current = null
     }
-  }, [props.getState])
+  }, [props.extrapolate, props.getState])
 
   useEffect(() => {
     rendererRef.current?.updateSettings(props.settings)
@@ -180,7 +200,21 @@ export function GameCourt(props: Props) {
 
   useEffect(() => {
     rendererRef.current?.onEvents(state.events, state)
-  }, [state.tick])
+    for (const event of state.events) audio.play(event)
+
+    const headline = [...state.events].reverse().map((event) => {
+      if (event.type === 'hit' && event.perfect) return { label: 'Perfect return', kind: 'perfect' as const }
+      if (event.type === 'score') return { label: 'Goal line broken', kind: 'score' as const }
+      if (event.type === 'ability') return { label: `${event.ability} activated`, kind: 'skill' as const }
+      if (event.type === 'powerUp') return { label: POWER_UP_IDENTITIES[event.powerUp].label, kind: 'power' as const }
+      return null
+    }).find(Boolean)
+    if (headline) {
+      setMoment({ ...headline, tick: state.tick })
+      window.clearTimeout(momentTimer.current)
+      momentTimer.current = window.setTimeout(() => setMoment(null), 780)
+    }
+  }, [audio, state.tick])
 
   // "GO" on the frame the countdown ends. A countdown that reaches 1 and then
   // silently vanishes leaves the player unsure whether the ball is live.
@@ -198,9 +232,9 @@ export function GameCourt(props: Props) {
    * nor under-run the simulation.
    */
   useEffect(() => {
-    const ids = localPlayers.map((player) => player.id)
+    const ids = localPlayerKey ? localPlayerKey.split('\u001f') : []
     if (ids.length === 0) return
-    for (const player of localPlayers) desired.current[player.id] ??= player.position
+    for (const id of ids) desired.current[id] ??= state.players[id]?.position ?? 0.5
 
     const held = new Set<string>()
     const seatKeys: Array<Record<string, number>> = [
@@ -210,6 +244,7 @@ export function GameCourt(props: Props) {
     const abilityKeys = ['Space', 'Enter']
 
     const keydown = (event: KeyboardEvent) => {
+      void audio.unlock()
       const abilityIndex = abilityKeys.indexOf(event.code)
       if (abilityIndex >= 0 && ids[abilityIndex]) {
         event.preventDefault()
@@ -255,10 +290,11 @@ export function GameCourt(props: Props) {
       window.removeEventListener('blur', release)
       cancelAnimationFrame(frame)
     }
-  }, [localPlayers, applyTarget])
+  }, [applyTarget, audio, localPlayerKey])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!primaryPlayer) return
+    void audio.unlock()
     event.currentTarget.setPointerCapture(event.pointerId)
     const fraction = axisFraction(event, primaryPlayer.side)
     const length = primaryPlayer.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
@@ -316,7 +352,7 @@ export function GameCourt(props: Props) {
         loses contrast precisely when a rally is at its most intense.
       */}
       <div className="pg-hud-bar">
-        <div className="pg-scoreboard">
+        <div className={`pg-scoreboard pg-scoreboard--${teams.length}`}>
           {teams.map((team) => (
             <div
               key={team.team}
@@ -357,6 +393,7 @@ export function GameCourt(props: Props) {
         onPointerCancel={endPointer}
       >
         <div className="pg-hud">
+          {moment && <div className={`pg-moment pg-moment--${moment.kind}`} key={moment.tick} aria-hidden="true">{moment.label}</div>}
           {countdown !== null && (
             <div className="pg-countdown" key={countdown} aria-hidden="true">{countdown}</div>
           )}
@@ -402,7 +439,7 @@ export function GameCourt(props: Props) {
             className={`pg-ability-button${abilityReady ? ' is-ready' : ''}`}
             style={{ ['--pg-ability-progress' as string]: `${Math.round(abilityProgress * 100)}%` }}
             aria-label={`${primaryPlayer.ability}: ${ABILITY_BLURB[primaryPlayer.ability] ?? ''}. ${abilityReady ? 'Ready' : `${cooldownSeconds} seconds remaining`}`}
-            onPointerDown={(event) => { event.stopPropagation(); props.onAbility(primaryPlayer.id) }}
+            onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); props.onAbility(primaryPlayer.id) }}
           >
             <span className="pg-ability-button__name">{primaryPlayer.ability}</span>
             <span className="pg-ability-button__state">

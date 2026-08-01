@@ -1,8 +1,15 @@
-const CACHE_NAME = 'pongapp-shell-v1'
+const CACHE_NAME = 'pongapp-shell-v2'
 const APP_ROOT = '/pongapp/'
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([APP_ROOT, `${APP_ROOT}manifest.webmanifest`, `${APP_ROOT}favicon.svg`])))
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([
+    APP_ROOT,
+    `${APP_ROOT}manifest.webmanifest`,
+    `${APP_ROOT}favicon.svg`,
+    `${APP_ROOT}icon-192.png`,
+    `${APP_ROOT}icon-maskable-512.png`,
+    `${APP_ROOT}arena-keyart.jpg`,
+  ])))
   self.skipWaiting()
 })
 

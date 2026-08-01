@@ -19,6 +19,21 @@
 
 @import './tokens.css';
 
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2') format('woff2-variations');
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html { min-width: 320px; min-height: 100%; background: var(--pg-bg); }
@@ -104,6 +119,17 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-hero h1 { font-size: clamp(4rem, 20vw, 8.5rem); line-height: .82; color: var(--pg-paper); }
 .pg-hero h1 span { color: var(--pg-accent); }
 .pg-hero__tagline { max-width: 35ch; color: var(--pg-text-muted); font-size: clamp(1rem, 3vw, 1.25rem); line-height: 1.55; }
+.pg-feature-chips { display: flex; flex-wrap: wrap; gap: var(--pg-space-2); }
+.pg-feature-chips span {
+  padding: 7px 11px;
+  border: 1px solid var(--pg-line-strong);
+  border-radius: var(--pg-radius-pill);
+  background: rgb(255 255 255 / 3%);
+  color: var(--pg-text-muted);
+  font: 700 var(--pg-text-xs) var(--pg-font-display);
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
 
 .pg-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pg-space-3); }
 .pg-action {
@@ -162,6 +188,77 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 
 /* ---------------------------------------------------------- court preview */
 
+.pg-arena-poster {
+  position: sticky;
+  top: calc(60px + var(--pg-space-6));
+  width: min(100%, 680px);
+  margin: 0 auto;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: 1px solid rgb(223 255 104 / 38%);
+  border-radius: clamp(22px, 4vw, 36px);
+  background: var(--pg-forest-800);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 4%) inset, 0 0 90px rgb(44 134 95 / 22%), var(--pg-shadow-lg);
+  isolation: isolate;
+}
+.pg-arena-poster::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 55%, rgb(5 13 9 / 78%) 100%),
+    repeating-linear-gradient(180deg, transparent 0 3px, rgb(255 255 255 / 1.6%) 4px);
+  mix-blend-mode: screen;
+}
+.pg-arena-poster::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  inset: 14px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: clamp(14px, 3vw, 25px);
+  pointer-events: none;
+}
+.pg-arena-poster img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transform: scale(1.025);
+  transition: transform 900ms var(--pg-ease-out), filter 900ms var(--pg-ease-out);
+}
+.pg-arena-poster:hover img { transform: scale(1.065); filter: saturate(1.1) contrast(1.04); }
+.pg-arena-poster__hud {
+  position: absolute;
+  z-index: 3;
+  inset: auto var(--pg-space-5) var(--pg-space-5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--pg-space-3);
+  text-shadow: 0 2px 12px rgb(0 0 0 / 80%);
+}
+.pg-arena-poster__hud span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--pg-text-muted);
+  font: 800 var(--pg-text-xs) var(--pg-font-numeric);
+  letter-spacing: .1em;
+}
+.pg-arena-poster__hud i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pg-orange-500);
+  box-shadow: 0 0 12px var(--pg-orange-500);
+  animation: pg-live-pulse 1.5s ease-in-out infinite;
+}
+.pg-arena-poster__hud strong { max-width: 12ch; color: var(--pg-paper); font: 800 clamp(.85rem, 2vw, 1.2rem) var(--pg-font-display); text-align: right; letter-spacing: .04em; }
+@keyframes pg-live-pulse { 50% { opacity: .35; transform: scale(.72); } }
+
 .pg-court-preview {
   position: relative;
   aspect-ratio: 1;
@@ -204,15 +301,18 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 
 /* ------------------------------------------------------------------- court */
 
-.pg-game-layout { display: grid; gap: var(--pg-space-4); }
-.pg-game-topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--pg-space-3); }
-.pg-game-title { display: flex; flex-direction: column; gap: 2px; }
+.pg-game-layout { width: 100%; min-width: 0; display: grid; gap: var(--pg-space-4); }
+.pg-game-topbar { width: 100%; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--pg-space-3); }
+.pg-game-title { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pg-game-title strong, .pg-game-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-game-title strong { font-family: var(--pg-font-display); }
 .pg-game-title span { color: var(--pg-text-muted); font-size: var(--pg-text-xs); }
 
 .pg-canvas-wrap {
   position: relative;
-  width: min(100%, calc(100dvh - 210px), 820px);
+  width: min(100%, calc(100dvh - 232px), 820px);
+  max-width: 100%;
+  min-width: 0;
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: clamp(18px, 4vw, 34px);
@@ -234,11 +334,13 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 /* Score row, above the court. See the note in GameCourt.tsx for why it is not
    floated over the play surface. */
 .pg-hud-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: var(--pg-space-3);
-  width: min(100%, calc(100dvh - 210px), 820px);
+  width: min(100%, calc(100dvh - 232px), 820px);
+  max-width: 100%;
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -246,6 +348,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   display: flex;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   gap: var(--pg-space-1);
   padding: var(--pg-space-1);
   border: 1px solid var(--pg-line);
@@ -283,6 +386,40 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-score--you .pg-score__name::after { content: ' (you)'; opacity: .65; }
 .pg-score--target { color: var(--pg-text-muted); }
 .pg-score--target .pg-score__name { opacity: .6; }
+.pg-scoreboard--4 .pg-score { flex: 1 1 0; justify-content: center; padding-inline: 6px; }
+.pg-scoreboard--4 .pg-score__name { display: none; }
+.pg-scoreboard--4 .pg-score--target .pg-score__value::before { content: '→ '; }
+
+.pg-moment {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 17%;
+  width: max-content;
+  max-width: 88%;
+  padding: 8px 14px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: var(--pg-radius-pill);
+  color: var(--pg-paper);
+  background: rgb(11 22 17 / 72%);
+  box-shadow: 0 0 28px rgb(255 253 247 / 16%);
+  backdrop-filter: blur(8px);
+  font: 800 clamp(.72rem, 2.2vw, 1rem) var(--pg-font-display);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  animation: pg-moment 760ms var(--pg-ease-out) both;
+}
+.pg-moment--perfect { color: var(--pg-lime-300); border-color: var(--pg-lime-400); box-shadow: 0 0 34px rgb(223 255 104 / 32%); }
+.pg-moment--score { color: var(--pg-paper); border-color: var(--pg-orange-500); box-shadow: 0 0 38px rgb(243 111 68 / 34%); }
+.pg-moment--skill { color: var(--pg-cyan); border-color: var(--pg-cyan); }
+.pg-moment--power { color: var(--pg-violet); border-color: var(--pg-violet); }
+@keyframes pg-moment {
+  0% { opacity: 0; transform: translate(-50%, 16px) scale(.8); letter-spacing: .25em; }
+  18% { opacity: 1; transform: translate(-50%, 0) scale(1.04); }
+  72% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -10px) scale(1.05); }
+}
 
 /**
  * The colour-independent seat marks, mirroring `SeatIdentity.pattern`. These are
@@ -386,7 +523,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 
 /* ---------------------------------------------------------------- controls */
 
-.pg-controls { display: grid; grid-template-columns: 1fr auto; gap: var(--pg-space-3); width: min(100%, 820px); margin: 0 auto; }
+.pg-controls { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--pg-space-3); width: min(100%, 820px); max-width: 100%; margin: 0 auto; }
 
 .pg-control-hint {
   min-height: var(--pg-touch-target-lg);
@@ -573,14 +710,18 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   .pg-action-grid { grid-template-columns: 1fr; }
   .pg-fields { grid-template-columns: 1fr; }
   .pg-header__account-label { display: none; }
+  .pg-arena-poster { position: relative; top: auto; aspect-ratio: 4 / 3; }
+  .pg-arena-poster__hud { inset: auto var(--pg-space-4) var(--pg-space-4); }
   .pg-controls { grid-template-columns: 1fr; }
   /* On a phone the drag hand is on the court, so the ability control has to be
      reachable by the other thumb without hunting: full width, first in reading
      order after the court, and larger than the default target. */
   .pg-ability-button { min-height: var(--pg-touch-target-lg); text-align: center; justify-items: center; }
+  .pg-hud-bar { gap: 6px; }
   .pg-scoreboard { gap: 0; font-size: var(--pg-text-xs); }
-  .pg-score { padding-inline: 7px; }
+  .pg-score { padding-inline: 5px; }
   .pg-score__name { max-width: 7ch; }
+  .pg-timer { padding-inline: 7px; font-size: var(--pg-text-xs); }
   /* "TO WIN" does not survive truncation to "TO …"; the arrow carries the same
      meaning in two characters and the full phrase stays in the title tooltip
      and in the end-of-match card. */

@@ -12,13 +12,14 @@ interface Props {
   createRequest?: CreateRoomRequest
   identity: { guestId: string; displayName: string; ability: AbilityId }
   effects: CourtEffectsSettings
+  muted: boolean
   onExit: () => void
   onResult: (state: GameState, playerId: string) => void
 }
 
 const initialView: RoomClientView = { status: 'idle', roomCode: '', lobby: null, gameState: null, participant: null, error: null, latencyMs: null }
 
-export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effects, onExit, onResult }: Props) {
+export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effects, muted, onExit, onResult }: Props) {
   const [view, setView] = useState(initialView)
   const [copied, setCopied] = useState(false)
   const clientRef = useRef<RoomClient | null>(null)
@@ -137,6 +138,8 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       onExit={exit}
       localPlayerIds={participant.slot === null ? [] : [participantId]}
       settings={effects}
+      muted={muted}
+      extrapolate={false}
       title={matchTitle}
       subtitle={`${view.roomCode} · ${view.latencyMs ?? '—'}ms`}
       onRematch={participant.isHost ? () => { resultRecorded.current = false; clientRef.current?.rematch() } : undefined}

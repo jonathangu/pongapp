@@ -15,10 +15,11 @@
  *    now init with `autoStart: false` and call `app.render()` exactly once per
  *    host frame, so the mutation and the draw cannot disagree.
  * 3. **Sim time and display time are different clocks.** The simulation is a
- *    fixed 60Hz and online snapshots arrive slower still, so on a 120Hz phone
- *    every ball position was shown twice. `sinceTick` measures how far we are
- *    past the last state we were handed and extrapolates the ball and paddles
- *    along their own velocity, capped at one tick. Capped, because
+ *    fixed 60Hz, so on a 120Hz phone every local ball position was shown twice.
+ *    `sinceTick` measures how far we are past the last state we were handed and
+ *    can extrapolate the ball and paddles along their own velocity, capped at
+ *    one tick. Online disables this because `RoomClient` already owns its
+ *    prediction. Capped, because
  *    extrapolation past a bounce points the wrong way: one tick of overshoot at
  *    the speed cap is 0.019 of the court, a little over one ball radius, and
  *    invisible. Anything longer is a ball travelling through a paddle.
@@ -43,7 +44,7 @@
  */
 
 import { Application, BlurFilter, Container, Graphics } from 'pixi.js'
-import type { GameEvent, GameState, PlayerState, Side } from '@pongapp/game-core'
+import type { AbilityId, GameEvent, GameMode, GameState, ItemIntensity, PlayerState, Side } from '@pongapp/game-core'
 import {
   ABILITY_COOLDOWNS,
   BALL_SPEED_CAP,
@@ -78,6 +79,28 @@ interface Particle {
 interface TrailPoint { x: number; y: number; life: number }
 interface Shockwave { x: number; y: number; life: number; color: number; reach: number }
 interface WallFlash { side: Side; life: number; color: number }
+interface ImpactSlice { x: number; y: number; angle: number; life: number; color: number }
+interface AbilityBurst { x: number; y: number; side: Side; ability: AbilityId; life: number; color: number }
+interface GoalFlash { side: Side; life: number; color: number }
+
+interface ArenaTheme {
+  key: string
+  floor: number
+  floorDeep: number
+  line: number
+  accent: number
+  aura: number
+}
+
+function arenaTheme(mode: GameMode, items: ItemIntensity): ArenaTheme {
+  if (mode === 'arena') {
+    return { key: `midnight-${items}`, floor: 0x10383a, floorDeep: 0x0a2329, line: 0x315a66, accent: 0x67d4ff, aura: items === 'wild' ? 0xb59cff : 0x2c865f }
+  }
+  if (mode === 'crosscourt') {
+    return { key: `championship-${items}`, floor: 0x283426, floorDeep: 0x151f19, line: 0x60704e, accent: 0xecffa6, aura: 0xf36f44 }
+  }
+  return { key: `forest-${items}`, floor: COURT_PALETTE.floor.color, floorDeep: COURT_PALETTE.floorDeep.color, line: COURT_PALETTE.line.color, accent: COURT_PALETTE.accent.color, aura: items === 'wild' ? 0xb59cff : 0x1b6847 }
+}
 
 /**
  * Per-density budget. `bloom` is a blur strength and `0` means the filter is
@@ -123,6 +146,9 @@ export class PixiCourt {
   private trails = new Map<string, TrailPoint[]>()
   private shockwaves: Shockwave[] = []
   private wallFlashes: WallFlash[] = []
+  private impactSlices: ImpactSlice[] = []
+  private abilityBursts: AbilityBurst[] = []
+  private goalFlash: GoalFlash | null = null
 
   private trauma = 0
   private punch = 0
@@ -134,6 +160,7 @@ export class PixiCourt {
   private layoutWidth = -1
   private resizeObserver: ResizeObserver | null = null
   private settings: CourtEffectsSettings
+  private theme = arenaTheme('duel', 'standard')
 
   constructor(settings: CourtEffectsSettings) {
     this.settings = settings
@@ -154,6 +181,7 @@ export class PixiCourt {
     this.bloomLayer.addChild(this.bloomGraphics)
     this.bloomLayer.blendMode = 'add'
     this.trail.blendMode = 'add'
+    this.overlays.blendMode = 'add'
     this.particlesLayer.blendMode = 'add'
     this.stage.addChild(
       this.backdrop,
@@ -185,16 +213,25 @@ export class PixiCourt {
     if (settings.reducedMotion) {
       this.particles = []
       this.shockwaves = []
+      this.impactSlices = []
+      this.abilityBursts = []
+      this.goalFlash = null
       this.trauma = 0
       this.punch = 0
     }
   }
 
-  render(state: GameState, deltaSeconds: number): void {
+  render(state: GameState, deltaSeconds: number, extrapolate = true): void {
     const size = Math.min(this.app.screen.width, this.app.screen.height)
     if (size <= 0) return
     this.width = size
     this.clock += deltaSeconds
+
+    const nextTheme = arenaTheme(state.config.mode, state.config.itemIntensity)
+    if (nextTheme.key !== this.theme.key) {
+      this.theme = nextTheme
+      this.layoutWidth = -1
+    }
 
     if (state.tick !== this.lastTick) {
       this.lastTick = state.tick
@@ -202,7 +239,7 @@ export class PixiCourt {
     } else {
       this.sinceTick += deltaSeconds
     }
-    const ahead = state.phase === 'playing' && state.serveTicks <= 0
+    const ahead = extrapolate && state.phase === 'playing' && state.serveTicks <= 0
       ? Math.min(this.sinceTick, TICK_SECONDS)
       : 0
 
@@ -237,6 +274,9 @@ export class PixiCourt {
         // return.
         this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), player.color, event.perfect ? 20 : 9, event.perfect ? 1.15 : 0.7)
         this.wave(ball.x, ball.y, player.color, event.perfect ? 0.16 : 0.085)
+        if (event.perfect && !this.settings.reducedMotion) {
+          this.impactSlices.push({ x: ball.x, y: ball.y, angle: Math.atan2(ball.vy, ball.vx), life: 1, color: player.color })
+        }
         this.shake(event.perfect ? 0.34 : 0.1)
         this.zoom(event.perfect ? 0.012 : 0.004)
       } else if (event.type === 'score') {
@@ -246,9 +286,18 @@ export class PixiCourt {
         if (defender) {
           this.wallFlashes.push({ side: defender.side, life: 1, color })
           this.goalSpray(defender.side, color)
+          this.goalFlash = { side: defender.side, life: 1, color }
         }
         this.shake(0.85)
         this.zoom(0.026)
+      } else if (event.type === 'ability') {
+        const player = state.players[event.playerId]
+        if (player && !this.settings.reducedMotion) {
+          const anchor = this.playerAnchor(player)
+          this.abilityBursts.push({ ...anchor, side: player.side, ability: event.ability, life: 1, color: player.color })
+          this.wave(anchor.x, anchor.y, player.color, event.ability === 'pulse' ? 0.24 : 0.14)
+          if (event.ability === 'dash') this.cone(anchor.x, anchor.y, this.inwardAngle(player.side), player.color, 16, 0.55)
+        }
       } else if (event.type === 'powerUp') {
         const identity = POWER_UP_IDENTITIES[event.powerUp]
         for (const ball of state.balls) {
@@ -272,6 +321,11 @@ export class PixiCourt {
           this.zoom(0.016)
         }
       } else if (event.type === 'matchEnd') {
+        const winner = Object.values(state.players).find((player) => player.team === event.winnerTeam)
+        const color = winner?.color ?? COURT_PALETTE.accent.color
+        this.goalFlash = { side: winner?.side ?? 'top', life: 1.25, color }
+        for (const side of ['left', 'right', 'top', 'bottom'] as const) this.goalSpray(side, color)
+        this.wave(0.5, 0.5, color, 0.65)
         this.shake(0.6)
       }
     }
@@ -288,6 +342,20 @@ export class PixiCourt {
   private get density() { return DENSITY[this.settings.effectDensity] }
 
   private point(value: number): number { return value * this.width }
+
+  private playerAnchor(player: PlayerState): { x: number; y: number } {
+    if (player.side === 'left') return { x: PADDLE_OFFSET, y: player.position }
+    if (player.side === 'right') return { x: 1 - PADDLE_OFFSET, y: player.position }
+    if (player.side === 'top') return { x: player.position, y: PADDLE_OFFSET }
+    return { x: player.position, y: 1 - PADDLE_OFFSET }
+  }
+
+  private inwardAngle(side: Side): number {
+    if (side === 'left') return 0
+    if (side === 'right') return Math.PI
+    if (side === 'top') return Math.PI / 2
+    return -Math.PI / 2
+  }
 
   private applyDensity(): void {
     const strength = this.density.bloom
@@ -352,24 +420,24 @@ export class PixiCourt {
     const w = this.width
     const inset = w * 0.018
     const ink = COURT_PALETTE.ink.color
-    const accent = COURT_PALETTE.accent.color
+    const accent = this.theme.accent
 
     // A radial pool of light under the court, stacked from circles rather than a
     // gradient fill so it costs nothing at runtime — drawn once per resize and
     // then never touched again.
     this.backdrop.clear()
     for (let step = 8; step >= 1; step -= 1) {
-      this.backdrop.circle(w / 2, w / 2, w * (0.22 + step * 0.062)).fill({ color: 0x1b6847, alpha: 0.018 })
+      this.backdrop.circle(w / 2, w / 2, w * (0.22 + step * 0.062)).fill({ color: this.theme.aura, alpha: 0.02 })
     }
 
     this.floor.clear()
       .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
-      .fill({ color: COURT_PALETTE.floor.color })
+      .fill({ color: this.theme.floor })
     // A darker core reads as depth without a texture: the eye takes the lighter
     // border as the court lifting toward the walls.
     this.floor
       .roundRect(w * 0.14, w * 0.14, w * 0.72, w * 0.72, w * 0.06)
-      .fill({ color: COURT_PALETTE.floorDeep.color, alpha: 0.55 })
+      .fill({ color: this.theme.floorDeep, alpha: 0.6 })
 
     // Centre cross, dashed so it does not compete with the ball trail.
     this.dashed(this.floor, w / 2, w * 0.06, w / 2, w * 0.94, w * 0.026, w * 0.022)
@@ -396,7 +464,7 @@ export class PixiCourt {
 
     this.bezel.clear()
       .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
-      .stroke({ color: COURT_PALETTE.line.color, width: Math.max(2, w * 0.005) })
+      .stroke({ color: this.theme.line, width: Math.max(2, w * 0.005) })
     this.bezel
       .roundRect(inset * 0.35, inset * 0.35, w - inset * 0.7, w - inset * 0.7, w * 0.055)
       .stroke({ color: ink, alpha: 0.55, width: Math.max(2, w * 0.012) })
@@ -421,12 +489,27 @@ export class PixiCourt {
 
     this.rim.clear()
       .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.03)
-      .stroke({ color: COURT_PALETTE.accent.color, alpha: intensity, width: Math.max(1, w * (0.0018 + this.heat * 0.0032)) })
+      .stroke({ color: this.theme.accent, alpha: intensity, width: Math.max(1, w * (0.0018 + this.heat * 0.0032)) })
 
     if (this.bloomFilter && this.heat > 0.05) {
       this.bloomGraphics
         .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.03)
-        .stroke({ color: COURT_PALETTE.accent.color, alpha: this.heat * 0.32, width: Math.max(1, w * 0.003) })
+        .stroke({ color: this.theme.accent, alpha: this.heat * 0.32, width: Math.max(1, w * 0.003) })
+    }
+
+    // At high rally heat, short energy packets chase around the four rails. The
+    // effect is confined to the bezel so the ball remains the brightest mover.
+    if (this.heat > 0.32 && !this.settings.reducedMotion) {
+      const travel = 0.11 + ((this.clock * (0.19 + this.heat * 0.12)) % 0.72)
+      const span = 0.055 + this.heat * 0.045
+      const a = this.point(travel)
+      const b = this.point(Math.min(0.89, travel + span))
+      const edge = this.point(0.045)
+      this.rim.moveTo(a, edge).lineTo(b, edge)
+      this.rim.moveTo(w - a, w - edge).lineTo(w - b, w - edge)
+      this.rim.moveTo(edge, w - a).lineTo(edge, w - b)
+      this.rim.moveTo(w - edge, a).lineTo(w - edge, b)
+      this.rim.stroke({ color: this.theme.aura, alpha: 0.35 + this.heat * 0.5, width: Math.max(2, w * 0.006), cap: 'round' })
     }
 
     // Gravity well and warp gates are world effects, so they belong with the
@@ -442,7 +525,7 @@ export class PixiCourt {
     }
     if (state.worldEffects.warpTicks > 0) {
       this.drawGate(0.32, 0.5, POWER_UP_IDENTITIES.warp.color, 1)
-      this.drawGate(0.68, 0.5, COURT_PALETTE.accent.color, -1)
+      this.drawGate(0.68, 0.5, this.theme.accent, -1)
     }
   }
 
@@ -493,6 +576,16 @@ export class PixiCourt {
       // Squash and stretch along the direction of travel, with the product held
       // at 1 so the ball never looks like it grew.
       const stretch = 1 + 0.38 * clamp01(speed / BALL_SPEED_CAP)
+      if (this.heat > 0.45 && !this.settings.reducedMotion) {
+        const direction = Math.atan2(ball.vy, ball.vx)
+        const offset = (radius * (0.35 + this.heat * 0.55)) / this.width
+        const dx = Math.cos(direction + Math.PI / 2) * offset
+        const dy = Math.sin(direction + Math.PI / 2) * offset
+        this.rotatedEllipse(this.actors, x - dx, y - dy, radius * stretch, radius / stretch, direction)
+        this.actors.fill({ color: 0x67d4ff, alpha: this.heat * 0.2 })
+        this.rotatedEllipse(this.actors, x + dx, y + dy, radius * stretch, radius / stretch, direction)
+        this.actors.fill({ color: 0xf36f44, alpha: this.heat * 0.17 })
+      }
       this.rotatedEllipse(this.actors, x, y, radius * stretch, radius / stretch, Math.atan2(ball.vy, ball.vx))
       this.actors.fill({ color: COURT_PALETTE.paper.color })
         .stroke({ color, alpha: 0.9, width: Math.max(2, this.width * (0.003 + this.heat * 0.003)) })
@@ -745,6 +838,85 @@ export class PixiCourt {
         .stroke({ color: wave.color, alpha: wave.life * 0.55, width: Math.max(1, w * 0.006 * wave.life) })
     }
     this.shockwaves = this.shockwaves.filter((wave) => wave.life > 0)
+
+    if (this.goalFlash) {
+      this.goalFlash.life -= deltaSeconds * 1.45
+      const life = Math.max(0, this.goalFlash.life)
+      if (life > 0) {
+        const band = w * (0.12 + (1 - Math.min(1, life)) * 0.1)
+        this.overlays.rect(0, 0, w, w).fill({ color: this.goalFlash.color, alpha: life * life * 0.11 })
+        if (this.goalFlash.side === 'left') this.overlays.rect(0, 0, band, w)
+        else if (this.goalFlash.side === 'right') this.overlays.rect(w - band, 0, band, w)
+        else if (this.goalFlash.side === 'top') this.overlays.rect(0, 0, w, band)
+        else this.overlays.rect(0, w - band, w, band)
+        this.overlays.fill({ color: this.goalFlash.color, alpha: life * 0.26 })
+      } else {
+        this.goalFlash = null
+      }
+    }
+
+    for (const slice of this.impactSlices) {
+      slice.life -= deltaSeconds * 4.2
+      if (slice.life <= 0) continue
+      const cx = this.point(slice.x)
+      const cy = this.point(slice.y)
+      const angle = slice.angle + Math.PI / 2
+      const span = w * (0.055 + 0.16 * slice.life)
+      const dx = Math.cos(angle) * span
+      const dy = Math.sin(angle) * span
+      const offsetX = Math.cos(slice.angle) * w * 0.007
+      const offsetY = Math.sin(slice.angle) * w * 0.007
+      this.overlays.moveTo(cx - dx - offsetX, cy - dy - offsetY).lineTo(cx + dx - offsetX, cy + dy - offsetY)
+        .stroke({ color: 0x67d4ff, alpha: slice.life * 0.52, width: Math.max(2, w * 0.005), cap: 'round' })
+      this.overlays.moveTo(cx - dx + offsetX, cy - dy + offsetY).lineTo(cx + dx + offsetX, cy + dy + offsetY)
+        .stroke({ color: 0xf36f44, alpha: slice.life * 0.46, width: Math.max(2, w * 0.005), cap: 'round' })
+      this.overlays.moveTo(cx - dx, cy - dy).lineTo(cx + dx, cy + dy)
+        .stroke({ color: slice.color, alpha: slice.life, width: Math.max(2, w * 0.008), cap: 'round' })
+    }
+    this.impactSlices = this.impactSlices.filter((slice) => slice.life > 0)
+
+    for (const burst of this.abilityBursts) {
+      burst.life -= deltaSeconds * 2.5
+      if (burst.life <= 0) continue
+      const progress = 1 - burst.life
+      const cx = this.point(burst.x)
+      const cy = this.point(burst.y)
+      const radius = w * (0.03 + progress * 0.12)
+      if (burst.ability === 'pulse') {
+        for (let ring = 0; ring < 3; ring += 1) {
+          this.overlays.circle(cx, cy, radius * (0.62 + ring * 0.28))
+            .stroke({ color: burst.color, alpha: burst.life * (0.72 - ring * 0.16), width: Math.max(1, w * 0.006) })
+        }
+      } else if (burst.ability === 'guard') {
+        const points: number[] = []
+        for (let index = 0; index < 6; index += 1) {
+          const angle = -Math.PI / 2 + index * Math.PI / 3
+          points.push(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius)
+        }
+        this.overlays.poly(points).stroke({ color: burst.color, alpha: burst.life * 0.82, width: Math.max(2, w * 0.007), join: 'round' })
+      } else if (burst.ability === 'bend') {
+        const spin = this.clock * 5
+        for (let arc = 0; arc < 3; arc += 1) {
+          const start = spin + arc * Math.PI * 2 / 3
+          this.overlays.arc(cx, cy, radius * (0.72 + arc * 0.12), start, start + 1.5)
+            .stroke({ color: burst.color, alpha: burst.life * 0.75, width: Math.max(2, w * 0.006), cap: 'round' })
+        }
+      } else {
+        const angle = this.inwardAngle(burst.side)
+        for (let step = 0; step < 3; step += 1) {
+          const distance = radius * (0.35 + step * 0.38)
+          const x = cx + Math.cos(angle) * distance
+          const y = cy + Math.sin(angle) * distance
+          const wing = w * 0.024
+          const back = angle + Math.PI
+          this.overlays.moveTo(x + Math.cos(back + 0.62) * wing, y + Math.sin(back + 0.62) * wing)
+            .lineTo(x, y)
+            .lineTo(x + Math.cos(back - 0.62) * wing, y + Math.sin(back - 0.62) * wing)
+            .stroke({ color: burst.color, alpha: burst.life * (0.9 - step * 0.18), width: Math.max(2, w * 0.006), cap: 'round', join: 'round' })
+        }
+      }
+    }
+    this.abilityBursts = this.abilityBursts.filter((burst) => burst.life > 0)
 
     // The serve telegraph: while the ball is parked at centre waiting to serve,
     // ring it so nobody is surprised by a ball that was already moving.

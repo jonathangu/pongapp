@@ -65,10 +65,11 @@ full-screen pass whatever its strength.
 
 ## 4. Frames belong to the display; ticks belong to the simulation
 
-The simulation is a fixed 60Hz. Online snapshots are slower. Displays are 60,
-90 or 120Hz. The renderer tracks how far it is past the last state it was handed
-and extrapolates the ball and paddles along their own velocity, **capped at one
-tick**.
+The simulation is a fixed 60Hz. Displays are 60, 90 or 120Hz. For local play,
+the renderer tracks how far it is past the last state it was handed and
+extrapolates the ball and paddles along their own velocity, **capped at one
+tick**. Online play disables that renderer step because `RoomClient` already
+predicts from its slower network snapshots; two predictors would overshoot.
 
 One tick of overshoot at `BALL_SPEED_CAP` is 0.019 of the court — a little over
 one ball radius, and invisible. Two ticks is a ball travelling through a paddle.
@@ -169,16 +170,27 @@ mid-session is respected without a reload.
 Tracked rather than fixed, with the reason:
 
 1. **True hitstop** — needs a hook in the tick loop (§7).
-2. **Online snapshot interpolation** — `RoomClient.getRenderState()` returns the
-   latest snapshot raw. Buffering and playing back at a fixed delay belongs
-   there, not in the renderer (§4).
-3. **`og:image` is an SVG.** Most social platforms do not rasterise SVG Open
-   Graph images, so shares currently render without a card. Needs a 1200×630 PNG
-   in `apps/web/public/`.
-4. **Fonts are render-blocking from a third-party origin.** Manrope and DM Sans
-   come from `fonts.googleapis.com` with no local fallback metric matching, so
-   first paint shifts. Self-hosting the two weights actually used would remove a
-   connection and the shift.
-5. **The manifest ships one SVG icon marked `purpose: "any maskable"`.** A
-   maskable icon needs its safe zone; this one does not have one, so installed
-   icons may be cropped.
+2. **Online snapshot interpolation** — `RoomClient.getRenderState()` already
+   predicts ball motion for at most 75ms and the local paddle toward its latest
+   target. Online `GameCourt` therefore disables the renderer's one-tick local
+   extrapolation so prediction has one owner. Fixed-delay buffered playback may
+   still look smoother on unstable connections, and belongs in `RoomClient`.
+
+## Super visual upgrade
+
+The August 2026 pass extends rally heat into a full game language:
+
+- Duel, Arena and Crosscourt select Forest Core, Neon Midnight and Championship
+  court materials while retaining the same seat palette and geometry.
+- Perfect returns cut a three-channel impact slice across the contact point.
+- Dash, Bend, Guard and Pulse each have a distinct vector burst.
+- Goals paint the conceded wall, wash the court in the scorer's colour, fire a
+  directional edge spray and announce the moment in the DOM HUD.
+- Audio is procedural and event-layered, so local and online matches share the
+  same zero-download cues without delaying first interaction.
+- `arena-keyart.jpg` is generated promotional atmosphere only. Competitive
+  symbols remain code-drawn vectors.
+
+The former delivery gaps are closed: the social card is now a 1200×630 JPEG,
+Manrope and DM Sans are self-hosted as Latin variable fonts, and the PWA ships
+separate regular and safe-zone maskable PNG icons.

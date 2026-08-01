@@ -3,6 +3,8 @@ name: Verify and deploy PongApp
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -31,11 +33,14 @@ jobs:
         env:
           VITE_ROOM_SERVER_URL: ${{ vars.ROOM_SERVER_URL }}
       - uses: actions/configure-pages@v6
+        if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
         with:
           path: apps/web/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

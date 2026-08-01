@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { buildMatchConfig, type AbilityId, type AiDifficulty, type GameMode, type GameState, type ItemIntensity, type MatchConfig } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
 import { LocalMatch } from './game/LocalMatch'
@@ -31,6 +31,10 @@ export default function App() {
   const [aiSlots, setAiSlots] = useState(1)
   const [joinCode, setJoinCode] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 })
+  }, [screen.type])
 
   const effects = useMemo(() => ({ reducedMotion: settings.reducedMotion, screenShake: settings.screenShake, effectDensity: settings.effectDensity }), [settings])
 
@@ -89,7 +93,7 @@ export default function App() {
     return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><LocalMatch config={screen.config} humanPlayerIds={screen.humanIds} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={(state) => record(state)} /></Shell>
   }
   if (screen.type === 'online') {
-    return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} identity={{ guestId: profile.id, displayName: profile.name, ability }} effects={effects} onExit={() => setScreen({ type: 'home' })} onResult={record} /></Shell>
+    return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} identity={{ guestId: profile.id, displayName: profile.name, ability }} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={record} /></Shell>
   }
 
   return (
@@ -99,6 +103,9 @@ export default function App() {
           <p className="pg-kicker">A RackeTapp side game</p>
           <h1>PONG<span>!</span></h1>
           <p className="pg-hero__tagline">Four walls. One winner. Bend shots, burn cooldowns, steal power-ups, and make the court glow.</p>
+          <div className="pg-feature-chips" aria-label="Game features">
+            <span>1–4 players</span><span>AI rivals</span><span>4 skills</span><span>Reactive arena</span>
+          </div>
           <div className="pg-action-grid">
             <button className="pg-action pg-action--primary" onClick={startAi}><strong>Play AI</strong><span>Instant match · honest opponents</span></button>
             <button className="pg-action" onClick={hostOnline}><strong>Host online</strong><span>Private room · up to four</span></button>
@@ -110,7 +117,13 @@ export default function App() {
           </div>
         </div>
         <div className="pg-hero__visual">
-          <div className="pg-court-preview" aria-label="Four-sided glowing Pong court preview"><span className="pg-preview-ball"/><span className="pg-preview-paddle pg-preview-paddle--left"/><span className="pg-preview-paddle pg-preview-paddle--right"/><span className="pg-preview-paddle pg-preview-paddle--top"/><span className="pg-preview-paddle pg-preview-paddle--bottom"/></div>
+          <figure className="pg-arena-poster">
+            <img src={`${import.meta.env.BASE_URL}arena-keyart.jpg`} alt="A four-sided neon Pong arena with one ball streaking toward the ember paddle" />
+            <figcaption className="pg-arena-poster__hud">
+              <span><i /> LIVE ARENA</span>
+              <strong>FOUR WALLS. FULL SEND.</strong>
+            </figcaption>
+          </figure>
         </div>
         <div className="pg-config">
           <div className="pg-config__head"><div><p className="pg-kicker">Match lab</p><h2>Build your rally</h2></div><span>{profile.matches} played · {profile.wins} won</span></div>
