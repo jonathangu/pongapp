@@ -1,4 +1,4 @@
-import { defaultScoreToWin, sidesForMode, TICK_RATE } from './constants'
+import { defaultScoreToWin, sidesForMode, TICK_RATE, type SeatAxis } from './constants'
 import { seatIdentity } from './palette'
 import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, PlayerDefinition } from './types'
 
@@ -11,11 +11,13 @@ export interface MatchFactoryOptions {
   aiDifficulty?: AiDifficulty
   itemIntensity?: ItemIntensity
   seed?: number
+  /** Duel seating. `vertical` puts the two players at opposite ends of a phone. */
+  axis?: SeatAxis
 }
 
 export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
   const requested = options.mode === 'duel' ? 2 : Math.max(3, Math.min(4, options.totalPlayers ?? 4))
-  const sides = sidesForMode(options.mode, requested)
+  const sides = sidesForMode(options.mode, requested, options.axis)
   const players: PlayerDefinition[] = sides.map((side, index) => {
     const human = options.humanPlayers[index]
     const team = options.mode === 'crosscourt' ? `team-${index < 2 ? 0 : 1}` : `team-${index}`

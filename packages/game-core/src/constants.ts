@@ -36,9 +36,44 @@ export function defaultPlayerCount(mode: GameMode): number {
   return 4
 }
 
-export function sidesForMode(mode: GameMode, count = defaultPlayerCount(mode)): Side[] {
-  if (mode === 'duel') return ['left', 'right']
-  return ['left', 'right', 'top', 'bottom'].slice(0, Math.max(3, Math.min(4, count))) as Side[]
+/**
+ * Which walls a duel is played across.
+ *
+ * `vertical` is the default and puts you at the bottom of the screen looking up
+ * the court, which is where a player expects to be. It is also the only seating
+ * that works for two people sharing one phone: left and right makes both of them
+ * reach across a portrait screen with each hand covering the other's half, while
+ * top and bottom gives each player their own end of the device.
+ *
+ * `horizontal` is kept for the classic side-on arcade look. It is a seating
+ * choice only — the simulation treats all four walls identically, and a duel on
+ * top/bottom bounces off the unmanned left and right walls exactly as a
+ * horizontal duel bounces off top and bottom.
+ */
+export type SeatAxis = 'horizontal' | 'vertical'
+
+/**
+ * Seat order. **Seat 0 is always the bottom wall.**
+ *
+ * Every sports game puts you at the near end of the pitch, and PongApp did the
+ * opposite: seat 0 sat on the *left* wall, so the player watched their own
+ * paddle side-on from an umpire's chair while their opponent had the mirror
+ * image. Ordering the walls bottom-first means the local player — who is always
+ * seat 0 in a local match, and slot 0 as an online host — is at the bottom of
+ * the screen, facing up the court, without the renderer needing to rotate
+ * anything.
+ *
+ * Crosscourt pairing is unaffected: teams are `0,1` and `2,3`, so partners are
+ * still on opposite walls (bottom+top against left+right) exactly as they were
+ * when the order was left-first.
+ */
+export function sidesForMode(
+  mode: GameMode,
+  count = defaultPlayerCount(mode),
+  axis: SeatAxis = 'vertical',
+): Side[] {
+  if (mode === 'duel') return axis === 'vertical' ? ['bottom', 'top'] : ['left', 'right']
+  return ['bottom', 'top', 'left', 'right'].slice(0, Math.max(3, Math.min(4, count))) as Side[]
 }
 
 export function nextPowerUpDelay(intensity: ItemIntensity, random: number): number {

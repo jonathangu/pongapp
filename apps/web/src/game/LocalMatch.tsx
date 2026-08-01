@@ -91,8 +91,15 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
       localPlayerIds={humanPlayerIds}
       settings={effects}
       muted={muted}
-      title={config.mode === 'duel' ? 'Classic Duel' : config.mode === 'arena' ? 'Four-Side Arena' : 'Crosscourt Doubles'}
-      subtitle={`${config.itemIntensity} items · ${Object.values(config.players).filter((player) => player.isAi).length} AI`}
+      // Two humans on one device is a different thing from a duel against the
+      // computer, and the header saying "Classic Duel · 0 AI" for both left the
+      // player to work out which one they had started.
+      title={humanPlayerIds.length > 1
+        ? 'Two players, one phone'
+        : config.mode === 'duel' ? 'You vs the computer' : config.mode === 'arena' ? 'Four-Side Arena' : 'Crosscourt Doubles'}
+      subtitle={humanPlayerIds.length > 1
+        ? `First to ${config.scoreToWin} · ${config.itemIntensity} power-ups`
+        : `First to ${config.scoreToWin} · ${config.itemIntensity} power-ups · ${Object.values(config.players).filter((player) => player.isAi).length} AI`}
       onRematch={rematch}
     />
   )

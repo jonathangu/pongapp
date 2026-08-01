@@ -39,6 +39,7 @@ import {
   seatIdentityForColor,
 } from '@pongapp/game-core'
 import { GameAudio } from './audio'
+import { ABILITY_INFO } from './abilities'
 import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
 
 interface Props {
@@ -61,13 +62,6 @@ const MIN_POSITION = 0.08
 const MAX_POSITION = 0.92
 const clampPosition = (value: number) => Math.min(MAX_POSITION, Math.max(MIN_POSITION, value))
 
-const ABILITY_BLURB: Record<string, string> = {
-  dash: 'Jump a third of the court toward your aim',
-  bend: 'Curve your next return',
-  guard: 'Block one shot that gets past you',
-  pulse: 'Parry — time it as the ball arrives',
-}
-
 interface TeamSummary {
   team: string
   label: string
@@ -86,35 +80,80 @@ function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
     bucket.push(player)
     byTeam.set(player.team, bucket)
   }
+  const localTeams = new Set(
+    Object.values(state.players).filter((player) => localIds.includes(player.id)).map((player) => player.team),
+  )
   return Object.entries(state.scores).map(([team, score]) => {
     const members = byTeam.get(team) ?? []
     const seat = seatIdentityForColor(members[0]?.color ?? 0xdfff68)
+    const isLocal = members.some((player) => localIds.includes(player.id))
     return {
       team,
-      label: members.map((player) => player.name).join(' + ') || team,
+      // "Player One" and "Player Two" both truncate to "PLAYE…" in the pill, which
+      // is worse than no name at all. When exactly one seat is yours, it is simply
+      // "You"; otherwise the players' own names are used and it is on whoever
+      // named them to pick something that fits.
+      label: isLocal && localTeams.size === 1 ? 'You' : members.map((player) => player.name).join(' + ') || team,
       score,
       color: members[0]?.color ?? seat.color,
       hex: seat.hex,
       pattern: seat.pattern,
       patternLabel: seat.patternLabel,
-      isLocal: members.some((player) => localIds.includes(player.id)),
+      isLocal,
     }
   })
 }
 
-/** Which way a pointer coordinate runs for a given wall. */
-function axisFraction(event: React.PointerEvent<HTMLDivElement>, side: Side): number {
+/**
+ * A pointer in court coordinates.
+ *
+ * The court is drawn square and centred inside the wrapper, so the pointer has
+ * to be mapped through the same letterbox the renderer uses or the paddle lands
+ * a few percent off on a non-square wrapper.
+ */
+function courtPoint(event: React.PointerEvent<HTMLDivElement>): { x: number; y: number } {
   const rect = event.currentTarget.getBoundingClientRect()
-  // The court is drawn square and centred inside the wrapper, so the pointer has
-  // to be mapped through the same letterbox the renderer uses or the paddle
-  // lands a few percent off on a non-square wrapper.
   const size = Math.min(rect.width, rect.height)
   const originX = rect.left + (rect.width - size) / 2
   const originY = rect.top + (rect.height - size) / 2
-  const value = side === 'left' || side === 'right'
-    ? (event.clientY - originY) / size
-    : (event.clientX - originX) / size
-  return Math.max(0, Math.min(1, value))
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - originX) / size)),
+    y: Math.max(0, Math.min(1, (event.clientY - originY) / size)),
+  }
+}
+
+/** Which way a court coordinate runs along a given wall. */
+function alongSide(point: { x: number; y: number }, side: Side): number {
+  return side === 'left' || side === 'right' ? point.y : point.x
+}
+
+/** How far a touch is from a wall, in court units. */
+function distanceToWall(point: { x: number; y: number }, side: Side): number {
+  if (side === 'left') return point.x
+  if (side === 'right') return 1 - point.x
+  if (side === 'top') return point.y
+  return 1 - point.y
+}
+
+/**
+ * Route a touch to whichever local seat owns that part of the court.
+ *
+ * With one local player this always returns that player, so single-player
+ * behaviour is unchanged. With two sharing a device it is what makes
+ * pass-and-play work at all: each player drags in their own half and the two
+ * halves never fight, because a touch belongs to the wall it is nearest.
+ */
+function seatForTouch(point: { x: number; y: number }, players: PlayerState[]): PlayerState | undefined {
+  let closest: PlayerState | undefined
+  let best = Number.POSITIVE_INFINITY
+  for (const player of players) {
+    const distance = distanceToWall(point, player.side)
+    if (distance < best) {
+      best = distance
+      closest = player
+    }
+  }
+  return closest
 }
 
 function countdownValue(state: GameState): number | null {
@@ -143,7 +182,9 @@ export function GameCourt(props: Props) {
   // pointer input writes it directly. Keeping one authority stops the two input
   // methods from fighting when a player uses both.
   const desired = useRef<Record<string, number>>({})
-  const grab = useRef<{ id: string; offset: number } | null>(null)
+  // Keyed by `pointerId`. A single slot could only ever track one finger, so two
+  // players on one phone overwrote each other and the second paddle never moved.
+  const grabs = useRef(new Map<number, { id: string; side: Side; offset: number }>())
   const onTargetRef = useRef(props.onTarget)
   const onAbilityRef = useRef(props.onAbility)
   onTargetRef.current = props.onTarget
@@ -293,44 +334,89 @@ export function GameCourt(props: Props) {
   }, [applyTarget, audio, localPlayerKey])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!primaryPlayer) return
+    const point = courtPoint(event)
+    const player = seatForTouch(point, localPlayers)
+    if (!player) return
     void audio.unlock()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const fraction = axisFraction(event, primaryPlayer.side)
-    const length = primaryPlayer.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
+    const fraction = alongSide(point, player.side)
+    const length = player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
     // Grabbing the paddle drags it; pressing elsewhere jumps to the press. The
     // grab tolerance is a little wider than the paddle so a near-miss with a
     // thumb still feels like a grab rather than a teleport.
-    if (Math.abs(fraction - primaryPlayer.position) <= length * 0.75) {
-      grab.current = { id: primaryPlayer.id, offset: primaryPlayer.position - fraction }
-    } else {
-      grab.current = { id: primaryPlayer.id, offset: 0 }
-      applyTarget(primaryPlayer.id, fraction)
-    }
+    const grabbed = Math.abs(fraction - player.position) <= length * 0.75
+    grabs.current.set(event.pointerId, {
+      id: player.id,
+      side: player.side,
+      offset: grabbed ? player.position - fraction : 0,
+    })
+    if (!grabbed) applyTarget(player.id, fraction)
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const held = grab.current
-    if (!held || !primaryPlayer) return
+    const held = grabs.current.get(event.pointerId)
+    if (!held) return
     if (event.pointerType === 'mouse' && event.buttons === 0) {
-      grab.current = null
+      grabs.current.delete(event.pointerId)
       return
     }
-    applyTarget(held.id, axisFraction(event, primaryPlayer.side) + held.offset)
+    // The seat is captured at press time, not re-derived per move: dragging past
+    // the halfway line must keep controlling the paddle you grabbed rather than
+    // handing your finger to your opponent.
+    applyTarget(held.id, alongSide(courtPoint(event), held.side) + held.offset)
   }
 
-  const endPointer = () => { grab.current = null }
+  const endPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    grabs.current.delete(event.pointerId)
+  }
 
   const countdown = countdownValue(state)
   const winner = state.winnerTeam ? teams.find((team) => team.team === state.winnerTeam) : undefined
-  const abilityReady = primaryPlayer ? primaryPlayer.cooldownTicks <= 0 : false
-  // Fills toward ready, against the ability's own cooldown from the shared
-  // constants table — a bar that is not anchored to the real cooldown is a lie
-  // the player learns to distrust.
-  const abilityProgress = primaryPlayer
-    ? Math.min(1, Math.max(0, 1 - primaryPlayer.cooldownTicks / ABILITY_COOLDOWNS[primaryPlayer.ability]))
-    : 1
-  const cooldownSeconds = primaryPlayer ? Math.ceil(primaryPlayer.cooldownTicks / TICK_RATE) : 0
+
+  // Two people on one phone sit at opposite ends of it, so each gets their own
+  // control strip at their own end and the top one is rotated to face them.
+  const farSeats = localPlayers.filter((player) => player.side === 'top')
+  const nearSeats = localPlayers.filter((player) => player.side !== 'top')
+  const shared = localPlayers.length > 1
+
+  const renderAbility = (player: PlayerState) => {
+    const seat = seatIdentityForColor(player.color)
+    const info = ABILITY_INFO[player.ability]
+    const ready = player.cooldownTicks <= 0
+    // Fills toward ready, against the ability's own cooldown from the shared
+    // constants table — a bar that is not anchored to the real cooldown is a lie
+    // the player learns to distrust.
+    const progress = Math.min(1, Math.max(0, 1 - player.cooldownTicks / ABILITY_COOLDOWNS[player.ability]))
+    const seconds = Math.ceil(player.cooldownTicks / TICK_RATE)
+    const key = localPlayers.indexOf(player) === 0 ? 'SPACE' : 'ENTER'
+    return (
+      <button
+        key={player.id}
+        className={`pg-ability-button${ready ? ' is-ready' : ''}`}
+        style={{
+          ['--pg-ability-progress' as string]: `${Math.round(progress * 100)}%`,
+          ['--pg-seat-color' as string]: seat.hex,
+        }}
+        aria-label={`${player.name}: ${player.ability}. ${info.detail} ${ready ? 'Ready now.' : `Recharging, ${seconds} seconds left.`}`}
+        onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); props.onAbility(player.id) }}
+      >
+        <span className="pg-ability-button__head">
+          {shared && <span className={`pg-seat-mark pg-seat-mark--${seat.pattern}`} aria-hidden="true" />}
+          <span className="pg-ability-button__name">{player.ability}</span>
+          <span className="pg-ability-button__state">
+            {ready ? 'READY' : `${seconds}s`}
+            {/* The key hint is CSS-hidden on coarse pointers rather than
+                branched in JS: a keyboard can be attached to a touch device at
+                any moment, and a media query re-evaluates while a state check
+                taken at mount does not. */}
+            <small className="pg-key-hint"> · {key}</small>
+          </span>
+        </span>
+        {/* The answer to "what is dash?" belongs on the button, not in a manual. */}
+        <span className="pg-ability-button__verb">{ready ? info.verb : 'Recharging…'}</span>
+      </button>
+    )
+  }
 
   return (
     <section className="pg-game-layout" aria-label="Pong match">
@@ -383,6 +469,12 @@ export function GameCourt(props: Props) {
         </p>
       </div>
 
+      {farSeats.length > 0 && (
+        <div className="pg-controls pg-controls--far">
+          {farSeats.map(renderAbility)}
+        </div>
+      )}
+
       <div
         ref={mountRef}
         className="pg-canvas-wrap"
@@ -430,29 +522,28 @@ export function GameCourt(props: Props) {
       </div>
 
       <div className="pg-controls">
-        <div className="pg-control-hint">
-          <strong>Drag the court</strong> to move — grab your paddle to slide it, tap ahead to jump.
-          <span> Keyboard: {localPlayers.length > 1 ? 'W/S and ↑/↓, hold to travel' : 'hold W/S or ↑/↓'}. Perfect returns shave half a second off your cooldown.</span>
-        </div>
-        {primaryPlayer && (
-          <button
-            className={`pg-ability-button${abilityReady ? ' is-ready' : ''}`}
-            style={{ ['--pg-ability-progress' as string]: `${Math.round(abilityProgress * 100)}%` }}
-            aria-label={`${primaryPlayer.ability}: ${ABILITY_BLURB[primaryPlayer.ability] ?? ''}. ${abilityReady ? 'Ready' : `${cooldownSeconds} seconds remaining`}`}
-            onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); props.onAbility(primaryPlayer.id) }}
-          >
-            <span className="pg-ability-button__name">{primaryPlayer.ability}</span>
-            <span className="pg-ability-button__state">
-              {abilityReady ? 'READY' : `${cooldownSeconds}s`}
-              {/* The key hint is CSS-hidden on coarse pointers rather than
-                  branched in JS: a keyboard can be attached to a touch device at
-                  any moment, and a media query re-evaluates while a state check
-                  taken at mount does not. */}
-              <small className="pg-key-hint"> · SPACE</small>
-            </span>
-          </button>
+        {nearSeats.map(renderAbility)}
+      </div>
+
+      {/*
+        One line, in the order a new player needs it: how to move, how to score,
+        what the orbs are. The old hint led with a keyboard shortcut and never
+        explained what a skill or a power-up was at all.
+      */}
+      <div className="pg-control-hint">
+        {shared ? (
+          <>
+            <strong>Two players, one phone.</strong>
+            <span>Each of you drags in your own half of the court — your paddle is the one on your end. Tap your own skill button to use it. Keyboard: <b>W</b>/<b>S</b> and <b>SPACE</b> for the bottom player, arrow keys and <b>ENTER</b> for the top.</span>
+          </>
+        ) : (
+          <>
+            <strong>Drag anywhere on the court to move.</strong>
+            <span>You are the paddle at the bottom. Get the ball past your opponent to score; miss it and they score. Hit a glowing orb with the ball to grab the power-up. Perfect returns — hit dead centre — recharge your skill faster.</span>
+          </>
         )}
       </div>
+
     </section>
   )
 }

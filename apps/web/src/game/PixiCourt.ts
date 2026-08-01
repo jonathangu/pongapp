@@ -45,7 +45,6 @@
  */
 
 import { Application, BlurFilter, Container, Graphics, Rectangle } from 'pixi.js'
-import { RGBSplitFilter } from 'pixi-filters/rgb-split'
 import { ShockwaveFilter } from 'pixi-filters/shockwave'
 import type { AbilityId, GameEvent, GameMode, GameState, ItemIntensity, PlayerState, Side } from '@pongapp/game-core'
 import {
@@ -155,7 +154,6 @@ export class PixiCourt {
   private readonly bloomLayer = new Container()
   private readonly bloomGraphics = new Graphics()
   private bloomFilter: BlurFilter | null = null
-  private rgbSplitFilter: RGBSplitFilter | null = null
   private shaderShockwaveFilter: ShockwaveFilter | null = null
   private postEffect: PostEffect | null = null
 
@@ -299,7 +297,6 @@ export class PixiCourt {
         this.wave(ball.x, ball.y, player.color, event.perfect ? 0.16 : 0.085)
         if (event.perfect && !this.settings.reducedMotion) {
           this.impactSlices.push({ x: ball.x, y: ball.y, angle: Math.atan2(ball.vy, ball.vx), life: 1, color: player.color })
-          this.triggerPostEffect(ball.x, ball.y, 'perfect')
         }
         this.shake(event.perfect ? 0.34 : 0.1)
         this.zoom(event.perfect ? 0.012 : 0.004)
@@ -329,7 +326,6 @@ export class PixiCourt {
         for (const ball of state.balls) {
           this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), identity.color, 22, 1.4)
           this.wave(ball.x, ball.y, identity.color, 0.22)
-          this.triggerPostEffect(ball.x, ball.y, 'power')
         }
         this.shake(0.3)
       } else if (event.type === 'warp') {
@@ -365,10 +361,8 @@ export class PixiCourt {
     this.detachPostEffect()
     this.bloomLayer.filters = null
     this.bloomFilter?.destroy()
-    this.rgbSplitFilter?.destroy()
     this.shaderShockwaveFilter?.destroy()
     this.bloomFilter = null
-    this.rgbSplitFilter = null
     this.shaderShockwaveFilter = null
     this.app.destroy(true, { children: true, texture: true })
   }
@@ -401,20 +395,32 @@ export class PixiCourt {
   }
 
   /**
-   * Shader post-processing is a punctuation mark, never a baseline cost. The
-   * two community filters are attached only for a short event window and are
-   * removed with `filters = null`, following Pixi's memory/performance guidance.
+   * Shader post-processing is reserved for the ball being dead.
+   *
+   * It used to fire on perfect returns and power-up pickups too, alongside an
+   * `RGBSplitFilter` that offset the red and blue channels of the whole stage.
+   * Two things went wrong with that, and players reported both as bugs rather
+   * than as effects:
+   *
+   * - Splitting red and blue apart with green fixed fringes every straight
+   *   high-contrast edge in *magenta*. The court's centre cross, rim and lane
+   *   ticks are exactly those edges, so a good return appeared to draw strange
+   *   purple lines across furniture that had nothing to do with the hit.
+   * - The shockwave warps the image in an expanding ring — including the ball
+   *   you are tracking. On a goal that is a flourish over a dead ball; on a
+   *   perfect return, which happens several times per rally, it distorts the
+   *   thing the player is trying to follow, mid-rally.
+   *
+   * So: goals only, no channel splitting, and gentler. Perfect returns keep
+   * their local feedback — spark cone, shockwave ring, camera punch — all of
+   * which are drawn *at the ball* and leave the rest of the court alone.
    */
-  private triggerPostEffect(x: number, y: number, kind: 'perfect' | 'goal' | 'power'): void {
+  private triggerPostEffect(x: number, y: number, kind: 'goal'): void {
     if (this.settings.reducedMotion || this.settings.effectDensity === 'low' || this.width <= 0) return
     const high = this.settings.effectDensity === 'high'
-    const config = kind === 'goal'
-      ? { duration: 0.44, strength: high ? 11 : 7, amplitude: high ? 11 : 7, wavelength: 118, speed: 920, radius: this.width * 0.86 }
-      : kind === 'power'
-        ? { duration: 0.3, strength: high ? 7 : 4, amplitude: high ? 8 : 5, wavelength: 92, speed: 780, radius: this.width * 0.56 }
-        : { duration: 0.23, strength: high ? 7 : 4.5, amplitude: high ? 7 : 4.5, wavelength: 72, speed: 860, radius: this.width * 0.42 }
+    void kind
+    const config = { duration: 0.4, strength: 0, amplitude: high ? 7 : 4.5, wavelength: 132, speed: 900, radius: this.width * 0.86 }
 
-    this.rgbSplitFilter ??= new RGBSplitFilter({ red: { x: 0, y: 0 }, green: { x: 0, y: 0 }, blue: { x: 0, y: 0 } })
     this.shaderShockwaveFilter ??= new ShockwaveFilter({
       center: { x: x * this.width, y: y * this.width },
       amplitude: config.amplitude,
@@ -432,14 +438,13 @@ export class PixiCourt {
     }
     this.shaderShockwaveFilter.center = { x: this.postEffect.centerX, y: this.postEffect.centerY }
     this.shaderShockwaveFilter.time = 0
-    this.stage.filters = [this.shaderShockwaveFilter, this.rgbSplitFilter]
+    this.stage.filters = [this.shaderShockwaveFilter]
   }
 
   private updatePostEffect(deltaSeconds: number): void {
     const effect = this.postEffect
-    const rgb = this.rgbSplitFilter
     const shockwave = this.shaderShockwaveFilter
-    if (!effect || !rgb || !shockwave) return
+    if (!effect || !shockwave) return
 
     effect.elapsed += deltaSeconds
     const progress = Math.min(1, effect.elapsed / effect.duration)
@@ -449,14 +454,6 @@ export class PixiCourt {
     }
 
     const fade = (1 - progress) ** 2
-    const tremor = 0.82 + Math.sin(this.clock * 74) * 0.18
-    const split = effect.strength * fade * tremor
-    const angle = this.clock * 31
-    const x = Math.cos(angle) * split
-    const y = Math.sin(angle) * split * 0.42
-    rgb.red = { x: -x, y: -y }
-    rgb.green = { x: 0, y: 0 }
-    rgb.blue = { x, y }
     shockwave.center = { x: effect.centerX, y: effect.centerY }
     shockwave.time = effect.elapsed
     shockwave.amplitude = effect.amplitude * (0.38 + fade * 0.62)
@@ -469,11 +466,6 @@ export class PixiCourt {
   private detachPostEffect(): void {
     this.postEffect = null
     this.stage.filters = null
-    if (this.rgbSplitFilter) {
-      this.rgbSplitFilter.red = { x: 0, y: 0 }
-      this.rgbSplitFilter.green = { x: 0, y: 0 }
-      this.rgbSplitFilter.blue = { x: 0, y: 0 }
-    }
     if (this.shaderShockwaveFilter) this.shaderShockwaveFilter.time = 0
   }
 
@@ -982,17 +974,15 @@ export class PixiCourt {
       const cx = this.point(slice.x)
       const cy = this.point(slice.y)
       const angle = slice.angle + Math.PI / 2
-      const span = w * (0.055 + 0.16 * slice.life)
+      const span = w * (0.03 + 0.09 * slice.life)
       const dx = Math.cos(angle) * span
       const dy = Math.sin(angle) * span
-      const offsetX = Math.cos(slice.angle) * w * 0.007
-      const offsetY = Math.sin(slice.angle) * w * 0.007
-      this.overlays.moveTo(cx - dx - offsetX, cy - dy - offsetY).lineTo(cx + dx - offsetX, cy + dy - offsetY)
-        .stroke({ color: 0x67d4ff, alpha: slice.life * 0.52, width: Math.max(2, w * 0.005), cap: 'round' })
-      this.overlays.moveTo(cx - dx + offsetX, cy - dy + offsetY).lineTo(cx + dx + offsetX, cy + dy + offsetY)
-        .stroke({ color: 0xf36f44, alpha: slice.life * 0.46, width: Math.max(2, w * 0.005), cap: 'round' })
+      // One line, in the striker's own colour. It used to be three: a cyan copy
+      // and an ember copy flanking the real one, hard-coded to seats 2 and 3 and
+      // therefore meaningless in a duel where neither seat is playing. Together
+      // with the channel split they read as the screen tearing, not as contact.
       this.overlays.moveTo(cx - dx, cy - dy).lineTo(cx + dx, cy + dy)
-        .stroke({ color: slice.color, alpha: slice.life, width: Math.max(2, w * 0.008), cap: 'round' })
+        .stroke({ color: slice.color, alpha: slice.life * 0.9, width: Math.max(2, w * 0.007), cap: 'round' })
     }
     this.impactSlices = this.impactSlices.filter((slice) => slice.life > 0)
 
