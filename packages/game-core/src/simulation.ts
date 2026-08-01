@@ -1,14 +1,18 @@
 import {
   ABILITY_COOLDOWNS,
+  AI_PROFILE,
   BALL_RADIUS,
   BALL_SPEED_CAP,
   BALL_SPEED_RAMP,
   BALL_START_SPEED,
   BASE_PADDLE_LENGTH,
+  BIG_BALL_RADIUS,
   GROWN_PADDLE_LENGTH,
   MATCH_COUNTDOWN_TICKS,
   PADDLE_OFFSET,
   PADDLE_SPEED,
+  PERFECT_RETURN_SPEED_BOOST,
+  POWER_UP_LIFETIME_TICKS,
   SERVE_DELAY_TICKS,
   TICK_RATE,
   TICK_SECONDS,
@@ -25,7 +29,6 @@ import type {
   PowerUpId,
   Side,
 } from './types'
-import { POWER_UPS } from './types'
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value))
@@ -40,6 +43,14 @@ function randomFrom(state: GameState): number {
   return result.value
 }
 
+function mutatorFor(state: GameState) {
+  return state.config.mutator ?? 'none'
+}
+
+function radiusFor(state: GameState): number {
+  return mutatorFor(state) === 'bigBall' ? BIG_BALL_RADIUS : BALL_RADIUS
+}
+
 function freshBall(state: GameState, id: string, transientTicks: number | null = null): BallState {
   const angleSeed = randomFrom(state)
   let angle = angleSeed * Math.PI * 2
@@ -51,12 +62,37 @@ function freshBall(state: GameState, id: string, transientTicks: number | null =
     y: 0.5,
     vx: Math.cos(angle) * BALL_START_SPEED,
     vy: Math.sin(angle) * BALL_START_SPEED,
-    radius: BALL_RADIUS,
+    radius: radiusFor(state),
     spin: 0,
     lastToucherId: null,
     warpCooldownTicks: 0,
     transientTicks,
   }
+}
+
+function stagedBall(state: GameState, id: string, transientTicks: number | null): BallState {
+  return {
+    id,
+    x: 0.5,
+    y: 0.5,
+    vx: 0,
+    vy: 0,
+    radius: radiusFor(state),
+    spin: 0,
+    lastToucherId: null,
+    warpCooldownTicks: 0,
+    transientTicks,
+  }
+}
+
+/** Fill fields absent from rooms persisted by an older ruleset-v1 build. */
+export function normalizeGameState(state: GameState): GameState {
+  state.config.mutator ??= 'none'
+  state.servingPlayerId ??= null
+  state.rallyHits ??= 0
+  state.longestRallyHits ??= 0
+  state.freezeTicks ??= 0
+  return state
 }
 
 export function createGame(config: MatchConfig): GameState {
@@ -89,6 +125,10 @@ export function createGame(config: MatchConfig): GameState {
     remainingTicks: config.timeLimitTicks,
     overtime: false,
     serveTicks: SERVE_DELAY_TICKS,
+    servingPlayerId: null,
+    rallyHits: 0,
+    longestRallyHits: 0,
+    freezeTicks: 0,
     players,
     balls: [],
     scores,
@@ -139,10 +179,14 @@ function activateAbility(state: GameState, player: PlayerState, input: GameInput
 function updatePlayers(state: GameState, inputs: InputMap): void {
   for (const player of Object.values(state.players)) {
     decrementPlayerTimers(player)
-    const input = inputs[player.id] ?? { target: player.position, abilityPressed: false }
+    const received = inputs[player.id] ?? { target: player.position, abilityPressed: false }
+    const input = mutatorFor(state) === 'mirroredControls' && !player.isAi
+      ? { ...received, target: 1 - received.target }
+      : received
     activateAbility(state, player, input)
     const previous = player.position
-    const maximumMove = PADDLE_SPEED * TICK_SECONDS
+    const profile = player.isAi ? AI_PROFILE[player.aiDifficulty ?? 'rally'] : null
+    const maximumMove = PADDLE_SPEED * (profile?.speed ?? 1) * TICK_SECONDS
     const delta = clamp(input.target - player.position, -maximumMove, maximumMove)
     player.position = clamp(player.position + delta, 0.08, 0.92)
     player.velocity = (player.position - previous) / TICK_SECONDS
@@ -223,6 +267,20 @@ function rampBall(ball: BallState, multiplier = BALL_SPEED_RAMP): void {
   ball.vy = (ball.vy / speed) * nextSpeed
 }
 
+export function rallyMultiplierForHits(hits: number): number {
+  return 1 + Math.min(2, Math.floor(Math.max(0, hits) / 8))
+}
+
+function registerRallyHit(state: GameState): void {
+  const previous = state.rallyHits
+  state.rallyHits += 1
+  state.longestRallyHits = Math.max(state.longestRallyHits, state.rallyHits)
+  const multiplier = rallyMultiplierForHits(state.rallyHits)
+  if (multiplier > rallyMultiplierForHits(previous)) {
+    state.events.push({ type: 'rallyHot', hits: state.rallyHits, multiplier })
+  }
+}
+
 function applyPaddleContact(state: GameState, ball: BallState, player: PlayerState): void {
   bounceFromSide(ball, player.side)
   const relative = clamp((coordinateForSide(ball, player.side) - player.position) / (lengthFor(player) / 2), -1, 1)
@@ -231,15 +289,16 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
   if (player.side === 'left' || player.side === 'right') ball.vy += tangent
   else ball.vx += tangent
   if (player.bendTicks > 0) {
-    ball.spin += clamp(player.velocity * 0.014 + relative * 0.045, -0.08, 0.08)
+    ball.spin += clamp(player.velocity * 0.028 + relative * 0.09, -0.22, 0.22)
     player.bendTicks = 0
   }
+  let speedMultiplier = BALL_SPEED_RAMP
   if (player.overdriveHits > 0) {
-    rampBall(ball, 1.25)
+    speedMultiplier = 1.25
     player.overdriveHits -= 1
-  } else {
-    rampBall(ball)
   }
+  if (perfect) speedMultiplier *= PERFECT_RETURN_SPEED_BOOST
+  rampBall(ball, speedMultiplier)
   ball.lastToucherId = player.id
   player.returns += 1
   if (perfect) {
@@ -247,6 +306,7 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
     player.cooldownTicks = Math.max(0, player.cooldownTicks - Math.round(0.5 * TICK_RATE))
   }
   state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect, speed: Math.hypot(ball.vx, ball.vy) })
+  registerRallyHit(state)
 }
 
 function applyPulse(state: GameState, ball: BallState): boolean {
@@ -259,7 +319,9 @@ function applyPulse(state: GameState, ball: BallState): boolean {
       rampBall(ball, 1.08)
       ball.lastToucherId = player.id
       player.pulseTicks = 0
-      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: true, speed: Math.hypot(ball.vx, ball.vy) })
+      player.returns += 1
+      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: false, speed: Math.hypot(ball.vx, ball.vy) })
+      registerRallyHit(state)
       return true
     }
   }
@@ -274,10 +336,15 @@ function scoreGoal(state: GameState, ball: BallState, defender: PlayerState): vo
   const lastToucher = ball.lastToucherId ? state.players[ball.lastToucherId] : undefined
   const scorer = lastToucher && lastToucher.team !== defender.team ? lastToucher : fallbackScorer(state, defender)
   if (!scorer) return
-  state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + 1
-  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id })
-  Object.assign(ball, freshBall(state, ball.id, ball.transientTicks))
+  const rallyHits = state.rallyHits
+  const basePoints = rallyMultiplierForHits(rallyHits)
+  const points = basePoints * (mutatorFor(state) === 'doublePoints' ? 2 : 1)
+  state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + points
+  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points, rallyHits })
+  Object.assign(ball, stagedBall(state, ball.id, ball.transientTicks))
   state.serveTicks = SERVE_DELAY_TICKS
+  state.servingPlayerId = defender.id
+  state.rallyHits = 0
   checkWinner(state)
 }
 
@@ -306,6 +373,13 @@ function processSide(state: GameState, ball: BallState, side: Side): void {
   if (!approaching(ball, side)) return
   const player = playerAtSide(state, side)
   if (!player) {
+    if (mutatorFor(state) === 'noWalls') {
+      if (side === 'left' && ball.x + ball.radius < 0) ball.x = 1 + ball.radius
+      else if (side === 'right' && ball.x - ball.radius > 1) ball.x = -ball.radius
+      else if (side === 'top' && ball.y + ball.radius < 0) ball.y = 1 + ball.radius
+      else if (side === 'bottom' && ball.y - ball.radius > 1) ball.y = -ball.radius
+      return
+    }
     if (side === 'left' && ball.x - ball.radius <= 0) bounceFromWall(ball, side)
     if (side === 'right' && ball.x + ball.radius >= 1) bounceFromWall(ball, side)
     if (side === 'top' && ball.y - ball.radius <= 0) bounceFromWall(ball, side)
@@ -322,6 +396,7 @@ function processSide(state: GameState, ball: BallState, side: Side): void {
     bounceFromSide(ball, side)
     rampBall(ball, 1.02)
     state.events.push({ type: 'shield', playerId: player.id, ballId: ball.id })
+    registerRallyHit(state)
     return
   }
   scoreGoal(state, ball, player)
@@ -356,11 +431,54 @@ function applyPowerUp(state: GameState, id: PowerUpId, player: PlayerState | und
   state.events.push({ type: 'powerUp', playerId: player?.id ?? null, powerUp: id })
 }
 
+const POWER_UP_WEIGHTS: Record<'standard' | 'wild', Array<{ id: PowerUpId; weight: number }>> = {
+  standard: [
+    { id: 'grow', weight: 34 },
+    { id: 'overdrive', weight: 30 },
+    { id: 'multiball', weight: 15 },
+    { id: 'warp', weight: 11 },
+    { id: 'gravity', weight: 10 },
+  ],
+  wild: [
+    { id: 'grow', weight: 10 },
+    { id: 'overdrive', weight: 15 },
+    { id: 'multiball', weight: 30 },
+    { id: 'warp', weight: 25 },
+    { id: 'gravity', weight: 20 },
+  ],
+}
+
+export function powerUpForRoll(intensity: 'standard' | 'wild', roll: number): PowerUpId {
+  const table = POWER_UP_WEIGHTS[intensity]
+  let cursor = Math.min(0.999_999, Math.max(0, roll)) * table.reduce((total, item) => total + item.weight, 0)
+  for (const item of table) {
+    cursor -= item.weight
+    if (cursor < 0) return item.id
+  }
+  return table.at(-1)?.id ?? 'grow'
+}
+
+function playerCourtPosition(player: PlayerState): { x: number; y: number } {
+  if (player.side === 'left') return { x: PADDLE_OFFSET, y: player.position }
+  if (player.side === 'right') return { x: 1 - PADDLE_OFFSET, y: player.position }
+  if (player.side === 'top') return { x: player.position, y: PADDLE_OFFSET }
+  return { x: player.position, y: 1 - PADDLE_OFFSET }
+}
+
+function nearestPlayer(state: GameState, x: number, y: number): PlayerState | undefined {
+  return Object.values(state.players).sort((first, second) => {
+    const a = playerCourtPosition(first)
+    const b = playerCourtPosition(second)
+    return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)
+  })[0]
+}
+
 function updatePowerUp(state: GameState): void {
   if (!state.powerUp) {
     state.powerUpSpawnTicks -= 1
     if (state.powerUpSpawnTicks > 0 || state.config.itemIntensity === 'off') return
-    const id = POWER_UPS[Math.floor(randomFrom(state) * POWER_UPS.length)] ?? 'grow'
+    const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'
+    const id = powerUpForRoll(intensity, randomFrom(state))
     state.powerUp = {
       id,
       x: 0.32 + randomFrom(state) * 0.36,
@@ -371,9 +489,15 @@ function updatePowerUp(state: GameState): void {
     return
   }
   state.powerUp.ageTicks += 1
+  if (state.powerUp.ageTicks >= POWER_UP_LIFETIME_TICKS) {
+    state.powerUp = null
+    state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
+    return
+  }
   for (const ball of state.balls) {
     if (Math.hypot(ball.x - state.powerUp.x, ball.y - state.powerUp.y) > ball.radius + 0.028) continue
-    const player = ball.lastToucherId ? state.players[ball.lastToucherId] : undefined
+    const player = (ball.lastToucherId ? state.players[ball.lastToucherId] : undefined)
+      ?? nearestPlayer(state, state.powerUp.x, state.powerUp.y)
     applyPowerUp(state, state.powerUp.id, player)
     state.powerUp = null
     state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
@@ -390,7 +514,7 @@ function updateBall(state: GameState, ball: BallState): void {
     const angle = Math.atan2(ball.vy, ball.vx) + ball.spin * TICK_SECONDS
     ball.vx = Math.cos(angle) * speed
     ball.vy = Math.sin(angle) * speed
-    ball.spin *= 0.988
+    ball.spin *= 0.991
   }
   ball.x += ball.vx * TICK_SECONDS
   ball.y += ball.vy * TICK_SECONDS
@@ -408,11 +532,12 @@ function emitCountdown(state: GameState): void {
 }
 
 export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
+  normalizeGameState(state)
   state.events = []
   if (state.phase === 'finished') return state
   state.tick += 1
-  updatePlayers(state, inputs)
   if (state.phase === 'countdown') {
+    updatePlayers(state, inputs)
     state.countdownTicks -= 1
     emitCountdown(state)
     if (state.countdownTicks <= 0) {
@@ -421,17 +546,47 @@ export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
     }
     return state
   }
+  if (state.freezeTicks > 0) {
+    state.freezeTicks -= 1
+    return state
+  }
+  updatePlayers(state, inputs)
   if (!state.overtime) state.remainingTicks = Math.max(0, state.remainingTicks - 1)
   if (state.serveTicks > 0) {
     state.serveTicks -= 1
+    if (state.serveTicks === 0 && state.servingPlayerId) {
+      const server = state.players[state.servingPlayerId]
+      if (server) {
+        const tangent = clamp((server.position - 0.5) * 0.72, -BALL_START_SPEED * 0.62, BALL_START_SPEED * 0.62)
+        const normal = Math.sqrt(Math.max(0, BALL_START_SPEED ** 2 - tangent ** 2))
+        for (const ball of state.balls) {
+          if (Math.hypot(ball.vx, ball.vy) > 1e-9) continue
+          if (server.side === 'left') { ball.vx = normal; ball.vy = tangent }
+          else if (server.side === 'right') { ball.vx = -normal; ball.vy = tangent }
+          else if (server.side === 'top') { ball.vx = tangent; ball.vy = normal }
+          else { ball.vx = tangent; ball.vy = -normal }
+        }
+      }
+      state.servingPlayerId = null
+    }
   } else {
-    for (const ball of state.balls) updateBall(state, ball)
+    for (const ball of state.balls) {
+      updateBall(state, ball)
+      if (state.winnerTeam !== null || state.serveTicks > 0) break
+    }
   }
   state.balls = state.balls.filter((ball, index) => index === 0 || ball.transientTicks === null || ball.transientTicks > 0)
   state.worldEffects.warpTicks = Math.max(0, state.worldEffects.warpTicks - 1)
   state.worldEffects.gravityTicks = Math.max(0, state.worldEffects.gravityTicks - 1)
   updatePowerUp(state)
   checkWinner(state)
+  let freezeTicks = 0
+  for (const event of state.events) {
+    if (event.type === 'score') freezeTicks = Math.max(freezeTicks, 8)
+    else if (event.type === 'shield') freezeTicks = Math.max(freezeTicks, 6)
+    else if (event.type === 'hit' && event.perfect) freezeTicks = Math.max(freezeTicks, 4)
+  }
+  state.freezeTicks = Math.max(state.freezeTicks, freezeTicks)
   return state
 }
 

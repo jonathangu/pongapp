@@ -13,6 +13,9 @@ export type PowerUpId = (typeof POWER_UPS)[number]
 export const AI_DIFFICULTIES = ['rookie', 'rally', 'pro', 'ace'] as const
 export type AiDifficulty = (typeof AI_DIFFICULTIES)[number]
 
+export const MATCH_MUTATORS = ['none', 'bigBall', 'noWalls', 'doublePoints', 'mirroredControls'] as const
+export type MatchMutator = (typeof MATCH_MUTATORS)[number]
+
 export type ItemIntensity = 'off' | 'standard' | 'wild'
 export type GamePhase = 'countdown' | 'playing' | 'finished'
 
@@ -31,6 +34,7 @@ export interface MatchConfig {
   mode: GameMode
   players: PlayerDefinition[]
   itemIntensity: ItemIntensity
+  mutator: MatchMutator
   scoreToWin: number
   timeLimitTicks: number
   seed: number
@@ -79,7 +83,8 @@ export type GameEvent =
   | { type: 'matchStart' }
   | { type: 'countdown'; value: number }
   | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number }
-  | { type: 'score'; scorerId: string | null; team: string; againstPlayerId: string; ballId: string }
+  | { type: 'score'; scorerId: string | null; team: string; againstPlayerId: string; ballId: string; points: number; rallyHits: number }
+  | { type: 'rallyHot'; hits: number; multiplier: number }
   | { type: 'ability'; playerId: string; ability: AbilityId; fromPosition: number; toPosition: number }
   | { type: 'powerUpSpawn'; powerUp: PowerUpState }
   | { type: 'powerUp'; playerId: string | null; powerUp: PowerUpId }
@@ -96,6 +101,10 @@ export interface GameState {
   remainingTicks: number
   overtime: boolean
   serveTicks: number
+  servingPlayerId: string | null
+  rallyHits: number
+  longestRallyHits: number
+  freezeTicks: number
   players: Record<string, PlayerState>
   balls: BallState[]
   scores: Record<string, number>

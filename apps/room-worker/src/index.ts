@@ -4,6 +4,7 @@ import {
   buildMatchConfig,
   createAiMemory,
   createGame,
+  normalizeGameState,
   restartGame,
   stepGame,
   type AiControllerMemory,
@@ -117,7 +118,7 @@ export class GameRoom extends DurableObject<Env> {
       const value = await request.json() as StoredRoomConfig
       const parsed = createRoomRequestSchema.safeParse(value)
       if (!parsed.success || !validRoomCode(value.roomCode)) return new Response('invalid', { status: 400 })
-      this.config = value
+      this.config = { ...value, ...parsed.data }
       this.addAiParticipants()
       await this.persist()
       return new Response('created', { status: 201 })
@@ -182,7 +183,7 @@ export class GameRoom extends DurableObject<Env> {
     if (stored) {
       this.config = stored.config
       this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
-      this.game = stored.game
+      this.game = stored.game ? normalizeGameState(stored.game) : null
       if (this.game && this.game.phase !== 'finished') this.startLoop()
     }
     this.loaded = true
@@ -308,6 +309,7 @@ export class GameRoom extends DurableObject<Env> {
       totalPlayers: this.config.mode === 'arena' ? Math.min(4, players.length) : required,
       aiDifficulty: this.config.aiDifficulty,
       itemIntensity: this.config.itemIntensity,
+      mutator: this.config.mutator ?? 'none',
       seed: Date.now() >>> 0,
     })
     this.game = createGame(matchConfig)
@@ -334,7 +336,14 @@ export class GameRoom extends DurableObject<Env> {
     const mergedInputs = { ...aiInputs(this.game, this.aiMemory), ...this.inputs }
     stepGame(this.game, mergedInputs)
     for (const input of Object.values(this.inputs)) input.abilityPressed = false
-    if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || this.game.events.some((event) => event.type === 'score' || event.type === 'matchEnd')) this.broadcastSnapshot()
+    if (
+      this.game.tick % SNAPSHOT_EVERY_TICKS === 0
+      || this.game.events.some((event) => event.type === 'score'
+        || event.type === 'matchEnd'
+        || event.type === 'rallyHot'
+        || event.type === 'shield'
+        || (event.type === 'hit' && event.perfect))
+    ) this.broadcastSnapshot()
     for (const event of this.game.events) this.broadcast({ type: 'event', event })
     if (this.game.tick % 60 === 0 || this.game.phase === 'finished') await this.persist()
     if (this.game.phase === 'finished') {
@@ -364,6 +373,7 @@ export class GameRoom extends DurableObject<Env> {
       roomCode: this.config.roomCode,
       mode: this.config.mode,
       itemIntensity: this.config.itemIntensity,
+      mutator: this.config.mutator ?? 'none',
       aiDifficulty: this.config.aiDifficulty,
       aiSlots: this.config.aiSlots,
       participants: [...this.participants.values()].sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99)).map((participant) => this.publicParticipant(participant)),

@@ -1,6 +1,6 @@
 import { defaultScoreToWin, sidesForMode, TICK_RATE } from './constants'
 import { seatIdentity } from './palette'
-import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, PlayerDefinition } from './types'
+import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, MatchMutator, PlayerDefinition } from './types'
 
 const ABILITY_ORDER: AbilityId[] = ['dash', 'bend', 'guard', 'pulse']
 
@@ -10,6 +10,7 @@ export interface MatchFactoryOptions {
   totalPlayers?: number
   aiDifficulty?: AiDifficulty
   itemIntensity?: ItemIntensity
+  mutator?: MatchMutator
   seed?: number
 }
 
@@ -34,8 +35,9 @@ export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
     mode: options.mode,
     players,
     itemIntensity: options.itemIntensity ?? 'standard',
+    mutator: options.mutator ?? 'none',
     scoreToWin: defaultScoreToWin(options.mode),
-    timeLimitTicks: 4 * 60 * TICK_RATE,
+    timeLimitTicks: 2 * 60 * TICK_RATE,
     seed: options.seed ?? Date.now() >>> 0,
   }
 }

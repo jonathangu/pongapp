@@ -1,4 +1,4 @@
-import type { AbilityId, AiDifficulty, GameMode, GameState, ItemIntensity, MatchConfig } from '@pongapp/game-core'
+import type { AbilityId, AiDifficulty, GameMode, GameState, ItemIntensity, MatchConfig, MatchMutator } from '@pongapp/game-core'
 import { z } from 'zod'
 
 export const PROTOCOL_VERSION = 1 as const
@@ -7,17 +7,21 @@ const abilitySchema = z.enum(['dash', 'bend', 'guard', 'pulse'])
 const modeSchema = z.enum(['duel', 'arena', 'crosscourt'])
 const itemIntensitySchema = z.enum(['off', 'standard', 'wild'])
 const aiDifficultySchema = z.enum(['rookie', 'rally', 'pro', 'ace'])
+const matchMutatorSchema = z.enum(['none', 'bigBall', 'noWalls', 'doublePoints', 'mirroredControls'])
 
 export const createRoomRequestSchema = z.object({
   mode: modeSchema,
   itemIntensity: itemIntensitySchema,
+  mutator: matchMutatorSchema.default('none'),
   aiDifficulty: aiDifficultySchema,
   aiSlots: z.number().int().min(0).max(3),
   hostName: z.string().trim().min(2).max(16),
   hostAbility: abilitySchema,
 })
 
-export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>
+// Callers may omit fields with schema defaults; parsed/stored room config is
+// normalized by the worker before the match is built.
+export type CreateRoomRequest = z.input<typeof createRoomRequestSchema>
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({
@@ -60,6 +64,7 @@ export interface RoomLobby {
   roomCode: string
   mode: GameMode
   itemIntensity: ItemIntensity
+  mutator: MatchMutator
   aiDifficulty: AiDifficulty
   aiSlots: number
   participants: RoomParticipant[]
