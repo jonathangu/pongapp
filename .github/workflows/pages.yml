@@ -50,3 +50,23 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+
+  smoke:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Verify canonical production assets
+        run: node scripts/production-smoke.mjs
+        env:
+          DEPLOYMENT_ID: ${{ github.sha }}
+          PONGAPP_SITE_URL: https://www.jonathangu.com/pongapp/
+          ROOM_SERVER_URL: https://pongapp-room.fly.dev
+      - name: Verify authoritative production multiplayer
+        run: node scripts/room-smoke.mjs
+        env:
+          ROOM_SERVER_URL: https://pongapp-room.fly.dev
