@@ -88,11 +88,14 @@ const RALLY_STEPS = [
 ] as const
 
 const ABILITY_MOMENT: Record<string, string> = {
-  dash: 'paddle jumped',
+  dash: 'boosted',
   bend: 'curve shot armed',
   guard: 'shield raised',
   pulse: 'parry window open',
 }
+
+const ABILITY_GLYPH: Record<string, string> = { dash: '»', bend: '↝', guard: '◇', pulse: '◉' }
+const SHOT_LABEL: Record<string, string> = { drive: 'DRIVE', cut: 'CUT', drop: 'DROP' }
 
 /**
  * Score pills are narrow, and the default guest name is "Player One" — which
@@ -253,8 +256,15 @@ export function GameCourt(props: Props) {
     for (const event of state.events) audio.play(event)
 
     const headline = [...state.events].reverse().map((event) => {
-      if (event.type === 'hit' && event.perfect) return { label: 'Perfect return', kind: 'perfect' as const }
+      if (event.type === 'hit' && event.perfect) return { label: 'PERFECT', kind: 'perfect' as const }
+      if (event.type === 'hit' && event.shot && event.shot !== 'return' && props.localPlayerIds.includes(event.playerId)) {
+        return { label: SHOT_LABEL[event.shot] ?? event.shot.toUpperCase(), kind: 'perfect' as const }
+      }
       if (event.type === 'score') {
+        const nextScore = state.scores[event.team] ?? 0
+        if (nextScore < state.config.scoreToWin && nextScore >= state.config.scoreToWin - 1) {
+          return { label: 'MATCH POINT', kind: 'rally' as const }
+        }
         // Say *why* the number jumped. A score that silently adds 3 reads as a
         // bug the first time you see it.
         const points = event.points ?? 1
@@ -422,9 +432,9 @@ export function GameCourt(props: Props) {
       <div className="pg-game-topbar">
         <div className="pg-game-title">
           <strong>{props.title}</strong>
-          <span>{props.subtitle}</span>
+          <span className="pg-visually-hidden">{props.subtitle}</span>
         </div>
-        <button className="pg-pill" onClick={props.onExit}>Exit match</button>
+        <button className="pg-match-exit" onClick={props.onExit} aria-label="Exit match">Exit</button>
       </div>
 
       {/*
@@ -449,10 +459,6 @@ export function GameCourt(props: Props) {
               <b className="pg-score__value">{team.score}</b>
             </div>
           ))}
-          <div className="pg-score pg-score--target" title={`First to ${state.config.scoreToWin}`}>
-            <span className="pg-score__name">to win</span>
-            <b className="pg-score__value">{state.config.scoreToWin}</b>
-          </div>
         </div>
 
         {/*
@@ -495,6 +501,12 @@ export function GameCourt(props: Props) {
       >
         <div className="pg-hud">
           {moment && <div className={`pg-moment pg-moment--${moment.kind}`} key={moment.tick} aria-hidden="true">{moment.label}</div>}
+          {state.powerUp && state.powerUp.ageTicks < 120 && (
+            <div className="pg-powerup-callout" key={`${state.powerUp.id}-${state.tick - state.powerUp.ageTicks}`} aria-hidden="true">
+              <strong style={{ color: POWER_UP_IDENTITIES[state.powerUp.id].hex }}>{POWER_UP_IDENTITIES[state.powerUp.id].label}</strong>
+              <span>Hit the orb · {POWER_UP_IDENTITIES[state.powerUp.id].effect}</span>
+            </div>
+          )}
           {serveHeading && state.serveTicks > 0 && state.phase === 'playing' && (
             <div
               className="pg-serve-guide"
@@ -508,8 +520,8 @@ export function GameCourt(props: Props) {
           {countdown !== null && primaryPlayer && (
             <div className="pg-view-guide">
               {localPlayers.length > 1
-                ? <><strong>↓ PLAYER ONE · BOTTOM</strong><span>PLAYER TWO · TOP ↑</span></>
-                : <><strong>↓ YOU · BOTTOM PADDLE</strong><span>The white outline and arrow mark your paddle.</span></>}
+                ? <><strong>↓ P1 · DRAG BOTTOM · A/D + SPACE</strong><span>P2 · DRAG TOP · ARROWS + ENTER ↑</span></>
+                : <><strong>↓ YOU · BOTTOM PADDLE</strong><span>Drag or use A/D · centre hits fly faster · Space uses {ABILITY_COPY[primaryPlayer.ability].label}.</span></>}
             </div>
           )}
           {countdown !== null && (
@@ -548,11 +560,6 @@ export function GameCourt(props: Props) {
       </div>
 
       <div className="pg-controls">
-        <div className="pg-control-hint">
-          {localPlayers.length > 1
-            ? <><strong>Shared screen: Player One is bottom; Player Two is top.</strong><span>Drag your half left or right—even at the same time. Keyboard: Player One A/D + Space; Player Two ←/→ + Enter.</span></>
-            : <><strong>You are the outlined paddle at the bottom.</strong><span>Drag left/right, or tap where you want to move. Keyboard: A/D or ←/→. Long rallies are worth more; centre hits fire back faster.</span></>}
-        </div>
         <div className={`pg-ability-stack${localPlayers.length > 1 ? ' pg-ability-stack--two' : ''}`}>
           {localPlayers.map((player, index) => {
             const status = abilityStatus(player)
@@ -562,26 +569,23 @@ export function GameCourt(props: Props) {
               <button
                 key={player.id}
                 className={`pg-ability-button${status.ready ? ' is-ready' : ''}`}
-                style={{ ['--pg-ability-progress' as string]: `${Math.round(status.progress * 100)}%` }}
+                style={{
+                  ['--pg-ability-progress' as string]: `${Math.round(status.progress * 100)}%`,
+                  ['--pg-seat-color' as string]: seatIdentityForColor(player.color).hex,
+                }}
                 aria-label={`${player.name}, ${position}: ${copy.action} ${status.ready ? 'Ready now' : `Ready in ${status.seconds} seconds`}`}
+                title={copy.action}
                 onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); usePlayerAbility(player.id) }}
               >
-                <span className="pg-ability-button__eyebrow">{localPlayers.length > 1 ? `${player.name} · ${position}` : 'Your skill'}</span>
-                <span className="pg-ability-button__name">{status.ready ? `Use ${copy.label}` : `${copy.label} recharging`}</span>
-                <span className="pg-ability-button__description">{copy.action}</span>
-                <span className="pg-ability-button__effect">On court: {copy.effect}</span>
-                <span className="pg-ability-button__state">
-                  {status.ready ? 'Ready now' : `Ready in ${status.seconds}s`}
-                  <small className="pg-key-hint"> · {index === 0 ? 'SPACE' : 'ENTER'}</small>
+                <span className="pg-ability-button__glyph" aria-hidden="true">{ABILITY_GLYPH[player.ability]}</span>
+                <span className="pg-ability-button__copy">
+                  <span className="pg-ability-button__eyebrow">{localPlayers.length > 1 ? `${player.name} · ${position}` : 'Skill'}</span>
+                  <span className="pg-ability-button__name">{copy.label}</span>
                 </span>
+                <span className="pg-ability-button__state">{status.ready ? 'READY' : `${status.seconds}s`}</span>
               </button>
             )
           })}
-        </div>
-        <div className="pg-court-legend">
-          {state.powerUp
-            ? <><strong>{POWER_UP_IDENTITIES[state.powerUp.id].label} power-up on the court</strong><span>Hit the round symbol with the ball. {POWER_UP_IDENTITIES[state.powerUp.id].effect}.</span></>
-            : <><strong>Round court symbols are power-ups</strong><span>Hit one with the ball to collect it; its name and effect will appear here.</span></>}
         </div>
       </div>
     </section>

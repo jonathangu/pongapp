@@ -287,7 +287,7 @@ export class PixiCourt {
     this.bloomGraphics.clear()
     this.overlays.clear()
     this.drawRim(state)
-    this.drawWalls(deltaSeconds)
+    this.drawWalls(state, deltaSeconds)
     this.drawTrails(state, deltaSeconds, ahead)
     this.drawActors(state, ahead)
     this.drawOverlays(state, deltaSeconds)
@@ -693,10 +693,37 @@ export class PixiCourt {
     this.bloomGraphics.circle(cx, cy, radius * 0.9).fill({ color, alpha: 0.4 })
   }
 
-  /** Goal-mouth flashes: the wall that just conceded is painted in the scorer's colour. */
-  private drawWalls(deltaSeconds: number): void {
+  /** Goal-mouth flashes plus three persistent integrity segments per defended wall. */
+  private drawWalls(state: GameState, deltaSeconds: number): void {
     const w = this.width
     this.walls.clear()
+
+    for (const player of Object.values(state.players)) {
+      const pressure = Math.max(0, ...Object.entries(state.scores)
+        .filter(([team]) => team !== player.team)
+        .map(([, score]) => score))
+      const broken = Math.min(3, Math.ceil((pressure / Math.max(1, state.config.scoreToWin)) * 3))
+      const span = w * 0.18
+      const gap = w * 0.025
+      const start = w / 2 - (span * 1.5 + gap)
+      const depth = Math.max(3, w * 0.008)
+      for (let index = 0; index < 3; index += 1) {
+        const along = start + index * (span + gap)
+        const intact = index >= broken
+        const alpha = intact ? 0.42 : 0.1
+        const color = intact ? player.color : this.theme.line
+        if (player.side === 'top' || player.side === 'bottom') {
+          const y = player.side === 'top' ? w * 0.026 : w * 0.974 - depth
+          this.walls.roundRect(along, y, span, depth, depth / 2).fill({ color, alpha })
+          if (!intact) this.walls.rect(along + span * 0.43, y - 1, span * 0.14, depth + 2).fill({ color: this.theme.floorDeep, alpha: 0.9 })
+        } else {
+          const x = player.side === 'left' ? w * 0.026 : w * 0.974 - depth
+          this.walls.roundRect(x, along, depth, span, depth / 2).fill({ color, alpha })
+          if (!intact) this.walls.rect(x - 1, along + span * 0.43, depth + 2, span * 0.14).fill({ color: this.theme.floorDeep, alpha: 0.9 })
+        }
+      }
+    }
+
     for (const flash of this.wallFlashes) {
       flash.life -= deltaSeconds * 1.5
       if (flash.life <= 0) continue
@@ -1057,10 +1084,8 @@ export class PixiCourt {
       if (burst.ability === 'dash') {
         this.drawDashBurst(burst)
       } else if (burst.ability === 'pulse') {
-        for (let ring = 0; ring < 3; ring += 1) {
-          this.overlays.circle(cx, cy, radius * (0.62 + ring * 0.28))
-            .stroke({ color: burst.color, alpha: burst.life * (0.72 - ring * 0.16), width: Math.max(1, w * 0.006) })
-        }
+        this.overlays.circle(cx, cy, radius)
+          .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, w * 0.007) })
       } else if (burst.ability === 'guard') {
         const points: number[] = []
         for (let index = 0; index < 6; index += 1) {
@@ -1070,11 +1095,8 @@ export class PixiCourt {
         this.overlays.poly(points).stroke({ color: burst.color, alpha: burst.life * 0.82, width: Math.max(2, w * 0.007), join: 'round' })
       } else if (burst.ability === 'bend') {
         const spin = this.clock * 5
-        for (let arc = 0; arc < 3; arc += 1) {
-          const start = spin + arc * Math.PI * 2 / 3
-          this.overlays.arc(cx, cy, radius * (0.72 + arc * 0.12), start, start + 1.5)
-            .stroke({ color: burst.color, alpha: burst.life * 0.75, width: Math.max(2, w * 0.006), cap: 'round' })
-        }
+        this.overlays.arc(cx, cy, radius, spin, spin + 2.2)
+          .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, w * 0.007), cap: 'round' })
       }
     }
     this.abilityBursts = this.abilityBursts.filter((burst) => burst.life > 0)
@@ -1119,11 +1141,7 @@ export class PixiCourt {
     }
   }
 
-  /**
-   * Dash is represented as movement, not an explosion: three fading copies of
-   * the paddle connect its real start and finish, and one arrow states the
-   * direction. There are intentionally no radial rings or inward-facing rays.
-   */
+  /** Boost is one wall-aligned smear—no ghost paddles, arrows, rings or aim claim. */
   private drawDashBurst(burst: AbilityBurst): void {
     const w = this.width
     const from = this.anchorAt(burst.side, burst.fromPosition)
@@ -1137,38 +1155,10 @@ export class PixiCourt {
     const distance = Math.hypot(dx, dy)
     if (distance < 1) return
 
-    const horizontal = burst.side === 'top' || burst.side === 'bottom'
-    const length = this.point(BASE_PADDLE_LENGTH * 0.72)
-    const thickness = Math.max(7, w * 0.015)
-    for (let index = 0; index < 3; index += 1) {
-      const progress = (index + 1) / 4
-      const centreX = fromX + dx * progress
-      const centreY = fromY + dy * progress
-      this.overlays.roundRect(
-        centreX - (horizontal ? length : thickness) / 2,
-        centreY - (horizontal ? thickness : length) / 2,
-        horizontal ? length : thickness,
-        horizontal ? thickness : length,
-        thickness / 2,
-      ).fill({ color: burst.color, alpha: burst.life * (0.12 + index * 0.1) })
-    }
-
-    const directionX = dx / distance
-    const directionY = dy / distance
-    const perpendicularX = -directionY
-    const perpendicularY = directionX
-    const arrowX = fromX + dx * 0.72
-    const arrowY = fromY + dy * 0.72
-    const arrowLength = Math.min(w * 0.055, distance * 0.22)
-    const wing = Math.min(w * 0.022, distance * 0.1)
-    this.overlays.poly([
-      arrowX + directionX * arrowLength,
-      arrowY + directionY * arrowLength,
-      arrowX - directionX * arrowLength + perpendicularX * wing,
-      arrowY - directionY * arrowLength + perpendicularY * wing,
-      arrowX - directionX * arrowLength - perpendicularX * wing,
-      arrowY - directionY * arrowLength - perpendicularY * wing,
-    ]).fill({ color: COURT_PALETTE.paper.color, alpha: burst.life * 0.9 })
+    this.overlays.moveTo(fromX, fromY).lineTo(toX, toY)
+      .stroke({ color: burst.color, alpha: burst.life * 0.52, width: Math.max(7, w * 0.015), cap: 'round' })
+    this.overlays.circle(toX, toY, Math.max(4, w * 0.008))
+      .fill({ color: COURT_PALETTE.paper.color, alpha: burst.life * 0.78 })
   }
 
   private drawTrails(state: GameState, deltaSeconds: number, ahead: number): void {

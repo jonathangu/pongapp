@@ -200,7 +200,7 @@ export class GameRoom extends DurableObject<Env> {
         guestId: id,
         profileId: null,
         displayName: ['Rookie', 'Rally', 'Pro', 'Ace'][index] ?? `AI ${index + 1}`,
-        ability: ['dash', 'bend', 'guard', 'pulse'][index] as InternalParticipant['ability'],
+        ability: ['dash', 'bend', 'pulse', 'dash'][index] as InternalParticipant['ability'],
         slot: index,
         isHost: false,
         isAi: true,

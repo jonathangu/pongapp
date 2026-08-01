@@ -79,10 +79,12 @@ export interface WorldEffects {
   gravityTicks: number
 }
 
+export type ShotType = 'return' | 'perfect' | 'drive' | 'cut' | 'drop'
+
 export type GameEvent =
   | { type: 'matchStart' }
   | { type: 'countdown'; value: number }
-  | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number }
+  | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number; shot?: ShotType }
   | { type: 'score'; scorerId: string | null; team: string; againstPlayerId: string; ballId: string; points: number; rallyHits: number }
   | { type: 'rallyHot'; hits: number; multiplier: number }
   | { type: 'ability'; playerId: string; ability: AbilityId; fromPosition: number; toPosition: number }

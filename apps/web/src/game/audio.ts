@@ -47,6 +47,12 @@ export class GameAudio {
       if (event.perfect) {
         this.tone(760, 0.12, 0.07, 'sine', 0.012, 1180)
         this.tone(1520, 0.07, 0.035, 'sine', 0.02)
+      } else if (event.shot === 'drive') {
+        this.tone(132, 0.09, 0.065, 'square', 0, 240)
+      } else if (event.shot === 'cut') {
+        this.tone(640, 0.11, 0.04, 'sine', 0, 310)
+      } else if (event.shot === 'drop') {
+        this.tone(170, 0.12, 0.025, 'sine', 0, 112)
       }
     } else if (event.type === 'rallyHot') {
       // Rises with each step, so the second milestone is audibly above the first.

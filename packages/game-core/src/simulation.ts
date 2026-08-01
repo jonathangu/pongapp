@@ -299,6 +299,12 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
   bounceFromSide(ball, player.side)
   const relative = clamp((coordinateForSide(ball, player.side) - player.position) / (lengthFor(player) / 2), -1, 1)
   const perfect = Math.abs(relative) < 0.22
+  const motion = player.velocity
+  const shot = perfect
+    ? 'perfect'
+    : Math.abs(motion) >= 0.72
+      ? relative * motion > 0.18 ? 'drive' : 'cut'
+      : Math.abs(motion) < 0.18 && Math.abs(relative) > 0.58 ? 'drop' : 'return'
   const tangent = relative * 0.34 + player.velocity * 0.045
   if (player.side === 'left' || player.side === 'right') ball.vy += tangent
   else ball.vx += tangent
@@ -306,11 +312,16 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
     ball.spin += clamp(player.velocity * 0.028 + relative * 0.09, -0.22, 0.22)
     player.bendTicks = 0
   }
+  // Paddle motion now creates readable shot choices. Chase the contact point
+  // for a faster Drive, sweep away for extra Cut, or hold an edge for a Drop.
+  if (shot === 'cut') ball.spin += clamp(motion * 0.08, -0.14, 0.14)
   let speedMultiplier = BALL_SPEED_RAMP
   if (player.overdriveHits > 0) {
     speedMultiplier = 1.25
     player.overdriveHits -= 1
   }
+  if (shot === 'drive') speedMultiplier *= 1.08
+  else if (shot === 'drop') speedMultiplier *= 0.88
   if (perfect) speedMultiplier *= PERFECT_RETURN_SPEED_BOOST
   rampBall(ball, speedMultiplier)
   ball.lastToucherId = player.id
@@ -319,7 +330,7 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
     player.perfectReturns += 1
     player.cooldownTicks = Math.max(0, player.cooldownTicks - Math.round(0.5 * TICK_RATE))
   }
-  state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect, speed: Math.hypot(ball.vx, ball.vy) })
+  state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect, speed: Math.hypot(ball.vx, ball.vy), shot })
   registerRallyHit(state)
 }
 
@@ -334,7 +345,7 @@ function applyPulse(state: GameState, ball: BallState): boolean {
       ball.lastToucherId = player.id
       player.pulseTicks = 0
       player.returns += 1
-      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: false, speed: Math.hypot(ball.vx, ball.vy) })
+      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: false, speed: Math.hypot(ball.vx, ball.vy), shot: 'return' })
       registerRallyHit(state)
       return true
     }
@@ -494,6 +505,9 @@ function nearestPlayer(state: GameState, x: number, y: number): PlayerState | un
 
 function updatePowerUp(state: GameState): void {
   if (!state.powerUp) {
+    // Hot rallies need one clear object of attention: the ball. Hold the spawn
+    // clock at 8+ hits and resume after the point instead of adding an orb.
+    if (state.rallyHits >= 8) return
     state.powerUpSpawnTicks -= 1
     if (state.powerUpSpawnTicks > 0 || state.config.itemIntensity === 'off') return
     const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'

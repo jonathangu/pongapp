@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AbilityId, GameState } from '@pongapp/game-core'
 import { seatIdentity } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
+import { ABILITY_COPY } from '../game/abilityCopy'
 import { GameCourt } from '../game/GameCourt'
 import type { CourtEffectsSettings } from '../game/PixiCourt'
 import { RoomClient, type RoomClientView } from './RoomClient'
@@ -128,7 +129,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
                     />
                     <div>
                       <strong>{participant.displayName}</strong><br />
-                      <small>{participant.isAi ? 'AI' : participant.ability}{participant.isHost ? ' · host' : ''} · {seat.label} ({seat.patternLabel})</small>
+                      <small>{participant.isAi ? 'AI' : ABILITY_COPY[participant.ability].label}{participant.isHost ? ' · host' : ''} · {seat.label} ({seat.patternLabel})</small>
                     </div>
                   </div>
                   <small>{participant.isReady || participant.isAi ? 'READY' : 'WAITING'}</small>
