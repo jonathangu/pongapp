@@ -244,7 +244,7 @@ export default function App() {
                 ))}
               </select>
             </div>
-            <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie · misses a lot</option><option value="rally">Rally · a fair game</option><option value="pro">Pro · punishes mistakes</option><option value="ace">Ace · nearly perfect</option></select></div>
+            <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie · misses a lot</option><option value="rally">Steady · a fair game</option><option value="pro">Pro · punishes mistakes</option><option value="ace">Ace · nearly perfect</option></select></div>
             <div className="pg-field"><label htmlFor="items">Party power-ups</label><select id="items" value={items} onChange={(event) => setItems(event.target.value as ItemIntensity)}><option value="off">Off · pure Pong</option><option value="standard">Standard · readable</option><option value="wild">Wild · constant chaos</option></select></div>
             <div className="pg-field"><label htmlFor="ai-slots">Fill empty party seats</label><select id="ai-slots" value={aiSlots} onChange={(event) => setAiSlots(Number(event.target.value))}><option value="0">Wait for people</option><option value="1">1 AI</option><option value="2">2 AI</option><option value="3">3 AI</option></select></div>
           </div>

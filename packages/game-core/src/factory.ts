@@ -1,4 +1,4 @@
-import { defaultScoreToWin, DEFAULT_TIME_LIMIT_TICKS, sidesForMode, type SeatAxis } from './constants'
+import { AI_DIFFICULTY_LABEL, defaultScoreToWin, DEFAULT_TIME_LIMIT_TICKS, sidesForMode, type SeatAxis } from './constants'
 import { seatIdentity } from './palette'
 import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, MatchMutator, PlayerDefinition } from './types'
 
@@ -20,13 +20,12 @@ export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
   const requested = options.mode === 'duel' ? 2 : Math.max(3, Math.min(4, options.totalPlayers ?? 4))
   const sides = sidesForMode(options.mode, requested, options.axis)
   const difficulty = options.aiDifficulty ?? 'rally'
-  const difficultyName: Record<AiDifficulty, string> = { rookie: 'Rookie', rally: 'Rally', pro: 'Pro', ace: 'Ace' }
   const players: PlayerDefinition[] = sides.map((side, index) => {
     const human = options.humanPlayers[index]
     const team = options.mode === 'crosscourt' ? `team-${index < 2 ? 0 : 1}` : `team-${index}`
     return {
       id: human?.id ?? `ai-${index + 1}`,
-      name: human?.name ?? (requested === 2 ? difficultyName[difficulty] : `${difficultyName[difficulty]} ${index + 1}`),
+      name: human?.name ?? (requested === 2 ? AI_DIFFICULTY_LABEL[difficulty] : `${AI_DIFFICULTY_LABEL[difficulty]} ${index + 1}`),
       side,
       team,
       ability: human?.ability ?? ABILITY_ORDER[index] ?? 'dash',

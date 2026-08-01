@@ -4,6 +4,7 @@ import {
   buildMatchConfig,
   createAiMemory,
   createGame,
+  AI_DIFFICULTY_LABEL,
   normalizeGameState,
   restartGame,
   stepGame,
@@ -199,7 +200,12 @@ export class GameRoom extends DurableObject<Env> {
         id,
         guestId: id,
         profileId: null,
-        displayName: ['Rookie', 'Rally', 'Pro', 'Ace'][index] ?? `AI ${index + 1}`,
+        // Named for the difficulty it actually plays at, not for the seat it
+        // happens to sit in. The old list was indexed by seat, so a room set to
+        // Ace filled its second slot with a bot labelled "Rally".
+        displayName: count > 1
+          ? `${AI_DIFFICULTY_LABEL[this.config.aiDifficulty]} ${index + 1}`
+          : AI_DIFFICULTY_LABEL[this.config.aiDifficulty],
         ability: ['dash', 'bend', 'pulse', 'dash'][index] as InternalParticipant['ability'],
         slot: index,
         isHost: false,
