@@ -81,6 +81,13 @@ const ABILITY_MOMENT: Record<string, string> = {
   pulse: 'parry window open',
 }
 
+/**
+ * Score pills are narrow, and the default guest name is "Player One" — which
+ * with a second seat called "Player Two" truncated both of them to "PLAYE…".
+ * A label that is the same for every seat identifies none of them, so local
+ * seats get short names that stay legible: "You" when only one seat is yours,
+ * "P1"/"P2" when two people are sharing the device.
+ */
 function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
   const byTeam = new Map<string, PlayerState[]>()
   for (const player of Object.values(state.players)) {
@@ -88,12 +95,17 @@ function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
     bucket.push(player)
     byTeam.set(player.team, bucket)
   }
+  const localOrder = Object.values(state.players)
+    .filter((player) => localIds.includes(player.id))
+    .sort((a, b) => localIds.indexOf(a.id) - localIds.indexOf(b.id))
   return Object.entries(state.scores).map(([team, score]) => {
     const members = byTeam.get(team) ?? []
     const seat = seatIdentityForColor(members[0]?.color ?? 0xdfff68)
+    const localIndex = localOrder.findIndex((player) => player.team === team)
+    const shortLocal = localIndex < 0 ? null : localOrder.length > 1 ? `P${localIndex + 1}` : 'You'
     return {
       team,
-      label: members.map((player) => player.name).join(' + ') || team,
+      label: shortLocal ?? (members.map((player) => player.name).join(' + ') || team),
       score,
       color: members[0]?.color ?? seat.color,
       hex: seat.hex,

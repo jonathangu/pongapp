@@ -98,8 +98,10 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 }
 .pg-pill { padding: 0 var(--pg-space-4); font-weight: 700; font-size: var(--pg-text-sm); }
 .pg-icon-button { width: var(--pg-touch-target); display: grid; place-items: center; }
-.pg-pill:hover, .pg-icon-button:hover { transform: translateY(-1px); border-color: var(--pg-accent); }
-.pg-pill:active, .pg-icon-button:active { transform: translateY(0) scale(.97); }
+/* Colour, not motion. A page where every control jumps under the cursor reads
+   as unstable rather than responsive. */
+.pg-pill:hover, .pg-icon-button:hover { border-color: var(--pg-accent); background: var(--pg-surface-raised); }
+.pg-pill:active, .pg-icon-button:active { background: var(--pg-ink-600); }
 
 .pg-main { width: min(1180px, 100%); margin: 0 auto; padding: var(--pg-space-6) var(--pg-space-5) 64px; flex: 1; }
 
@@ -131,35 +133,162 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   text-transform: uppercase;
 }
 
-.pg-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pg-space-2); }
-.pg-action {
-  min-height: 62px;
+/**
+ * Launch rows.
+ *
+ * These replace 94px stacked cards with a hover lift. Three problems with the
+ * cards, in order: four actions filled a phone screen so the useful ones were
+ * below the fold; every pointer move over the grid translated a card by 3px,
+ * which on a page of six is constant twitch; and the cards were bland because
+ * all six looked the same — a bold word and a grey word.
+ *
+ * A row is the shortest shape that still holds a diagram, a name and one line of
+ * what the thing does. Six now fit in the space four used to take, the diagram
+ * does the work the styling was failing to do, and the only thing that moves on
+ * hover is the border and the glyph's own tint. Nothing translates.
+ */
+.pg-launch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pg-space-2); }
+
+.pg-launch {
+  min-height: 58px;
   padding: 10px var(--pg-space-3);
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  gap: var(--pg-space-2);
+  align-items: center;
+  gap: var(--pg-space-3);
   border: 1px solid var(--pg-line-strong);
-  border-radius: var(--pg-radius-lg);
+  border-radius: var(--pg-radius-md);
   background: var(--pg-surface);
+  color: var(--pg-text);
   text-align: left;
-  box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset;
-  transition:
-    transform var(--pg-transition),
-    box-shadow var(--pg-transition),
-    border-color var(--pg-transition);
+  /* Border and background only. See the note above: no transform. */
+  transition: border-color var(--pg-transition), background var(--pg-transition);
 }
-.pg-action:hover { transform: translateY(-3px); border-color: var(--pg-accent); box-shadow: var(--pg-shadow-md); }
-.pg-action:active { transform: translateY(0) scale(.985); }
-.pg-action--primary { color: var(--pg-ink-800); background: var(--pg-accent); border-color: transparent; }
-.pg-action--primary:hover { box-shadow: var(--pg-shadow-md), var(--pg-glow-accent); }
-.pg-action strong { font-family: var(--pg-font-display); font-size: var(--pg-text-md); line-height: 1.1; }
-/* `opacity` on the label would drop the primary card's ink below AA on lime.
+.pg-launch:hover { border-color: var(--pg-accent); background: var(--pg-surface-raised); }
+.pg-launch:focus-within { border-color: var(--pg-accent); }
+
+.pg-launch__text { display: grid; gap: 1px; min-width: 0; }
+.pg-launch__text strong {
+  font-family: var(--pg-font-display);
+  font-size: var(--pg-text-md);
+  letter-spacing: -.01em;
+  /* A title that wraps makes its row taller than the one beside it and breaks
+     the two-column rhythm the skinny rows exist to create. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pg-launch__text small {
+  color: var(--pg-text-muted);
+  font-size: var(--pg-text-xs);
+  line-height: 1.3;
+  /* One line. A row that reflows to two on a long label breaks the grid rhythm
+     that makes the column scannable in the first place. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-launch__glyph { flex: none; width: 26px; height: 26px; color: var(--pg-text-muted); }
+.pg-launch__glyph-court { fill: rgb(18 63 46 / 70%); stroke: currentColor; stroke-width: 1; opacity: .55; }
+.pg-launch__glyph-line { fill: none; stroke: currentColor; }
+.pg-launch:hover .pg-launch__glyph { color: var(--pg-accent); }
+
+.pg-launch--primary {
+  border-color: transparent;
+  background: var(--pg-accent);
+  color: var(--pg-ink-800);
+  box-shadow: var(--pg-glow-accent);
+}
+.pg-launch--primary:hover { background: var(--pg-lime-300); border-color: transparent; }
+/* `opacity` on the label would drop the primary row's ink below AA on lime.
    A dedicated muted colour per surface keeps both variants measurable. */
-.pg-action span { color: var(--pg-text-muted); font-size: var(--pg-text-xs); line-height: 1.25; }
-.pg-action--primary span { color: rgb(18 35 27 / 78%); }
-.pg-action--quick { border-color: rgb(103 212 255 / 55%); background: rgb(103 212 255 / 8%); }
+.pg-launch--primary .pg-launch__text small { color: rgb(18 35 27 / 76%); }
+.pg-launch--primary .pg-launch__glyph,
+.pg-launch--primary:hover .pg-launch__glyph { color: var(--pg-ink-800); }
+.pg-launch--primary .pg-launch__glyph-court { fill: rgb(18 35 27 / 16%); opacity: .8; }
+
+.pg-launch--join { gap: var(--pg-space-2); }
+.pg-launch__input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--pg-line-strong);
+  border-radius: var(--pg-radius-sm);
+  background: var(--pg-ink-900);
+  font-family: var(--pg-font-numeric);
+  font-size: var(--pg-text-md);
+  font-weight: 800;
+  /* A six-character code is read aloud and typed by hand; tracking and tabular
+     figures are what keep 0/O and 1/I apart. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.pg-launch__input::placeholder { color: var(--pg-text-muted); letter-spacing: .06em; opacity: .7; }
+.pg-launch__go {
+  flex: none;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--pg-radius-sm);
+  background: var(--pg-accent);
+  color: var(--pg-ink-800);
+  font-size: var(--pg-text-sm);
+  font-weight: 800;
+}
+.pg-launch__go:disabled { cursor: not-allowed; background: var(--pg-ink-600); color: var(--pg-text-muted); }
+
+/* ------------------------------------------------------------- match lab */
+
+.pg-lab {
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-radius-lg);
+  background: rgb(19 33 26 / 72%);
+}
+.pg-lab[open] { box-shadow: var(--pg-shadow-md); }
+.pg-lab__summary {
+  min-height: var(--pg-touch-target-lg);
+  padding: var(--pg-space-3) var(--pg-space-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pg-space-3);
+  cursor: pointer;
+  list-style: none;
+}
+.pg-lab__summary::-webkit-details-marker { display: none; }
+.pg-lab__summary > span:first-child { display: grid; gap: 1px; }
+.pg-lab__summary strong { font-family: var(--pg-font-display); font-size: var(--pg-text-md); }
+.pg-lab__summary small { color: var(--pg-text-muted); font-size: var(--pg-text-xs); }
+.pg-lab__record { color: var(--pg-text-muted); font-size: var(--pg-text-xs); white-space: nowrap; }
+.pg-lab__summary::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--pg-text-muted);
+  border-bottom: 2px solid var(--pg-text-muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform var(--pg-transition);
+}
+.pg-lab[open] .pg-lab__summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.pg-lab .pg-fields { padding: 0 var(--pg-space-4) var(--pg-space-4); }
+.pg-field__note { color: var(--pg-text-muted); font-size: var(--pg-text-xs); line-height: 1.45; }
+
+/* ------------------------------------------------------------ how to play */
+
+.pg-help-list { margin: 0; padding-left: 1.15rem; display: grid; gap: var(--pg-space-3); color: var(--pg-text-muted); font-size: var(--pg-text-md); line-height: 1.5; }
+.pg-help-list strong { color: var(--pg-text); }
+.pg-help-section { display: grid; gap: var(--pg-space-2); }
+.pg-help-section h3 { font-family: var(--pg-font-display); font-size: var(--pg-text-lg); }
+.pg-help-note { color: var(--pg-text-muted); font-size: var(--pg-text-sm); line-height: 1.45; }
+.pg-help-grid { margin: 0; display: grid; gap: var(--pg-space-2); }
+.pg-help-row { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--pg-radius-md); background: var(--pg-ink-900); }
+.pg-help-row dt { display: flex; justify-content: space-between; gap: var(--pg-space-2); font-family: var(--pg-font-display); font-weight: 800; }
+.pg-help-row dt span { color: var(--pg-text-muted); font-size: var(--pg-text-xs); font-variant-numeric: tabular-nums; }
+.pg-help-row dd { margin: 0; color: var(--pg-text-muted); font-size: var(--pg-text-sm); line-height: 1.45; }
+.pg-help-seats { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--pg-space-2); color: var(--pg-text-muted); font-size: var(--pg-text-sm); }
+.pg-help-seats li { display: flex; align-items: center; gap: 10px; }
 
 .pg-config {
   padding: var(--pg-space-5);
@@ -397,7 +526,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   font-size: var(--pg-text-md);
 }
 .pg-score--you { background: rgb(255 255 255 / 8%); box-shadow: inset 0 0 0 1px currentColor; }
-.pg-score--you .pg-score__name::after { content: ' (you)'; opacity: .65; }
+
 .pg-score--target { color: var(--pg-text-muted); }
 .pg-score--target .pg-score__name { opacity: .6; }
 .pg-scoreboard--4 .pg-score { flex: 1 1 0; justify-content: center; padding-inline: 6px; }
@@ -561,12 +690,10 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-controls { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, auto); gap: var(--pg-space-3); width: min(100%, 820px); max-width: 100%; margin: 0 auto; }
 
 .pg-control-hint {
-  min-height: var(--pg-touch-target-lg);
   padding: 10px var(--pg-space-4);
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
+  gap: 3px;
   border: 1px solid var(--pg-line);
   border-radius: var(--pg-radius-lg);
   color: var(--pg-text-muted);
@@ -620,7 +747,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--pg-ability-progress, 0%);
-  background: rgb(223 255 104 / 16%);
+  background: color-mix(in srgb, var(--pg-seat-color, var(--pg-accent)) 16%, transparent);
   transition: width var(--pg-duration-fast) linear;
 }
 .pg-ability-button > * { position: relative; }
@@ -631,18 +758,20 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-ability-button__state { color: var(--pg-text-muted); font-size: var(--pg-text-xs); font-variant-numeric: tabular-nums; }
 .pg-key-hint { font-size: inherit; }
 @media (pointer: coarse) { .pg-key-hint { display: none; } }
+/* Ready lights up in the player's own seat colour, so in pass-and-play each
+   control matches the paddle it drives instead of both going lime. */
 .pg-ability-button.is-ready {
   border-color: transparent;
-  background: var(--pg-accent);
+  background: var(--pg-seat-color, var(--pg-accent));
   color: var(--pg-ink-800);
-  box-shadow: var(--pg-glow-accent);
+  box-shadow: 0 0 34px color-mix(in srgb, var(--pg-seat-color, var(--pg-accent)) 30%, transparent);
 }
 .pg-ability-button.is-ready .pg-ability-button__state { color: rgb(18 35 27 / 72%); }
 .pg-ability-button.is-ready .pg-ability-button__eyebrow,
 .pg-ability-button.is-ready .pg-ability-button__description,
 .pg-ability-button.is-ready .pg-ability-button__effect { color: rgb(18 35 27 / 72%); }
 .pg-ability-button.is-ready::before { display: none; }
-.pg-ability-button:active { transform: scale(.97); }
+.pg-ability-button:active { filter: brightness(.9); }
 
 /* ------------------------------------------------------------------- lobby */
 
@@ -711,7 +840,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 }
 .pg-primary-button { border: 0; color: var(--pg-ink-800); background: var(--pg-accent); }
 .pg-primary-button:hover { box-shadow: var(--pg-glow-accent); }
-.pg-primary-button:active, .pg-secondary-button:active { transform: scale(.98); }
+.pg-primary-button:active, .pg-secondary-button:active { filter: brightness(.92); }
 .pg-primary-button:disabled { cursor: not-allowed; opacity: .45; transform: none; box-shadow: none; }
 .pg-secondary-button { border: 1px solid var(--pg-line-strong); background: var(--pg-surface); }
 .pg-button-row { display: flex; flex-wrap: wrap; gap: var(--pg-space-3); }
@@ -771,19 +900,19 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
     gap: 56px;
     align-items: start;
   }
-  .pg-action-grid { max-width: 520px; }
+  .pg-launch-grid { max-width: 560px; }
 }
 
 @media (max-width: 480px) {
   .pg-main { padding-inline: var(--pg-space-3); }
-  .pg-action-grid { grid-template-columns: 1fr 1fr; }
-  .pg-action { min-height: 58px; padding: 9px 10px; }
-  .pg-action strong { font-size: var(--pg-text-sm); }
   .pg-fields { grid-template-columns: 1fr; }
   .pg-header__account-label { display: none; }
+  /* The two-column control grid has a 260px minimum on its second track, which
+     on a 390px phone squeezes the hint into ~180px and wraps it to one word per
+     line. Below this width the strip stacks instead. */
+  .pg-controls { grid-template-columns: 1fr; }
   .pg-arena-poster { position: relative; top: auto; aspect-ratio: 4 / 3; }
   .pg-arena-poster__hud { inset: auto var(--pg-space-4) var(--pg-space-4); }
-  .pg-controls { grid-template-columns: 1fr; }
   /* On a phone the drag hand is on the court, so the ability control has to be
      reachable by the other thumb without hunting: full width, first in reading
      order after the court, and larger than the default target. */
@@ -791,6 +920,13 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   .pg-ability-stack--two { grid-template-columns: 1fr 1fr; }
   .pg-ability-button__description { font-size: .66rem; }
   .pg-quick-invite { grid-template-columns: 1fr; }
+  .pg-ability-button { min-height: var(--pg-touch-target-lg); }
+  /* Two columns is the whole point of the skinny rows — keep them on a phone.
+     Only the join row, which holds an input and a button, needs the full width. */
+  .pg-launch-grid { gap: 6px; }
+  .pg-launch { padding-inline: 10px; gap: 10px; }
+  .pg-launch--join { grid-column: 1 / -1; }
+  .pg-launch__text small { font-size: 10px; }
   .pg-hud-bar { gap: 6px; }
   .pg-scoreboard { gap: 0; font-size: var(--pg-text-xs); }
   .pg-score { padding-inline: 5px; }

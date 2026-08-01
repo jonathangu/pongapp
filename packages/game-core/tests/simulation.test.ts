@@ -22,14 +22,22 @@ describe('simulation', () => {
     expect(first.phase).toBe('playing')
   })
 
+  it('seats the first player on the bottom wall', () => {
+    // The local player is always seat 0, so this is what puts you at the near
+    // end of the court instead of watching your own paddle side-on.
+    const config = buildMatchConfig({ mode: 'duel', humanPlayers: [{ id: 'human', name: 'Human' }] })
+    expect(config.players.map((player) => player.side)).toEqual(['bottom', 'top'])
+  })
+
   it('scores when an active player misses a goal', () => {
     const state = duel()
     state.phase = 'playing'
     state.serveTicks = 0
+    // Driven off the bottom wall, which is where seat 0 now sits.
     const ball = state.balls[0]!
-    ball.x = -0.1
-    ball.y = 0.05
-    ball.vx = -0.5
+    ball.x = 0.05
+    ball.y = 1.1
+    ball.vy = 0.5
     ball.lastToucherId = 'ai-2'
     stepGame(state)
     expect(state.scores['team-1']).toBe(1)
@@ -80,11 +88,15 @@ describe('simulation', () => {
 
   it('pairs opposite sides as teammates in crosscourt doubles', () => {
     const config = buildMatchConfig({ mode: 'crosscourt', humanPlayers: [], totalPlayers: 4 })
-    expect(config.players.map(({ side, team }) => [side, team])).toEqual([
-      ['left', 'team-0'],
-      ['right', 'team-0'],
-      ['top', 'team-1'],
-      ['bottom', 'team-1'],
-    ])
+    // Asserted as a property rather than a literal list: what crosscourt needs
+    // is that partners defend opposite walls, and pinning the exact seat order
+    // here is what made a deliberate reseating look like a regression.
+    const opposite = { bottom: 'top', top: 'bottom', left: 'right', right: 'left' } as const
+    const bySide = Object.fromEntries(config.players.map((player) => [player.side, player.team]))
+    expect(config.players.map((player) => player.side)).toEqual(['bottom', 'top', 'left', 'right'])
+    for (const player of config.players) {
+      expect(`${player.side} partners ${opposite[player.side]}: ${bySide[opposite[player.side]]} === ${player.team}`)
+        .toBe(`${player.side} partners ${opposite[player.side]}: ${player.team} === ${player.team}`)
+    }
   })
 })
