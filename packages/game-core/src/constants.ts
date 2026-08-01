@@ -6,10 +6,13 @@ export const PADDLE_OFFSET = 0.045
 export const BASE_PADDLE_LENGTH = 0.22
 export const GROWN_PADDLE_LENGTH = BASE_PADDLE_LENGTH * 1.35
 export const PADDLE_SPEED = 1.35
-export const BALL_START_SPEED = 0.48
+export const BALL_START_SPEED = 0.62
 export const BALL_SPEED_CAP = 1.12
-export const BALL_SPEED_RAMP = 1.035
+export const BALL_SPEED_RAMP = 1.055
 export const BALL_RADIUS = 0.015
+export const BIG_BALL_RADIUS = BALL_RADIUS * 1.7
+export const PERFECT_RETURN_SPEED_BOOST = 1.06
+export const POWER_UP_LIFETIME_TICKS = 10 * TICK_RATE
 export const MATCH_COUNTDOWN_TICKS = 3 * TICK_RATE
 export const SERVE_DELAY_TICKS = Math.round(0.75 * TICK_RATE)
 
@@ -20,16 +23,44 @@ export const ABILITY_COOLDOWNS: Record<AbilityId, number> = {
   pulse: 12 * TICK_RATE,
 }
 
-export const AI_PROFILE: Record<AiDifficulty, { reactionTicks: number; error: number }> = {
-  rookie: { reactionTicks: 30, error: 0.14 },
-  rally: { reactionTicks: 18, error: 0.08 },
-  pro: { reactionTicks: 10, error: 0.035 },
-  ace: { reactionTicks: 5, error: 0.012 },
+export interface AiProfile {
+  reactionTicks: number
+  bounces: number
+  aimError: number
+  speed: number
+}
+
+/**
+ * `aimError` is a multiple of the catch half-width (0.125), scaled at runtime by
+ * how far the rally has ramped: the effective offset spans `aimError × 0.60` at
+ * serve speed to `aimError × 1.70` at the cap, and anything reaching 1.0 is a
+ * miss. So `rookie` can miss from the first touch, `rally` is safe early and
+ * unreliable once the point has run on, `pro` slips only when the ball is hot,
+ * and `ace` only at the very cap.
+ *
+ * Every tier has to reach 1.0 *somewhere*. An opponent that cannot miss at any
+ * speed is the defect this table exists to remove, and it is easy to reintroduce
+ * by nudging these down — `tests/ai.test.ts` plays each tier against a flawless
+ * opponent and fails if one stops conceding.
+ */
+export const AI_PROFILE: Record<AiDifficulty, AiProfile> = {
+  // Misses reachable balls at any speed and never reads a bounce.
+  rookie: { reactionTicks: 26, bounces: 0, aimError: 1.8, speed: 0.68 },
+  // Safe early, starts missing once the rally has ramped. Loses long points.
+  rally: { reactionTicks: 16, bounces: 1, aimError: 1, speed: 0.82 },
+  // Only slips when the ball is hot. Punishes a loose shot.
+  pro: { reactionTicks: 9, bounces: 3, aimError: 0.72, speed: 0.93 },
+  // Misses only near the cap, and rarely even then. Beat it with angles,
+  // spin and power-ups rather than by waiting for a fumble.
+  ace: { reactionTicks: 5, bounces: 99, aimError: 0.6, speed: 0.97 },
 }
 
 export function defaultScoreToWin(mode: GameMode): number {
-  return mode === 'crosscourt' ? 9 : 7
+  return mode === 'crosscourt' ? 7 : 5
 }
+
+/** Two minutes, not four. Rally scoring reaches the shorter targets faster anyway. */
+export const DEFAULT_TIME_LIMIT_TICKS = 2 * 60 * TICK_RATE
 
 export function defaultPlayerCount(mode: GameMode): number {
   if (mode === 'duel') return 2
@@ -78,6 +109,6 @@ export function sidesForMode(
 
 export function nextPowerUpDelay(intensity: ItemIntensity, random: number): number {
   if (intensity === 'off') return Number.MAX_SAFE_INTEGER
-  const [minimum, spread] = intensity === 'wild' ? [6, 4] : [12, 6]
+  const [minimum, spread] = intensity === 'wild' ? [4, 3] : [8, 5]
   return Math.round((minimum + random * spread) * TICK_RATE)
 }

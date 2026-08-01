@@ -478,7 +478,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
    floated over the play surface. */
 .pg-hud-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* Three tracks, not two. Adding the rally chip to a two-column grid put it in
+     the timer's cell and pushed the timer onto its own row. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--pg-space-3);
   width: min(100%, calc(100dvh - 232px), 820px);
@@ -557,6 +559,38 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-moment--score { color: var(--pg-paper); border-color: var(--pg-orange-500); box-shadow: 0 0 38px rgb(243 111 68 / 34%); }
 .pg-moment--skill { color: var(--pg-cyan); border-color: var(--pg-cyan); }
 .pg-moment--power { color: var(--pg-violet); border-color: var(--pg-violet); }
+.pg-moment--rally { color: var(--pg-ink-800); background: var(--pg-accent); border-color: transparent; }
+
+/**
+ * The rally counter.
+ *
+ * `heat` has been brightening the court across a long point for a while with
+ * nothing behind it. This is the number that escalation is now worth, so it
+ * lives beside the score rather than on the play surface — the same reason the
+ * scoreboard moved off the court.
+ */
+.pg-rally {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-radius-pill);
+  background: var(--pg-surface);
+  color: var(--pg-text-muted);
+  font-size: var(--pg-text-xs);
+  transition: color var(--pg-transition), background var(--pg-transition), border-color var(--pg-transition);
+}
+.pg-rally__value { font: 800 var(--pg-text-md) var(--pg-font-numeric); font-variant-numeric: tabular-nums; }
+.pg-rally__label { text-transform: uppercase; letter-spacing: .06em; }
+.pg-rally__multiplier { font-weight: 800; }
+/* Lit from the first milestone on, so the payoff is visible before the point ends. */
+.pg-rally.is-hot {
+  border-color: transparent;
+  background: var(--pg-accent);
+  color: var(--pg-ink-800);
+  box-shadow: var(--pg-glow-accent);
+}
 @keyframes pg-moment {
   0% { opacity: 0; transform: translate(-50%, 16px) scale(.8); letter-spacing: .25em; }
   18% { opacity: 1; transform: translate(-50%, 0) scale(1.04); }
@@ -927,7 +961,11 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   .pg-launch { padding-inline: 10px; gap: 10px; }
   .pg-launch--join { grid-column: 1 / -1; }
   .pg-launch__text small { font-size: 10px; }
-  .pg-hud-bar { gap: 6px; }
+  .pg-hud-bar { gap: 5px; }
+  /* The label stays. A bare number between the score target and the clock is
+     three unlabelled figures in a row, which is worse than tight. */
+  .pg-rally { padding-inline: 7px; gap: 4px; }
+  .pg-rally__label { font-size: 9px; }
   .pg-scoreboard { gap: 0; font-size: var(--pg-text-xs); }
   .pg-score { padding-inline: 5px; }
   .pg-score__name { max-width: 7ch; }

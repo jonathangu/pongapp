@@ -1,5 +1,4 @@
-import { AI_PROFILE, PADDLE_OFFSET } from './constants'
-import { reflectUnit } from './rng'
+import { AI_PROFILE, BALL_SPEED_CAP, BALL_START_SPEED, BALL_RADIUS, BASE_PADDLE_LENGTH, PADDLE_OFFSET } from './constants'
 import type { AiControllerMemory, BallState, GameInput, GameState, PlayerState } from './types'
 
 function timeToSide(ball: BallState, player: PlayerState): number {
@@ -10,11 +9,43 @@ function timeToSide(ball: BallState, player: PlayerState): number {
   return Number.POSITIVE_INFINITY
 }
 
-function predictCoordinate(ball: BallState, player: PlayerState, time: number): number {
+/**
+ * Follow only the wall reflections this tier can understand. Once the next
+ * bounce exceeds that budget, hold at the wall instead of magically folding
+ * the remaining path. A loop is deliberately used here: floor(abs(raw)) gets
+ * negative crossings wrong (for example -0.2 has crossed one wall, not zero).
+ */
+export function predictCoordinateWithBounces(position: number, velocity: number, time: number, bounces: number): number {
+  if (!Number.isFinite(time) || time < 0) return 0.5
+  let coordinate = position
+  let direction = velocity
+  let remaining = time
+  for (let seen = 0; seen <= bounces; seen += 1) {
+    if (Math.abs(direction) < 1e-9) return Math.min(1, Math.max(0, coordinate))
+    const boundary = direction > 0 ? 1 : 0
+    const untilBoundary = (boundary - coordinate) / direction
+    if (untilBoundary < 0 || remaining <= untilBoundary) {
+      return Math.min(1, Math.max(0, coordinate + direction * remaining))
+    }
+    coordinate = boundary
+    remaining -= untilBoundary
+    if (seen === bounces) return coordinate
+    direction *= -1
+  }
+  return coordinate
+}
+
+function predictCoordinate(ball: BallState, player: PlayerState, time: number, bounces: number): number {
   if (!Number.isFinite(time) || time < 0) return 0.5
   return player.side === 'left' || player.side === 'right'
-    ? reflectUnit(ball.y + ball.vy * time)
-    : reflectUnit(ball.x + ball.vx * time)
+    ? predictCoordinateWithBounces(ball.y, ball.vy, time, bounces)
+    : predictCoordinateWithBounces(ball.x, ball.vx, time, bounces)
+}
+
+function playerPhase(id: string): number {
+  let hash = 0
+  for (let index = 0; index < id.length; index += 1) hash = Math.imul(hash ^ id.charCodeAt(index), 0x45d9f3b)
+  return (hash >>> 0) / 0xffff_ffff * Math.PI * 2
 }
 
 function targetFor(state: GameState, player: PlayerState): number {
@@ -29,8 +60,21 @@ function targetFor(state: GameState, player: PlayerState): number {
   }
   if (!threat) return 0.5
   const profile = AI_PROFILE[player.aiDifficulty ?? 'rally']
-  const deterministicNoise = Math.sin(state.tick * 0.173 + player.id.length * 2.1) * profile.error
-  return Math.min(0.92, Math.max(0.08, predictCoordinate(threat, player, soonest) + deterministicNoise))
+  // Pressure scales the aim error with how far the rally has ramped, normalised
+  // over exactly the range the renderer's `heat` uses — so the court visibly
+  // heating up and the opponent starting to slip are the same event.
+  //
+  // The span matters as much as the tier numbers. At `0.6 + 0.4 × (speed/cap)`
+  // the multiplier tops out at 1.0, which means only a tier with `aimError >= 1`
+  // can *ever* be off by more than its own catch window — leaving rally, pro and
+  // ace unable to miss, which is the exact defect this rework exists to remove.
+  // `tests/ai.test.ts` measures it: with that curve the ladder was rookie-only.
+  const speed = Math.hypot(threat.vx, threat.vy)
+  const ramp = Math.min(1, Math.max(0, (speed - BALL_START_SPEED) / (BALL_SPEED_CAP - BALL_START_SPEED)))
+  const pressure = 0.6 + 1.1 * ramp
+  const catchHalfWidth = BASE_PADDLE_LENGTH / 2 + BALL_RADIUS
+  const deterministicNoise = Math.sin(state.tick * 0.173 + playerPhase(player.id)) * profile.aimError * catchHalfWidth * pressure
+  return Math.min(0.92, Math.max(0.08, predictCoordinate(threat, player, soonest, profile.bounces) + deterministicNoise))
 }
 
 function shouldUseAbility(state: GameState, player: PlayerState): boolean {
