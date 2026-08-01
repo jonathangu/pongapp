@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @pongapp/web dev",
+    "dev:server": "pnpm --filter @pongapp/room-server dev",
     "dev:worker": "pnpm --filter @pongapp/room-worker dev",
     "build": "pnpm -r --workspace-concurrency=1 build",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",

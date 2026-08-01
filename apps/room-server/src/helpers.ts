@@ -12,7 +12,11 @@ export function generateRoomCode(): string {
   return Array.from(bytes, (byte) => ROOM_CODE_ALPHABET[byte % ROOM_CODE_ALPHABET.length]).join('')
 }
 
-export function allowedOrigin(origin: string | null): string | null {
+export function allowedOrigin(origin: string | undefined): string | null {
   if (!origin) return null
   return CREATE_ORIGINS.has(origin) ? origin : null
+}
+
+export function validRoomCode(value: string): boolean {
+  return /^[A-Z2-9]{6}$/.test(value)
 }

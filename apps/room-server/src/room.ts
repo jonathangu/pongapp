@@ -1,10 +1,9 @@
-import { DurableObject } from 'cloudflare:workers'
 import {
+  AI_DIFFICULTY_LABEL,
   aiInputs,
   buildMatchConfig,
   createAiMemory,
   createGame,
-  AI_DIFFICULTY_LABEL,
   normalizeGameState,
   restartGame,
   stepGame,
@@ -13,144 +12,82 @@ import {
   type GameState,
 } from '@pongapp/game-core'
 import {
-  createRoomRequestSchema,
+  PROTOCOL_VERSION,
   encodeServerMessage,
   parseWireMessage,
-  PROTOCOL_VERSION,
   type ClientMessage,
   type RoomLobby,
   type RoomParticipant,
   type ServerMessage,
   type StoredRoomConfig,
 } from '@pongapp/protocol'
-import { allowedOrigin, generateRoomCode } from './helpers'
+import type WebSocket from 'ws'
+import type { StoredParticipant, StoredRoomRecord } from './persistence'
 
-export { allowedOrigin, generateRoomCode } from './helpers'
-
-interface Env {
-  ROOMS: DurableObjectNamespace<GameRoom>
-}
-
-interface InternalParticipant extends RoomParticipant {
-  guestId: string
-  reconnectToken: string
-  lastSeq: number
-  lastTarget: number
-  disconnectedAt: number | null
-}
-
-interface SocketAttachment { participantId: string | null }
+interface InternalParticipant extends StoredParticipant {}
 
 const RECONNECT_GRACE_MS = 20_000
 const SNAPSHOT_EVERY_TICKS = 3
 
-function corsHeaders(request: Request): HeadersInit {
-  const origin = allowedOrigin(request.headers.get('origin'))
-  return {
-    'access-control-allow-origin': origin ?? 'https://www.jonathangu.com',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
-    'access-control-max-age': '86400',
-    vary: 'Origin',
-  }
-}
-
-function json(request: Request, value: unknown, status = 200): Response {
-  return Response.json(value, { status, headers: corsHeaders(request) })
-}
-
-function validRoomCode(value: string): boolean {
-  return /^[A-Z2-9]{6}$/.test(value)
-}
-
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url)
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request) })
-    if (url.pathname === '/api/health') return json(request, { status: 'ok', service: 'pongapp-room', protocol: PROTOCOL_VERSION })
-
-    if (url.pathname === '/api/rooms' && request.method === 'POST') {
-      const origin = request.headers.get('origin')
-      if (origin && !allowedOrigin(origin)) return json(request, { error: 'origin_not_allowed' }, 403)
-      let body: unknown
-      try { body = await request.json() } catch { return json(request, { error: 'invalid_json' }, 400) }
-      const parsed = createRoomRequestSchema.safeParse(body)
-      if (!parsed.success) return json(request, { error: 'invalid_room_config' }, 400)
-
-      for (let attempt = 0; attempt < 6; attempt += 1) {
-        const roomCode = generateRoomCode()
-        const id = env.ROOMS.idFromName(roomCode)
-        const response = await env.ROOMS.get(id).fetch('https://room.internal/configure', {
-          method: 'POST',
-          body: JSON.stringify({ ...parsed.data, roomCode, createdAt: Date.now() }),
-        })
-        if (response.status === 201) return json(request, { roomCode }, 201)
-        if (response.status !== 409) return json(request, { error: 'room_create_failed' }, 500)
-      }
-      return json(request, { error: 'room_code_collision' }, 503)
-    }
-
-    const match = /^\/api\/rooms\/([A-Z2-9]{6})\/websocket$/.exec(url.pathname)
-    if (match && request.method === 'GET') {
-      const roomCode = match[1]!
-      if (!validRoomCode(roomCode)) return json(request, { error: 'invalid_room_code' }, 400)
-      const origin = request.headers.get('origin')
-      if (origin && !allowedOrigin(origin)) return json(request, { error: 'origin_not_allowed' }, 403)
-      return env.ROOMS.get(env.ROOMS.idFromName(roomCode)).fetch(request)
-    }
-    return json(request, { error: 'not_found' }, 404)
-  },
-} satisfies ExportedHandler<Env>
-
-export class GameRoom extends DurableObject<Env> {
-  private loaded = false
-  private config: StoredRoomConfig | null = null
-  private participants = new Map<string, InternalParticipant>()
+export class GameRoom {
+  private readonly participants = new Map<string, InternalParticipant>()
+  private readonly sockets = new Map<WebSocket, string | null>()
   private game: GameState | null = null
   private inputs: Record<string, GameInput> = {}
   private aiMemory: AiControllerMemory = createAiMemory()
   private loop: ReturnType<typeof setInterval> | null = null
 
-  override async fetch(request: Request): Promise<Response> {
-    await this.ensureLoaded()
-    const url = new URL(request.url)
-    if (url.pathname === '/configure' && request.method === 'POST') {
-      if (this.config) return new Response('exists', { status: 409 })
-      const value = await request.json() as StoredRoomConfig
-      const parsed = createRoomRequestSchema.safeParse(value)
-      if (!parsed.success || !validRoomCode(value.roomCode)) return new Response('invalid', { status: 400 })
-      this.config = { ...value, ...parsed.data }
+  constructor(
+    readonly config: StoredRoomConfig,
+    private readonly onPersist: (record: StoredRoomRecord) => Promise<void>,
+    restored?: StoredRoomRecord,
+  ) {
+    if (restored) {
+      for (const restoredParticipant of restored.participants) {
+        const participant = structuredClone(restoredParticipant)
+        if (!participant.isAi) {
+          participant.connected = false
+          participant.disconnectedAt = Date.now()
+        }
+        this.participants.set(participant.id, participant)
+      }
+      this.game = restored.game ? normalizeGameState(structuredClone(restored.game)) : null
+    } else {
       this.addAiParticipants()
-      await this.persist()
-      return new Response('created', { status: 201 })
     }
-
-    if (url.pathname.endsWith('/websocket')) {
-      if (!this.config) return new Response('Room not found', { status: 404 })
-      if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected WebSocket', { status: 426 })
-      const pair = new WebSocketPair()
-      const client = pair[0]
-      const server = pair[1]
-      this.ctx.acceptWebSocket(server)
-      server.serializeAttachment({ participantId: null } satisfies SocketAttachment)
-      return new Response(null, { status: 101, webSocket: client })
-    }
-    return new Response('Not found', { status: 404 })
+    if (this.game && this.game.phase !== 'finished') this.startLoop()
   }
 
-  override async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    await this.ensureLoaded()
-    const parsed = parseWireMessage(typeof message === 'string' ? message : new TextDecoder().decode(message))
+  async initialize(): Promise<void> {
+    await this.persist()
+  }
+
+  connect(socket: WebSocket): void {
+    this.sockets.set(socket, null)
+    socket.on('message', (data) => void this.handleRawMessage(socket, data.toString()))
+    socket.on('close', () => void this.handleClose(socket))
+    socket.on('error', () => void this.handleClose(socket))
+  }
+
+  stop(): void {
+    if (this.loop) clearInterval(this.loop)
+    this.loop = null
+    for (const socket of this.sockets.keys()) socket.close(1012, 'server restarting')
+    this.sockets.clear()
+  }
+
+  private async handleRawMessage(socket: WebSocket, raw: string): Promise<void> {
+    const parsed = parseWireMessage(raw)
     if (!parsed) {
       this.send(socket, { type: 'error', code: 'invalid_message', message: 'That room message was invalid.', recoverable: true })
       return
     }
-    const attachment = socket.deserializeAttachment() as SocketAttachment | null
     if (parsed.type === 'hello') {
       await this.handleHello(socket, parsed)
       return
     }
-    const participant = attachment?.participantId ? this.participants.get(attachment.participantId) : undefined
+    const participantId = this.sockets.get(socket)
+    const participant = participantId ? this.participants.get(participantId) : undefined
     if (!participant) {
       this.send(socket, { type: 'error', code: 'hello_required', message: 'Join the room before sending commands.', recoverable: false })
       return
@@ -158,10 +95,12 @@ export class GameRoom extends DurableObject<Env> {
     await this.handleParticipantMessage(socket, participant, parsed)
   }
 
-  override async webSocketClose(socket: WebSocket): Promise<void> {
-    await this.ensureLoaded()
-    const attachment = socket.deserializeAttachment() as SocketAttachment | null
-    const participant = attachment?.participantId ? this.participants.get(attachment.participantId) : undefined
+  private async handleClose(socket: WebSocket): Promise<void> {
+    if (!this.sockets.has(socket)) return
+    const participantId = this.sockets.get(socket)
+    this.sockets.delete(socket)
+    if (!participantId || [...this.sockets.values()].includes(participantId)) return
+    const participant = this.participants.get(participantId)
     if (!participant) return
     participant.connected = false
     participant.disconnectedAt = Date.now()
@@ -170,28 +109,7 @@ export class GameRoom extends DurableObject<Env> {
     this.broadcastLobby()
   }
 
-  override async webSocketError(socket: WebSocket): Promise<void> {
-    await this.webSocketClose(socket)
-  }
-
-  private async ensureLoaded(): Promise<void> {
-    if (this.loaded) return
-    const stored = await this.ctx.storage.get<{
-      config: StoredRoomConfig | null
-      participants: InternalParticipant[]
-      game: GameState | null
-    }>('room')
-    if (stored) {
-      this.config = stored.config
-      this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
-      this.game = stored.game ? normalizeGameState(stored.game) : null
-      if (this.game && this.game.phase !== 'finished') this.startLoop()
-    }
-    this.loaded = true
-  }
-
   private addAiParticipants(): void {
-    if (!this.config) return
     const maximum = this.config.mode === 'duel' ? 2 : 4
     const count = Math.min(this.config.aiSlots, maximum - 1)
     for (let index = maximum - count; index < maximum; index += 1) {
@@ -200,9 +118,6 @@ export class GameRoom extends DurableObject<Env> {
         id,
         guestId: id,
         profileId: null,
-        // Named for the difficulty it actually plays at, not for the seat it
-        // happens to sit in. The old list was indexed by seat, so a room set to
-        // Ace filled its second slot with a bot labelled "Rally".
         displayName: count > 1
           ? `${AI_DIFFICULTY_LABEL[this.config.aiDifficulty]} ${index + 1}`
           : AI_DIFFICULTY_LABEL[this.config.aiDifficulty],
@@ -230,10 +145,9 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async handleHello(socket: WebSocket, message: Extract<ClientMessage, { type: 'hello' }>): Promise<void> {
-    if (!this.config) return
     this.cleanupDisconnected()
     const reconnect = [...this.participants.values()].find((participant) =>
-      !participant.isAi && participant.guestId === message.guestId && message.reconnectToken && participant.reconnectToken === message.reconnectToken,
+      !participant.isAi && participant.guestId === message.guestId && Boolean(message.reconnectToken) && participant.reconnectToken === message.reconnectToken,
     )
     let participant = reconnect
     if (participant) {
@@ -270,9 +184,20 @@ export class GameRoom extends DurableObject<Env> {
       }
       this.participants.set(id, participant)
     }
-    socket.serializeAttachment({ participantId: participant.id } satisfies SocketAttachment)
+
+    for (const [existingSocket, existingParticipantId] of this.sockets) {
+      if (existingSocket !== socket && existingParticipantId === participant.id) existingSocket.close(4001, 'reconnected elsewhere')
+    }
+    this.sockets.set(socket, participant.id)
     await this.persist()
-    this.send(socket, { type: 'welcome', version: PROTOCOL_VERSION, clientId: participant.id, reconnectToken: participant.reconnectToken, participant: this.publicParticipant(participant), lobby: this.lobby() })
+    this.send(socket, {
+      type: 'welcome',
+      version: PROTOCOL_VERSION,
+      clientId: participant.id,
+      reconnectToken: participant.reconnectToken,
+      participant: this.publicParticipant(participant),
+      lobby: this.lobby(),
+    })
     if (this.game) this.send(socket, { type: 'snapshot', serverTick: this.game.tick, acknowledgedSeq: participant.lastSeq, state: this.game })
     this.broadcastLobby()
   }
@@ -290,7 +215,7 @@ export class GameRoom extends DurableObject<Env> {
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
     } else if (message.type === 'rematch' && participant.isHost && this.game?.phase === 'finished') {
-      this.game = restartGame(this.game, (Date.now() >>> 0))
+      this.game = restartGame(this.game, Date.now() >>> 0)
       this.aiMemory = createAiMemory()
       for (const candidate of this.participants.values()) if (!candidate.isAi && candidate.slot !== null) candidate.isReady = true
       await this.persist()
@@ -303,22 +228,21 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async maybeStart(): Promise<void> {
-    if (!this.config || this.game) return
+    if (this.game) return
     const players = [...this.participants.values()].filter((participant) => participant.slot !== null)
     const humans = players.filter((participant) => !participant.isAi && participant.connected)
     const required = this.config.mode === 'duel' ? 2 : this.config.mode === 'arena' ? 3 : 4
     if (players.length < required || humans.length === 0 || humans.some((participant) => !participant.isReady)) return
     const orderedHumans = humans.sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
-    const matchConfig = buildMatchConfig({
+    this.game = createGame(buildMatchConfig({
       mode: this.config.mode,
-      humanPlayers: orderedHumans.map((participant) => ({ id: participant.id, name: participant.displayName, ability: participant.ability })),
+      humanPlayers: orderedHumans.map((candidate) => ({ id: candidate.id, name: candidate.displayName, ability: candidate.ability })),
       totalPlayers: this.config.mode === 'arena' ? Math.min(4, players.length) : required,
       aiDifficulty: this.config.aiDifficulty,
       itemIntensity: this.config.itemIntensity,
       mutator: this.config.mutator ?? 'none',
       seed: Date.now() >>> 0,
-    })
-    this.game = createGame(matchConfig)
+    }))
     this.aiMemory = createAiMemory()
     await this.persist()
     this.startLoop()
@@ -328,29 +252,26 @@ export class GameRoom extends DurableObject<Env> {
 
   private startLoop(): void {
     if (this.loop) return
-    this.loop = setInterval(() => void this.tick(), 1000 / 60)
+    this.loop = setInterval(() => this.tick(), 1000 / 60)
   }
 
-  private async tick(): Promise<void> {
+  private tick(): void {
     if (!this.game) return
     for (const participant of this.participants.values()) {
       if (!participant.isAi && !participant.connected && participant.disconnectedAt && Date.now() - participant.disconnectedAt >= 2000) {
         const player = this.game.players[participant.id]
-        if (player) { player.isAi = true; player.aiDifficulty = this.config?.aiDifficulty ?? 'rally' }
+        if (player) {
+          player.isAi = true
+          player.aiDifficulty = this.config.aiDifficulty
+        }
       }
     }
     const mergedInputs = { ...aiInputs(this.game, this.aiMemory), ...this.inputs }
     stepGame(this.game, mergedInputs)
     for (const input of Object.values(this.inputs)) input.abilityPressed = false
-    if (
-      this.game.tick % SNAPSHOT_EVERY_TICKS === 0
-      // RoomClient renders effects from snapshots. Snapshot every event tick so
-      // ordinary hits, skills, power-ups and warps cannot fall between the
-      // three-tick cadence and disappear online.
-      || this.game.events.length > 0
-    ) this.broadcastSnapshot()
+    if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || this.game.events.length > 0) this.broadcastSnapshot()
     for (const event of this.game.events) this.broadcast({ type: 'event', event })
-    if (this.game.tick % 60 === 0 || this.game.phase === 'finished') await this.persist()
+    if (this.game.tick % 60 === 0 || this.game.phase === 'finished') void this.persist()
     if (this.game.phase === 'finished') {
       if (this.loop) clearInterval(this.loop)
       this.loop = null
@@ -360,7 +281,8 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private transferHost(): void {
-    const connected = [...this.participants.values()].filter((participant) => !participant.isAi && participant.connected)
+    const connected = [...this.participants.values()]
+      .filter((participant) => !participant.isAi && participant.connected)
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (connected.some((participant) => participant.isHost)) return
     for (const participant of this.participants.values()) participant.isHost = false
@@ -373,7 +295,6 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private lobby(): RoomLobby {
-    if (!this.config) throw new Error('Room is not configured')
     return {
       roomCode: this.config.roomCode,
       mode: this.config.mode,
@@ -381,35 +302,40 @@ export class GameRoom extends DurableObject<Env> {
       mutator: this.config.mutator ?? 'none',
       aiDifficulty: this.config.aiDifficulty,
       aiSlots: this.config.aiSlots,
-      participants: [...this.participants.values()].sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99)).map((participant) => this.publicParticipant(participant)),
+      participants: [...this.participants.values()]
+        .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
+        .map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
     }
   }
 
-  private broadcastLobby(): void { if (this.config) this.broadcast({ type: 'lobby', lobby: this.lobby() }) }
+  private broadcastLobby(): void {
+    this.broadcast({ type: 'lobby', lobby: this.lobby() })
+  }
 
   private broadcastSnapshot(): void {
     if (!this.game) return
-    for (const socket of this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as SocketAttachment | null
-      const participant = attachment?.participantId ? this.participants.get(attachment.participantId) : undefined
+    for (const [socket, participantId] of this.sockets) {
+      const participant = participantId ? this.participants.get(participantId) : undefined
       this.send(socket, { type: 'snapshot', serverTick: this.game.tick, acknowledgedSeq: participant?.lastSeq ?? 0, state: this.game })
     }
   }
 
   private broadcast(message: ServerMessage): void {
-    for (const socket of this.ctx.getWebSockets()) this.send(socket, message)
+    for (const socket of this.sockets.keys()) this.send(socket, message)
   }
 
   private send(socket: WebSocket, message: ServerMessage): void {
-    try { socket.send(encodeServerMessage(message)) } catch { /* the close handler owns cleanup */ }
+    if (socket.readyState !== socket.OPEN) return
+    try { socket.send(encodeServerMessage(message)) } catch { /* close/error owns cleanup */ }
   }
 
-  private async persist(): Promise<void> {
-    await this.ctx.storage.put('room', {
+  private persist(): Promise<void> {
+    return this.onPersist({
       config: this.config,
       participants: [...this.participants.values()],
       game: this.game,
+      updatedAt: Date.now(),
     })
   }
 }

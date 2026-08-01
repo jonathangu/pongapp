@@ -1,4 +1,4 @@
-const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8787'
+const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)

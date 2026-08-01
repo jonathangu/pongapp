@@ -41,7 +41,9 @@ export function loadProfile(): GuestProfile {
       return {
         id: parsed.id,
         name: parsed.name,
-        favoriteAbility: parsed.favoriteAbility ?? 'dash',
+        // Guard is retained in the wire format for rolling-room compatibility,
+        // but it was passive and confusing. Existing selections migrate to Pulse.
+        favoriteAbility: parsed.favoriteAbility === 'guard' ? 'pulse' : parsed.favoriteAbility ?? 'dash',
         matches: parsed.matches ?? 0,
         wins: parsed.wins ?? 0,
         bestRally: parsed.bestRally ?? 0,
