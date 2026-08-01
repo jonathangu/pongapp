@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiInputs, buildMatchConfig, createAiMemory, createGame, stepGame, TICK_RATE } from '../src'
+import { aiInputs, BALL_START_SPEED, buildMatchConfig, createAiMemory, createGame, serveVelocityForPlayer, stepGame, TICK_RATE } from '../src'
 
 function duel() {
   return createGame(buildMatchConfig({
@@ -42,6 +42,40 @@ describe('simulation', () => {
     stepGame(state)
     expect(state.scores['team-1']).toBe(1)
     expect(state.events.some((event) => event.type === 'score')).toBe(true)
+  })
+
+  it('ends multiball with the point and gives the conceding paddle an aimed serve', () => {
+    const state = duel()
+    state.phase = 'playing'
+    state.serveTicks = 0
+    const primary = state.balls[0]!
+    primary.x = 0.5
+    primary.y = 0.5
+    primary.vx = 0.2
+    primary.vy = 0
+    state.balls.push({
+      ...primary,
+      id: 'ball-extra',
+      x: 0.05,
+      y: 1.1,
+      vx: 0,
+      vy: 0.5,
+      lastToucherId: 'ai-2',
+      transientTicks: 120,
+    })
+
+    stepGame(state)
+
+    expect(state.balls).toHaveLength(1)
+    expect(state.balls[0]).toMatchObject({ id: 'ball-1', x: 0.5, y: 0.5, vx: 0, vy: 0 })
+    expect(state.servingPlayerId).toBe('human')
+
+    const server = state.players.human!
+    server.position = 0.2
+    const velocity = serveVelocityForPlayer(server)
+    expect(Math.hypot(velocity.vx, velocity.vy)).toBeCloseTo(BALL_START_SPEED)
+    expect(velocity.vx).toBeLessThan(0)
+    expect(velocity.vy).toBeLessThan(0)
   })
 
   it('keeps long simulations finite and bounded', () => {

@@ -85,6 +85,20 @@ function stagedBall(state: GameState, id: string, transientTicks: number | null)
   }
 }
 
+/**
+ * The conceding player's paddle position is the serve control. Keeping this in
+ * game-core lets the renderer draw the exact launch direction the authoritative
+ * simulation will use instead of maintaining a lookalike formula.
+ */
+export function serveVelocityForPlayer(player: PlayerState): { vx: number; vy: number } {
+  const tangent = clamp((player.position - 0.5) * 0.72, -BALL_START_SPEED * 0.62, BALL_START_SPEED * 0.62)
+  const normal = Math.sqrt(Math.max(0, BALL_START_SPEED ** 2 - tangent ** 2))
+  if (player.side === 'left') return { vx: normal, vy: tangent }
+  if (player.side === 'right') return { vx: -normal, vy: tangent }
+  if (player.side === 'top') return { vx: tangent, vy: normal }
+  return { vx: tangent, vy: -normal }
+}
+
 /** Fill fields absent from rooms persisted by an older ruleset-v1 build. */
 export function normalizeGameState(state: GameState): GameState {
   state.config.mutator ??= 'none'
@@ -341,7 +355,12 @@ function scoreGoal(state: GameState, ball: BallState, defender: PlayerState): vo
   const points = basePoints * (mutatorFor(state) === 'doublePoints' ? 2 : 1)
   state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + points
   state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points, rallyHits })
-  Object.assign(ball, stagedBall(state, ball.id, ball.transientTicks))
+  // A goal ends the point, including Multiball. Previously only the scoring
+  // ball reset; the other ball waited through the serve pause and then resumed
+  // halfway across the court, turning the next point into an unexplained trap.
+  const primaryBall = state.balls[0] ?? ball
+  Object.assign(primaryBall, stagedBall(state, primaryBall.id, null))
+  for (const extra of state.balls.slice(1)) extra.transientTicks = 0
   state.serveTicks = SERVE_DELAY_TICKS
   state.servingPlayerId = defender.id
   state.rallyHits = 0
@@ -494,6 +513,9 @@ function updatePowerUp(state: GameState): void {
     state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
     return
   }
+  // The staged serve ball is not a shot and cannot collect an orb while parked
+  // at centre. The orb still ages, so the pause does not extend its lifetime.
+  if (state.serveTicks > 0) return
   for (const ball of state.balls) {
     if (Math.hypot(ball.x - state.powerUp.x, ball.y - state.powerUp.y) > ball.radius + 0.028) continue
     const player = (ball.lastToucherId ? state.players[ball.lastToucherId] : undefined)
@@ -557,14 +579,11 @@ export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
     if (state.serveTicks === 0 && state.servingPlayerId) {
       const server = state.players[state.servingPlayerId]
       if (server) {
-        const tangent = clamp((server.position - 0.5) * 0.72, -BALL_START_SPEED * 0.62, BALL_START_SPEED * 0.62)
-        const normal = Math.sqrt(Math.max(0, BALL_START_SPEED ** 2 - tangent ** 2))
+        const velocity = serveVelocityForPlayer(server)
         for (const ball of state.balls) {
           if (Math.hypot(ball.vx, ball.vy) > 1e-9) continue
-          if (server.side === 'left') { ball.vx = normal; ball.vy = tangent }
-          else if (server.side === 'right') { ball.vx = -normal; ball.vy = tangent }
-          else if (server.side === 'top') { ball.vx = tangent; ball.vy = normal }
-          else { ball.vx = tangent; ball.vy = -normal }
+          ball.vx = velocity.vx
+          ball.vy = velocity.vy
         }
       }
       state.servingPlayerId = null

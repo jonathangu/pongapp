@@ -7,6 +7,7 @@ import {
   type RoomParticipant,
   type ServerMessage,
 } from '@pongapp/protocol'
+import { ballPredictionEnabled, predictedHumanTarget, worldPredictionEnabled } from '../game/prediction'
 
 export type RoomClientStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
 
@@ -112,14 +113,17 @@ export class RoomClient {
     if (!source) throw new Error('No game snapshot is available.')
     const clone = structuredClone(source)
     const elapsed = Math.min(0.075, Math.max(0, (performance.now() - this.latestSnapshotAt) / 1000))
-    if (clone.phase === 'playing' && clone.serveTicks <= 0) {
+    if (ballPredictionEnabled(clone)) {
       for (const ball of clone.balls) {
         ball.x += ball.vx * elapsed
         ball.y += ball.vy * elapsed
       }
     }
     const local = this.view.participant?.id ? clone.players[this.view.participant.id] : undefined
-    if (local) local.position += (this.latestTarget - local.position) * Math.min(1, elapsed * 18)
+    if (local && worldPredictionEnabled(clone)) {
+      const target = predictedHumanTarget(clone, this.latestTarget)
+      local.position += (target - local.position) * Math.min(1, elapsed * 18)
+    }
     return clone
   }
 
