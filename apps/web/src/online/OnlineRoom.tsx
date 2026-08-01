@@ -21,6 +21,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
   const [view, setView] = useState(initialView)
   const [copied, setCopied] = useState(false)
   const clientRef = useRef<RoomClient | null>(null)
+  const renderFallbackRef = useRef<GameState | null>(null)
   const resultRecorded = useRef(false)
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
         const client = new RoomClient(serverUrl, code, identity)
         clientRef.current = client
         unsubscribe = client.subscribe((next) => {
+          if (next.gameState) renderFallbackRef.current = next.gameState
           setView(next)
           if (next.gameState?.phase === 'finished' && next.participant && !resultRecorded.current) {
             resultRecorded.current = true
@@ -59,7 +61,12 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
     onExit()
   }
 
-  const getState = useCallback(() => clientRef.current!.getRenderState(), [])
+  const getState = useCallback(() => {
+    const client = clientRef.current
+    if (client) return client.getRenderState()
+    if (renderFallbackRef.current) return renderFallbackRef.current
+    throw new Error('No online game state is available.')
+  }, [])
   const subscribeState = useCallback((listener: (state: GameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
   const participantId = view.participant?.id
 
