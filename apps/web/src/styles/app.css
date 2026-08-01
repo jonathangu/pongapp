@@ -478,7 +478,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
    floated over the play surface. */
 .pg-hud-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* Three tracks, not two. Adding the rally chip to a two-column grid put it in
+     the timer's cell and pushed the timer onto its own row. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--pg-space-3);
   width: min(100%, calc(100dvh - 232px), 820px);
@@ -568,7 +570,6 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
  * scoreboard moved off the court.
  */
 .pg-rally {
-  flex: none;
   display: flex;
   align-items: baseline;
   gap: 5px;
@@ -960,7 +961,11 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   .pg-launch { padding-inline: 10px; gap: 10px; }
   .pg-launch--join { grid-column: 1 / -1; }
   .pg-launch__text small { font-size: 10px; }
-  .pg-hud-bar { gap: 6px; }
+  .pg-hud-bar { gap: 5px; }
+  /* The label stays. A bare number between the score target and the clock is
+     three unlabelled figures in a row, which is worse than tight. */
+  .pg-rally { padding-inline: 7px; gap: 4px; }
+  .pg-rally__label { font-size: 9px; }
   .pg-scoreboard { gap: 0; font-size: var(--pg-text-xs); }
   .pg-score { padding-inline: 5px; }
   .pg-score__name { max-width: 7ch; }
