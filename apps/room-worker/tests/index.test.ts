@@ -10,6 +10,7 @@ describe('room worker helpers', () => {
 
   it('allows production and local clients only', () => {
     expect(allowedOrigin('https://www.jonathangu.com')).toBe('https://www.jonathangu.com')
+    expect(allowedOrigin('https://jonathangu.com')).toBe('https://jonathangu.com')
     expect(allowedOrigin('http://127.0.0.1:5173')).toBe('http://127.0.0.1:5173')
     expect(allowedOrigin('https://evil.example')).toBeNull()
   })
