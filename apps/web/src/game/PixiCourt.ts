@@ -38,12 +38,15 @@
  * shockwave and a directional spark cone, all of which stay honest about the
  * simulation continuing underneath.
  *
- * Effect density is a real budget, not a taste setting. `low` drops the bloom
- * pass entirely rather than merely thinning it — it is the only full-screen
- * filter here, and on a mid-range phone the blur *is* the frame.
+ * Effect density is a real budget, not a taste setting. `low` drops every
+ * full-screen filter. Standard and high keep one persistent bloom pass, while
+ * RGB split and shader shockwave attach only for a few frames around a perfect
+ * return, goal or power-up and then release their render textures.
  */
 
-import { Application, BlurFilter, Container, Graphics } from 'pixi.js'
+import { Application, BlurFilter, Container, Graphics, Rectangle } from 'pixi.js'
+import { RGBSplitFilter } from 'pixi-filters/rgb-split'
+import { ShockwaveFilter } from 'pixi-filters/shockwave'
 import type { AbilityId, GameEvent, GameMode, GameState, ItemIntensity, PlayerState, Side } from '@pongapp/game-core'
 import {
   ABILITY_COOLDOWNS,
@@ -82,6 +85,17 @@ interface WallFlash { side: Side; life: number; color: number }
 interface ImpactSlice { x: number; y: number; angle: number; life: number; color: number }
 interface AbilityBurst { x: number; y: number; side: Side; ability: AbilityId; life: number; color: number }
 interface GoalFlash { side: Side; life: number; color: number }
+interface PostEffect {
+  elapsed: number
+  duration: number
+  strength: number
+  centerX: number
+  centerY: number
+  amplitude: number
+  wavelength: number
+  speed: number
+  radius: number
+}
 
 interface ArenaTheme {
   key: string
@@ -141,6 +155,9 @@ export class PixiCourt {
   private readonly bloomLayer = new Container()
   private readonly bloomGraphics = new Graphics()
   private bloomFilter: BlurFilter | null = null
+  private rgbSplitFilter: RGBSplitFilter | null = null
+  private shaderShockwaveFilter: ShockwaveFilter | null = null
+  private postEffect: PostEffect | null = null
 
   private particles: Particle[] = []
   private trails = new Map<string, TrailPoint[]>()
@@ -178,6 +195,7 @@ export class PixiCourt {
     })
     element.appendChild(this.app.canvas)
     this.app.stage.addChild(this.stage)
+    this.stage.filterArea = new Rectangle(0, 0, this.app.screen.width, this.app.screen.height)
     this.bloomLayer.addChild(this.bloomGraphics)
     this.bloomLayer.blendMode = 'add'
     this.trail.blendMode = 'add'
@@ -201,7 +219,10 @@ export class PixiCourt {
     // court that changes size because the surrounding layout changed — not the
     // window — would keep rendering at the old size. Observe the element too.
     if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(() => this.app.resize())
+      this.resizeObserver = new ResizeObserver(() => {
+        this.app.resize()
+        this.stage.filterArea = new Rectangle(0, 0, this.app.screen.width, this.app.screen.height)
+      })
       this.resizeObserver.observe(element)
     }
   }
@@ -210,12 +231,13 @@ export class PixiCourt {
     const densityChanged = settings.effectDensity !== this.settings.effectDensity
     this.settings = settings
     if (densityChanged) this.applyDensity()
-    if (settings.reducedMotion) {
+    if (settings.reducedMotion || settings.effectDensity === 'low') {
       this.particles = []
       this.shockwaves = []
       this.impactSlices = []
       this.abilityBursts = []
       this.goalFlash = null
+      this.detachPostEffect()
       this.trauma = 0
       this.punch = 0
     }
@@ -259,6 +281,7 @@ export class PixiCourt {
     this.drawActors(state, ahead)
     this.drawOverlays(state, deltaSeconds)
     this.updateParticles(deltaSeconds)
+    this.updatePostEffect(deltaSeconds)
 
     this.app.render()
   }
@@ -276,6 +299,7 @@ export class PixiCourt {
         this.wave(ball.x, ball.y, player.color, event.perfect ? 0.16 : 0.085)
         if (event.perfect && !this.settings.reducedMotion) {
           this.impactSlices.push({ x: ball.x, y: ball.y, angle: Math.atan2(ball.vy, ball.vx), life: 1, color: player.color })
+          this.triggerPostEffect(ball.x, ball.y, 'perfect')
         }
         this.shake(event.perfect ? 0.34 : 0.1)
         this.zoom(event.perfect ? 0.012 : 0.004)
@@ -287,6 +311,8 @@ export class PixiCourt {
           this.wallFlashes.push({ side: defender.side, life: 1, color })
           this.goalSpray(defender.side, color)
           this.goalFlash = { side: defender.side, life: 1, color }
+          const anchor = this.goalAnchor(defender.side)
+          this.triggerPostEffect(anchor.x, anchor.y, 'goal')
         }
         this.shake(0.85)
         this.zoom(0.026)
@@ -303,6 +329,7 @@ export class PixiCourt {
         for (const ball of state.balls) {
           this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), identity.color, 22, 1.4)
           this.wave(ball.x, ball.y, identity.color, 0.22)
+          this.triggerPostEffect(ball.x, ball.y, 'power')
         }
         this.shake(0.3)
       } else if (event.type === 'warp') {
@@ -326,6 +353,7 @@ export class PixiCourt {
         this.goalFlash = { side: winner?.side ?? 'top', life: 1.25, color }
         for (const side of ['left', 'right', 'top', 'bottom'] as const) this.goalSpray(side, color)
         this.wave(0.5, 0.5, color, 0.65)
+        this.triggerPostEffect(0.5, 0.5, 'goal')
         this.shake(0.6)
       }
     }
@@ -334,6 +362,14 @@ export class PixiCourt {
   destroy(): void {
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+    this.detachPostEffect()
+    this.bloomLayer.filters = null
+    this.bloomFilter?.destroy()
+    this.rgbSplitFilter?.destroy()
+    this.shaderShockwaveFilter?.destroy()
+    this.bloomFilter = null
+    this.rgbSplitFilter = null
+    this.shaderShockwaveFilter = null
     this.app.destroy(true, { children: true, texture: true })
   }
 
@@ -350,6 +386,13 @@ export class PixiCourt {
     return { x: player.position, y: 1 - PADDLE_OFFSET }
   }
 
+  private goalAnchor(side: Side): { x: number; y: number } {
+    if (side === 'left') return { x: 0.04, y: 0.5 }
+    if (side === 'right') return { x: 0.96, y: 0.5 }
+    if (side === 'top') return { x: 0.5, y: 0.04 }
+    return { x: 0.5, y: 0.96 }
+  }
+
   private inwardAngle(side: Side): number {
     if (side === 'left') return 0
     if (side === 'right') return Math.PI
@@ -357,11 +400,89 @@ export class PixiCourt {
     return -Math.PI / 2
   }
 
+  /**
+   * Shader post-processing is a punctuation mark, never a baseline cost. The
+   * two community filters are attached only for a short event window and are
+   * removed with `filters = null`, following Pixi's memory/performance guidance.
+   */
+  private triggerPostEffect(x: number, y: number, kind: 'perfect' | 'goal' | 'power'): void {
+    if (this.settings.reducedMotion || this.settings.effectDensity === 'low' || this.width <= 0) return
+    const high = this.settings.effectDensity === 'high'
+    const config = kind === 'goal'
+      ? { duration: 0.44, strength: high ? 11 : 7, amplitude: high ? 11 : 7, wavelength: 118, speed: 920, radius: this.width * 0.86 }
+      : kind === 'power'
+        ? { duration: 0.3, strength: high ? 7 : 4, amplitude: high ? 8 : 5, wavelength: 92, speed: 780, radius: this.width * 0.56 }
+        : { duration: 0.23, strength: high ? 7 : 4.5, amplitude: high ? 7 : 4.5, wavelength: 72, speed: 860, radius: this.width * 0.42 }
+
+    this.rgbSplitFilter ??= new RGBSplitFilter({ red: { x: 0, y: 0 }, green: { x: 0, y: 0 }, blue: { x: 0, y: 0 } })
+    this.shaderShockwaveFilter ??= new ShockwaveFilter({
+      center: { x: x * this.width, y: y * this.width },
+      amplitude: config.amplitude,
+      wavelength: config.wavelength,
+      speed: config.speed,
+      brightness: 1.16,
+      radius: config.radius,
+      time: 0,
+    })
+    this.postEffect = {
+      elapsed: 0,
+      centerX: x * this.width,
+      centerY: y * this.width,
+      ...config,
+    }
+    this.shaderShockwaveFilter.center = { x: this.postEffect.centerX, y: this.postEffect.centerY }
+    this.shaderShockwaveFilter.time = 0
+    this.stage.filters = [this.shaderShockwaveFilter, this.rgbSplitFilter]
+  }
+
+  private updatePostEffect(deltaSeconds: number): void {
+    const effect = this.postEffect
+    const rgb = this.rgbSplitFilter
+    const shockwave = this.shaderShockwaveFilter
+    if (!effect || !rgb || !shockwave) return
+
+    effect.elapsed += deltaSeconds
+    const progress = Math.min(1, effect.elapsed / effect.duration)
+    if (progress >= 1) {
+      this.detachPostEffect()
+      return
+    }
+
+    const fade = (1 - progress) ** 2
+    const tremor = 0.82 + Math.sin(this.clock * 74) * 0.18
+    const split = effect.strength * fade * tremor
+    const angle = this.clock * 31
+    const x = Math.cos(angle) * split
+    const y = Math.sin(angle) * split * 0.42
+    rgb.red = { x: -x, y: -y }
+    rgb.green = { x: 0, y: 0 }
+    rgb.blue = { x, y }
+    shockwave.center = { x: effect.centerX, y: effect.centerY }
+    shockwave.time = effect.elapsed
+    shockwave.amplitude = effect.amplitude * (0.38 + fade * 0.62)
+    shockwave.wavelength = effect.wavelength
+    shockwave.speed = effect.speed
+    shockwave.radius = effect.radius
+    shockwave.brightness = 1 + fade * 0.22
+  }
+
+  private detachPostEffect(): void {
+    this.postEffect = null
+    this.stage.filters = null
+    if (this.rgbSplitFilter) {
+      this.rgbSplitFilter.red = { x: 0, y: 0 }
+      this.rgbSplitFilter.green = { x: 0, y: 0 }
+      this.rgbSplitFilter.blue = { x: 0, y: 0 }
+    }
+    if (this.shaderShockwaveFilter) this.shaderShockwaveFilter.time = 0
+  }
+
   private applyDensity(): void {
     const strength = this.density.bloom
+    this.bloomLayer.filters = null
+    this.bloomFilter?.destroy()
+    this.bloomFilter = null
     if (strength <= 0) {
-      this.bloomLayer.filters = []
-      this.bloomFilter = null
       this.bloomLayer.visible = false
       return
     }

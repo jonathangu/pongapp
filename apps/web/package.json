@@ -14,6 +14,7 @@
     "@fontsource-variable/manrope": "^5.3.0",
     "@pongapp/game-core": "workspace:*",
     "@pongapp/protocol": "workspace:*",
+    "pixi-filters": "6.1.5",
     "pixi.js": "^8.19.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

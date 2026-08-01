@@ -58,10 +58,13 @@ Static geometry — floor, lines, lane ticks, bezel, backdrop glow — is rebuil
 only when the canvas changes size. Anything drawn every frame has to justify
 itself as something that moved.
 
-The full-screen bloom pass is the only filter in the renderer, and it is the
+The bloom pass is the only **persistent** filter in the renderer, and it is the
 first thing to go: at `low` effect density it is not attached at all, rather
 than attached and weak. An attached filter still costs a render texture and a
-full-screen pass whatever its strength.
+full-screen pass whatever its strength. RGB split and shader shockwave are
+event punctuation: they attach to the bounded court for 230–440ms around a
+perfect return, goal, major power-up or victory, then `filters` returns to
+`null` so Pixi can release the temporary surfaces.
 
 ## 4. Frames belong to the display; ticks belong to the simulation
 
@@ -194,3 +197,23 @@ The August 2026 pass extends rally heat into a full game language:
 The former delivery gaps are closed: the social card is now a 1200×630 JPEG,
 Manrope and DM Sans are self-hosted as Latin variable fonts, and the PWA ships
 separate regular and safe-zone maskable PNG icons.
+
+## Toolchain decisions
+
+- **Shipped: `pixi-filters` 6.1.5.** It officially targets PixiJS 8. PongApp
+  imports only `rgb-split` and `shockwave`, bounds their filter area to the
+  court, disables them at low density/reduced motion, and never leaves them on
+  between events.
+- **Keep using built-in image generation for presentation assets.** The arena
+  key art and social card benefit from raster atmosphere; live gameplay symbols
+  stay deterministic vectors.
+- **Profile before `ParticleContainer`.** Pixi's v8 particle API is built for
+  extremely large lightweight batches. PongApp currently draws a small effect
+  budget into one `Graphics`, so a migration would add lifecycle complexity
+  before it buys measurable frame time.
+- **Defer Rive.** Its canvas-lite runtime is approximately 222KB compressed;
+  that is too much for decorative menu motion in a game whose application JS is
+  currently about 132KB gzip.
+- **Defer EmberGen and TexturePacker until there is a flipbook library.** They
+  are the right authoring/atlas pipeline for smoke, electricity and animated
+  skin assets, but one-off procedural impacts are sharper and cheaper today.
