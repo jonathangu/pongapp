@@ -63,6 +63,21 @@ describe('simulation', () => {
     expect(Math.abs(player.position - before)).toBeLessThanOrEqual(1.35 / TICK_RATE + 1e-8)
   })
 
+  it('reports the real start and finish of a dash', () => {
+    const state = duel()
+    const player = state.players.human!
+    player.position = 0.5
+    stepGame(state, { human: { target: 0.9, abilityPressed: true } })
+    const event = state.events.find((candidate) => candidate.type === 'ability')
+    expect(event).toMatchObject({
+      type: 'ability',
+      playerId: 'human',
+      ability: 'dash',
+      fromPosition: 0.5,
+      toPosition: 0.85,
+    })
+  })
+
   it('pairs opposite sides as teammates in crosscourt doubles', () => {
     const config = buildMatchConfig({ mode: 'crosscourt', humanPlayers: [], totalPlayers: 4 })
     expect(config.players.map(({ side, team }) => [side, team])).toEqual([

@@ -39,6 +39,8 @@ import {
   seatIdentityForColor,
 } from '@pongapp/game-core'
 import { GameAudio } from './audio'
+import { ABILITY_COPY } from './abilityCopy'
+import { screenDirectionToLogical, screenFractionToLogical } from './perspective'
 import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
 
 interface Props {
@@ -61,13 +63,6 @@ const MIN_POSITION = 0.08
 const MAX_POSITION = 0.92
 const clampPosition = (value: number) => Math.min(MAX_POSITION, Math.max(MIN_POSITION, value))
 
-const ABILITY_BLURB: Record<string, string> = {
-  dash: 'Jump a third of the court toward your aim',
-  bend: 'Curve your next return',
-  guard: 'Block one shot that gets past you',
-  pulse: 'Parry — time it as the ball arrives',
-}
-
 interface TeamSummary {
   team: string
   label: string
@@ -77,6 +72,13 @@ interface TeamSummary {
   pattern: string
   patternLabel: string
   isLocal: boolean
+}
+
+const ABILITY_MOMENT: Record<string, string> = {
+  dash: 'paddle jumped',
+  bend: 'curve shot armed',
+  guard: 'shield raised',
+  pulse: 'parry window open',
 }
 
 function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
@@ -102,8 +104,7 @@ function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
   })
 }
 
-/** Which way a pointer coordinate runs for a given wall. */
-function axisFraction(event: React.PointerEvent<HTMLDivElement>, side: Side): number {
+function courtPointer(event: React.PointerEvent<HTMLDivElement>): { x: number; y: number } {
   const rect = event.currentTarget.getBoundingClientRect()
   // The court is drawn square and centred inside the wrapper, so the pointer has
   // to be mapped through the same letterbox the renderer uses or the paddle
@@ -111,10 +112,15 @@ function axisFraction(event: React.PointerEvent<HTMLDivElement>, side: Side): nu
   const size = Math.min(rect.width, rect.height)
   const originX = rect.left + (rect.width - size) / 2
   const originY = rect.top + (rect.height - size) / 2
-  const value = side === 'left' || side === 'right'
-    ? (event.clientY - originY) / size
-    : (event.clientX - originX) / size
-  return Math.max(0, Math.min(1, value))
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - originX) / size)),
+    y: Math.max(0, Math.min(1, (event.clientY - originY) / size)),
+  }
+}
+
+/** Convert the displayed left/right coordinate back into this wall's world axis. */
+function axisFraction(event: React.PointerEvent<HTMLDivElement>, side: Side, viewSide: Side): number {
+  return screenFractionToLogical(courtPointer(event).x, side, viewSide)
 }
 
 function countdownValue(state: GameState): number | null {
@@ -126,6 +132,8 @@ export function GameCourt(props: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<PixiCourt | null>(null)
   const [state, setState] = useState(() => props.getState())
+  const stateRef = useRef(state)
+  stateRef.current = state
   const [servePrompt, setServePrompt] = useState(false)
   const [moment, setMoment] = useState<{ label: string; kind: 'perfect' | 'score' | 'skill' | 'power'; tick: number } | null>(null)
   const momentTimer = useRef(0)
@@ -143,7 +151,9 @@ export function GameCourt(props: Props) {
   // pointer input writes it directly. Keeping one authority stops the two input
   // methods from fighting when a player uses both.
   const desired = useRef<Record<string, number>>({})
-  const grab = useRef<{ id: string; offset: number } | null>(null)
+  // One grab per pointer lets two people drag the top and bottom paddles at the
+  // same time on a shared touch screen.
+  const grabs = useRef(new Map<number, { id: string; offset: number }>())
   const onTargetRef = useRef(props.onTarget)
   const onAbilityRef = useRef(props.onAbility)
   onTargetRef.current = props.onTarget
@@ -154,6 +164,21 @@ export function GameCourt(props: Props) {
     desired.current[id] = next
     onTargetRef.current(id, next)
   }, [])
+
+  const usePlayerAbility = useCallback((id: string) => {
+    const current = stateRef.current
+    const player = current.players[id]
+    if (player?.ability === 'dash' && player.cooldownTicks <= 0 && current.balls.length > 0) {
+      const along = (ball: GameState['balls'][number]) => player.side === 'left' || player.side === 'right' ? ball.y : ball.x
+      const ball = [...current.balls].sort((a, b) => Math.abs(along(a) - player.position) - Math.abs(along(b) - player.position))[0]!
+      const difference = along(ball) - player.position
+      const direction = Math.abs(difference) > 0.015 ? Math.sign(difference) : player.position < 0.5 ? 1 : -1
+      // The target moves with the dash. Without this, the ordinary movement
+      // controller immediately pulled the paddle back to where it started.
+      applyTarget(id, player.position + direction * 0.35)
+    }
+    onAbilityRef.current(id)
+  }, [applyTarget])
 
   useEffect(() => props.subscribe(setState), [props.subscribe])
 
@@ -172,7 +197,7 @@ export function GameCourt(props: Props) {
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
-    const renderer = new PixiCourt(props.settings)
+    const renderer = new PixiCourt(props.settings, localPlayerKey ? localPlayerKey.split('\u001f') : [], primaryPlayer?.side ?? 'bottom')
     rendererRef.current = renderer
     let frame = 0
     let previous = performance.now()
@@ -192,7 +217,7 @@ export function GameCourt(props: Props) {
       renderer.destroy()
       rendererRef.current = null
     }
-  }, [props.extrapolate, props.getState])
+  }, [localPlayerKey, primaryPlayer?.id, primaryPlayer?.side, props.extrapolate, props.getState])
 
   useEffect(() => {
     rendererRef.current?.updateSettings(props.settings)
@@ -205,7 +230,11 @@ export function GameCourt(props: Props) {
     const headline = [...state.events].reverse().map((event) => {
       if (event.type === 'hit' && event.perfect) return { label: 'Perfect return', kind: 'perfect' as const }
       if (event.type === 'score') return { label: 'Goal line broken', kind: 'score' as const }
-      if (event.type === 'ability') return { label: `${event.ability} activated`, kind: 'skill' as const }
+      if (event.type === 'ability') {
+        const player = state.players[event.playerId]
+        const owner = props.localPlayerIds.includes(event.playerId) ? 'You' : player?.name ?? 'Opponent'
+        return { label: `${owner}: ${ABILITY_MOMENT[event.ability]}`, kind: 'skill' as const }
+      }
       if (event.type === 'powerUp') return { label: POWER_UP_IDENTITIES[event.powerUp].label, kind: 'power' as const }
       return null
     }).find(Boolean)
@@ -214,7 +243,7 @@ export function GameCourt(props: Props) {
       window.clearTimeout(momentTimer.current)
       momentTimer.current = window.setTimeout(() => setMoment(null), 780)
     }
-  }, [audio, state.tick])
+  }, [audio, localPlayerKey, state.tick])
 
   // "GO" on the frame the countdown ends. A countdown that reaches 1 and then
   // silently vanishes leaves the player unsure whether the ball is live.
@@ -237,18 +266,21 @@ export function GameCourt(props: Props) {
     for (const id of ids) desired.current[id] ??= state.players[id]?.position ?? 0.5
 
     const held = new Set<string>()
-    const seatKeys: Array<Record<string, number>> = [
-      { KeyW: -1, KeyA: -1, KeyS: 1, KeyD: 1 },
-      { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 },
-    ]
+    const seatKeys: Array<Record<string, number>> = ids.length === 1
+      ? [{ KeyW: -1, KeyA: -1, KeyS: 1, KeyD: 1, ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }]
+      : [
+          { KeyW: -1, KeyA: -1, KeyS: 1, KeyD: 1 },
+          { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 },
+        ]
     const abilityKeys = ['Space', 'Enter']
+    const viewSide = state.players[ids[0]!]?.side ?? 'bottom'
 
     const keydown = (event: KeyboardEvent) => {
       void audio.unlock()
       const abilityIndex = abilityKeys.indexOf(event.code)
       if (abilityIndex >= 0 && ids[abilityIndex]) {
         event.preventDefault()
-        if (!event.repeat) onAbilityRef.current(ids[abilityIndex]!)
+        if (!event.repeat) usePlayerAbility(ids[abilityIndex]!)
         return
       }
       if (seatKeys.some((map, index) => ids[index] && event.code in map)) {
@@ -277,7 +309,9 @@ export function GameCourt(props: Props) {
         for (const code of held) direction += map[code] ?? 0
         if (direction !== 0) {
           const current = desired.current[id] ?? 0.5
-          applyTarget(id, current + Math.sign(direction) * PADDLE_SPEED * delta)
+          const side = state.players[id]?.side ?? viewSide
+          const logicalDirection = screenDirectionToLogical(Math.sign(direction), side, viewSide)
+          applyTarget(id, current + logicalDirection * PADDLE_SPEED * delta)
         }
       }
       frame = requestAnimationFrame(step)
@@ -290,47 +324,53 @@ export function GameCourt(props: Props) {
       window.removeEventListener('blur', release)
       cancelAnimationFrame(frame)
     }
-  }, [applyTarget, audio, localPlayerKey])
+  }, [applyTarget, audio, localPlayerKey, usePlayerAbility])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!primaryPlayer) return
     void audio.unlock()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const fraction = axisFraction(event, primaryPlayer.side)
-    const length = primaryPlayer.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
+    const pointer = courtPointer(event)
+    // In shared-screen duel, the top half belongs to Player Two and the bottom
+    // half belongs to Player One. Separate pointer IDs make this true for two
+    // simultaneous fingers, not just alternating taps.
+    const player = localPlayers.length > 1 && pointer.y < 0.5 ? localPlayers[1] : primaryPlayer
+    if (!player) return
+    const fraction = screenFractionToLogical(pointer.x, player.side, primaryPlayer.side)
+    const length = player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
     // Grabbing the paddle drags it; pressing elsewhere jumps to the press. The
     // grab tolerance is a little wider than the paddle so a near-miss with a
     // thumb still feels like a grab rather than a teleport.
-    if (Math.abs(fraction - primaryPlayer.position) <= length * 0.75) {
-      grab.current = { id: primaryPlayer.id, offset: primaryPlayer.position - fraction }
+    if (Math.abs(fraction - player.position) <= length * 0.75) {
+      grabs.current.set(event.pointerId, { id: player.id, offset: player.position - fraction })
     } else {
-      grab.current = { id: primaryPlayer.id, offset: 0 }
-      applyTarget(primaryPlayer.id, fraction)
+      grabs.current.set(event.pointerId, { id: player.id, offset: 0 })
+      applyTarget(player.id, fraction)
     }
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const held = grab.current
+    const held = grabs.current.get(event.pointerId)
     if (!held || !primaryPlayer) return
     if (event.pointerType === 'mouse' && event.buttons === 0) {
-      grab.current = null
+      grabs.current.delete(event.pointerId)
       return
     }
-    applyTarget(held.id, axisFraction(event, primaryPlayer.side) + held.offset)
+    const player = state.players[held.id]
+    if (!player) return
+    applyTarget(held.id, axisFraction(event, player.side, primaryPlayer.side) + held.offset)
   }
 
-  const endPointer = () => { grab.current = null }
+  const endPointer = (event: React.PointerEvent<HTMLDivElement>) => { grabs.current.delete(event.pointerId) }
 
   const countdown = countdownValue(state)
   const winner = state.winnerTeam ? teams.find((team) => team.team === state.winnerTeam) : undefined
-  const abilityReady = primaryPlayer ? primaryPlayer.cooldownTicks <= 0 : false
-  // Fills toward ready, against the ability's own cooldown from the shared
-  // constants table — a bar that is not anchored to the real cooldown is a lie
-  // the player learns to distrust.
-  const abilityProgress = primaryPlayer
-    ? Math.min(1, Math.max(0, 1 - primaryPlayer.cooldownTicks / ABILITY_COOLDOWNS[primaryPlayer.ability]))
-    : 1
-  const cooldownSeconds = primaryPlayer ? Math.ceil(primaryPlayer.cooldownTicks / TICK_RATE) : 0
+  const abilityStatus = (player: PlayerState) => ({
+    ready: player.cooldownTicks <= 0,
+    // Fills toward ready against the skill's real shared cooldown.
+    progress: Math.min(1, Math.max(0, 1 - player.cooldownTicks / ABILITY_COOLDOWNS[player.ability])),
+    seconds: Math.ceil(player.cooldownTicks / TICK_RATE),
+  })
 
   return (
     <section className="pg-game-layout" aria-label="Pong match">
@@ -394,6 +434,13 @@ export function GameCourt(props: Props) {
       >
         <div className="pg-hud">
           {moment && <div className={`pg-moment pg-moment--${moment.kind}`} key={moment.tick} aria-hidden="true">{moment.label}</div>}
+          {countdown !== null && primaryPlayer && (
+            <div className="pg-view-guide">
+              {localPlayers.length > 1
+                ? <><strong>↓ PLAYER ONE · BOTTOM</strong><span>PLAYER TWO · TOP ↑</span></>
+                : <><strong>↓ YOU · BOTTOM PADDLE</strong><span>The white outline and arrow mark your paddle.</span></>}
+            </div>
+          )}
           {countdown !== null && (
             <div className="pg-countdown" key={countdown} aria-hidden="true">{countdown}</div>
           )}
@@ -431,27 +478,40 @@ export function GameCourt(props: Props) {
 
       <div className="pg-controls">
         <div className="pg-control-hint">
-          <strong>Drag the court</strong> to move — grab your paddle to slide it, tap ahead to jump.
-          <span> Keyboard: {localPlayers.length > 1 ? 'W/S and ↑/↓, hold to travel' : 'hold W/S or ↑/↓'}. Perfect returns shave half a second off your cooldown.</span>
+          {localPlayers.length > 1
+            ? <><strong>Shared screen: Player One is bottom; Player Two is top.</strong><span>Drag your half left or right—even at the same time. Keyboard: Player One A/D + Space; Player Two ←/→ + Enter.</span></>
+            : <><strong>You are the outlined paddle at the bottom.</strong><span>Drag left/right, or tap where you want to move. Keyboard: A/D or ←/→. Perfect returns shorten your skill recharge.</span></>}
         </div>
-        {primaryPlayer && (
-          <button
-            className={`pg-ability-button${abilityReady ? ' is-ready' : ''}`}
-            style={{ ['--pg-ability-progress' as string]: `${Math.round(abilityProgress * 100)}%` }}
-            aria-label={`${primaryPlayer.ability}: ${ABILITY_BLURB[primaryPlayer.ability] ?? ''}. ${abilityReady ? 'Ready' : `${cooldownSeconds} seconds remaining`}`}
-            onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); props.onAbility(primaryPlayer.id) }}
-          >
-            <span className="pg-ability-button__name">{primaryPlayer.ability}</span>
-            <span className="pg-ability-button__state">
-              {abilityReady ? 'READY' : `${cooldownSeconds}s`}
-              {/* The key hint is CSS-hidden on coarse pointers rather than
-                  branched in JS: a keyboard can be attached to a touch device at
-                  any moment, and a media query re-evaluates while a state check
-                  taken at mount does not. */}
-              <small className="pg-key-hint"> · SPACE</small>
-            </span>
-          </button>
-        )}
+        <div className={`pg-ability-stack${localPlayers.length > 1 ? ' pg-ability-stack--two' : ''}`}>
+          {localPlayers.map((player, index) => {
+            const status = abilityStatus(player)
+            const copy = ABILITY_COPY[player.ability]
+            const position = index === 0 ? 'bottom' : 'top'
+            return (
+              <button
+                key={player.id}
+                className={`pg-ability-button${status.ready ? ' is-ready' : ''}`}
+                style={{ ['--pg-ability-progress' as string]: `${Math.round(status.progress * 100)}%` }}
+                aria-label={`${player.name}, ${position}: ${copy.action} ${status.ready ? 'Ready now' : `Ready in ${status.seconds} seconds`}`}
+                onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); usePlayerAbility(player.id) }}
+              >
+                <span className="pg-ability-button__eyebrow">{localPlayers.length > 1 ? `${player.name} · ${position}` : 'Your skill'}</span>
+                <span className="pg-ability-button__name">{status.ready ? `Use ${copy.label}` : `${copy.label} recharging`}</span>
+                <span className="pg-ability-button__description">{copy.action}</span>
+                <span className="pg-ability-button__effect">On court: {copy.effect}</span>
+                <span className="pg-ability-button__state">
+                  {status.ready ? 'Ready now' : `Ready in ${status.seconds}s`}
+                  <small className="pg-key-hint"> · {index === 0 ? 'SPACE' : 'ENTER'}</small>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="pg-court-legend">
+          {state.powerUp
+            ? <><strong>{POWER_UP_IDENTITIES[state.powerUp.id].label} power-up on the court</strong><span>Hit the round symbol with the ball. {POWER_UP_IDENTITIES[state.powerUp.id].effect}.</span></>
+            : <><strong>Round court symbols are power-ups</strong><span>Hit one with the ball to collect it; its name and effect will appear here.</span></>}
+        </div>
       </div>
     </section>
   )

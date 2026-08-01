@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { buildMatchConfig, type AbilityId, type AiDifficulty, type GameMode, type GameState, type ItemIntensity, type MatchConfig } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
+import { ABILITY_COPY } from './game/abilityCopy'
 import { LocalMatch } from './game/LocalMatch'
 import { OnlineRoom } from './online/OnlineRoom'
 import { loadProfile, loadSettings, recordResult, saveProfile, saveSettings, type AppSettings, type GuestProfile } from './store'
 
-type Screen = { type: 'home' } | { type: 'local'; config: MatchConfig; humanIds: string[] } | { type: 'online'; roomCode?: string; request?: CreateRoomRequest }
+type Screen = { type: 'home' } | { type: 'local'; config: MatchConfig; humanIds: string[] } | { type: 'online'; roomCode?: string; request?: CreateRoomRequest; quickStart?: boolean }
 
 const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || (import.meta.env.PROD
   ? 'https://pongapp-room.pongapp-room-worker.workers.dev'
@@ -16,6 +17,10 @@ function roomFromHash(): string | undefined {
   return match?.[1]?.toUpperCase()
 }
 
+function quickStartFromUrl(): boolean {
+  return new URLSearchParams(window.location.search).get('quick') === '1'
+}
+
 function Logo() {
   return <span className="pg-brand"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#dfff68"/><rect x="6" y="8" width="3" height="16" rx="1.5" fill="#12231b"/><rect x="23" y="8" width="3" height="16" rx="1.5" fill="#12231b"/><circle cx="16" cy="16" r="3" fill="#12231b"/></svg><span>PONG<span className="pg-brand__bang">!</span></span></span>
 }
@@ -23,7 +28,7 @@ function Logo() {
 export default function App() {
   const [profile, setProfile] = useState<GuestProfile>(() => loadProfile())
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
-  const [screen, setScreen] = useState<Screen>(() => roomFromHash() ? { type: 'online', roomCode: roomFromHash() } : { type: 'home' })
+  const [screen, setScreen] = useState<Screen>(() => roomFromHash() ? { type: 'online', roomCode: roomFromHash(), quickStart: quickStartFromUrl() } : { type: 'home' })
   const [mode, setMode] = useState<GameMode>('duel')
   const [ability, setAbility] = useState<AbilityId>(profile.favoriteAbility)
   const [difficulty, setDifficulty] = useState<AiDifficulty>('rally')
@@ -73,6 +78,21 @@ export default function App() {
     setScreen({ type: 'local', config, humanIds: [profile.id, secondId] })
   }
 
+  const startPhoneDuel = () => {
+    setScreen({
+      type: 'online',
+      quickStart: true,
+      request: {
+        mode: 'duel',
+        itemIntensity: items,
+        aiDifficulty: difficulty,
+        aiSlots: 0,
+        hostName: profile.name,
+        hostAbility: ability,
+      },
+    })
+  }
+
   const hostOnline = () => {
     const request: CreateRoomRequest = {
       mode,
@@ -93,7 +113,7 @@ export default function App() {
     return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><LocalMatch config={screen.config} humanPlayerIds={screen.humanIds} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={(state) => record(state)} /></Shell>
   }
   if (screen.type === 'online') {
-    return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} identity={{ guestId: profile.id, displayName: profile.name, ability }} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={record} /></Shell>
+    return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} quickStart={screen.quickStart} identity={{ guestId: profile.id, displayName: profile.name, ability }} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={record} /></Shell>
   }
 
   return (
@@ -107,13 +127,14 @@ export default function App() {
             <span>1–4 players</span><span>AI rivals</span><span>4 skills</span><span>Reactive arena</span>
           </div>
           <div className="pg-action-grid">
-            <button className="pg-action pg-action--primary" onClick={startAi}><strong>Play AI</strong><span>Instant match · honest opponents</span></button>
-            <button className="pg-action" onClick={hostOnline}><strong>Host online</strong><span>Private room · up to four</span></button>
-            <button className="pg-action" onClick={startLocal}><strong>Two-player local</strong><span>Keyboard or gamepads</span></button>
+            <button className="pg-action pg-action--primary" onClick={startAi}><strong>Play AI</strong><span>Start immediately</span></button>
+            <button className="pg-action pg-action--quick" onClick={startPhoneDuel}><strong>Quick phone 1v1</strong><span>Share one link</span></button>
+            <button className="pg-action" onClick={startLocal}><strong>Same-screen 2P</strong><span>Bottom vs top</span></button>
+            <button className="pg-action" onClick={hostOnline}><strong>Party room</strong><span>Host up to four</span></button>
             <button className="pg-action" onClick={() => {
               const code = joinCode.trim().toUpperCase()
               if (/^[A-Z0-9]{6}$/.test(code)) setScreen({ type: 'online', roomCode: code })
-            }}><strong>Join {joinCode ? joinCode.toUpperCase() : 'a room'}</strong><span>Enter a six-character code below</span></button>
+            }}><strong>Join {joinCode ? joinCode.toUpperCase() : 'a room'}</strong><span>Use the code below</span></button>
           </div>
         </div>
         <div className="pg-hero__visual">
@@ -130,11 +151,17 @@ export default function App() {
           <div className="pg-fields">
             <div className="pg-field"><label htmlFor="player-name">Player name</label><input id="player-name" maxLength={16} value={profile.name} onChange={(event) => updateProfile({ name: event.target.value.slice(0, 16) })} /></div>
             <div className="pg-field"><label htmlFor="mode">Mode</label><select id="mode" value={mode} onChange={(event) => { const next = event.target.value as GameMode; setMode(next); setAiSlots(next === 'duel' ? 1 : 0) }}><option value="duel">Classic Duel</option><option value="arena">Four-Side Arena</option><option value="crosscourt">Crosscourt 2v2</option></select></div>
-            <div className="pg-field"><label htmlFor="ability">Signature skill</label><select id="ability" value={ability} onChange={(event) => { const next = event.target.value as AbilityId; setAbility(next); updateProfile({ favoriteAbility: next }) }}><option value="dash">Dash · reposition</option><option value="bend">Bend · curve next hit</option><option value="guard">Guard · one-hit shield</option><option value="pulse">Pulse · timed parry</option></select></div>
+            <div className="pg-field"><label htmlFor="ability">Signature skill</label><select id="ability" value={ability} onChange={(event) => { const next = event.target.value as AbilityId; setAbility(next); updateProfile({ favoriteAbility: next }) }}>{(Object.keys(ABILITY_COPY) as AbilityId[]).map((id) => <option value={id} key={id}>{ABILITY_COPY[id].menu}</option>)}</select></div>
             <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie</option><option value="rally">Rally</option><option value="pro">Pro</option><option value="ace">Ace</option></select></div>
             <div className="pg-field"><label htmlFor="items">Power-ups</label><select id="items" value={items} onChange={(event) => setItems(event.target.value as ItemIntensity)}><option value="off">Off · pure</option><option value="standard">Standard · skillful chaos</option><option value="wild">Wild · party mode</option></select></div>
             <div className="pg-field"><label htmlFor="ai-slots">Online AI fill</label><select id="ai-slots" value={aiSlots} onChange={(event) => setAiSlots(Number(event.target.value))}><option value="0">None</option><option value="1">1 AI</option>{mode !== 'duel' && <option value="2">2 AI</option>}{mode !== 'duel' && <option value="3">3 AI</option>}</select></div>
             <div className="pg-field" style={{ gridColumn: '1 / -1' }}><label htmlFor="room-code">Room code</label><input id="room-code" inputMode="text" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').slice(0, 6))} /></div>
+          </div>
+          <div className="pg-skill-explainer">
+            <span>Your selected skill</span>
+            <strong>{ABILITY_COPY[ability].label}</strong>
+            <p>{ABILITY_COPY[ability].action}</p>
+            <small>Visual cue: {ABILITY_COPY[ability].effect}</small>
           </div>
           <div className="pg-status">Power-ups are contested by hitting their orb with the ball. Gameplay upgrades never come from progression.</div>
         </div>

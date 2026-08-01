@@ -61,6 +61,7 @@ import {
   seatIdentityForColor,
   type SeatIdentity,
 } from '@pongapp/game-core'
+import { courtRotationForSide } from './perspective'
 
 export interface CourtEffectsSettings {
   reducedMotion: boolean
@@ -83,7 +84,16 @@ interface TrailPoint { x: number; y: number; life: number }
 interface Shockwave { x: number; y: number; life: number; color: number; reach: number }
 interface WallFlash { side: Side; life: number; color: number }
 interface ImpactSlice { x: number; y: number; angle: number; life: number; color: number }
-interface AbilityBurst { x: number; y: number; side: Side; ability: AbilityId; life: number; color: number }
+interface AbilityBurst {
+  x: number
+  y: number
+  side: Side
+  ability: AbilityId
+  life: number
+  color: number
+  fromPosition: number
+  toPosition: number
+}
 interface GoalFlash { side: Side; life: number; color: number }
 interface PostEffect {
   elapsed: number
@@ -177,10 +187,14 @@ export class PixiCourt {
   private layoutWidth = -1
   private resizeObserver: ResizeObserver | null = null
   private settings: CourtEffectsSettings
+  private readonly focusPlayerIds: Set<string>
+  private readonly viewSide: Side
   private theme = arenaTheme('duel', 'standard')
 
-  constructor(settings: CourtEffectsSettings) {
+  constructor(settings: CourtEffectsSettings, focusPlayerIds: string[] = [], viewSide: Side = 'bottom') {
     this.settings = settings
+    this.focusPlayerIds = new Set(focusPlayerIds)
+    this.viewSide = viewSide
   }
 
   async mount(element: HTMLElement): Promise<void> {
@@ -320,9 +334,24 @@ export class PixiCourt {
         const player = state.players[event.playerId]
         if (player && !this.settings.reducedMotion) {
           const anchor = this.playerAnchor(player)
-          this.abilityBursts.push({ ...anchor, side: player.side, ability: event.ability, life: 1, color: player.color })
-          this.wave(anchor.x, anchor.y, player.color, event.ability === 'pulse' ? 0.24 : 0.14)
-          if (event.ability === 'dash') this.cone(anchor.x, anchor.y, this.inwardAngle(player.side), player.color, 16, 0.55)
+          this.abilityBursts.push({
+            ...anchor,
+            side: player.side,
+            ability: event.ability,
+            life: 1,
+            color: player.color,
+            // Older room snapshots did not carry endpoints. Falling back to
+            // the authoritative current position keeps a rolling web/worker
+            // deploy safe; it simply omits the trail for that one event.
+            fromPosition: event.fromPosition ?? player.position,
+            toPosition: event.toPosition ?? player.position,
+          })
+          // Dash is movement along a wall. A radial wave and sparks fired into
+          // the court made it look like a weapon; its dedicated afterimages
+          // below now show only the actual start, direction and landing point.
+          if (event.ability !== 'dash') {
+            this.wave(anchor.x, anchor.y, player.color, event.ability === 'pulse' ? 0.24 : 0.14)
+          }
         }
       } else if (event.type === 'powerUp') {
         const identity = POWER_UP_IDENTITIES[event.powerUp]
@@ -380,10 +409,14 @@ export class PixiCourt {
   private point(value: number): number { return value * this.width }
 
   private playerAnchor(player: PlayerState): { x: number; y: number } {
-    if (player.side === 'left') return { x: PADDLE_OFFSET, y: player.position }
-    if (player.side === 'right') return { x: 1 - PADDLE_OFFSET, y: player.position }
-    if (player.side === 'top') return { x: player.position, y: PADDLE_OFFSET }
-    return { x: player.position, y: 1 - PADDLE_OFFSET }
+    return this.anchorAt(player.side, player.position)
+  }
+
+  private anchorAt(side: Side, position: number): { x: number; y: number } {
+    if (side === 'left') return { x: PADDLE_OFFSET, y: position }
+    if (side === 'right') return { x: 1 - PADDLE_OFFSET, y: position }
+    if (side === 'top') return { x: position, y: PADDLE_OFFSET }
+    return { x: position, y: 1 - PADDLE_OFFSET }
   }
 
   private goalAnchor(side: Side): { x: number; y: number } {
@@ -391,13 +424,6 @@ export class PixiCourt {
     if (side === 'right') return { x: 0.96, y: 0.5 }
     if (side === 'top') return { x: 0.5, y: 0.04 }
     return { x: 0.5, y: 0.96 }
-  }
-
-  private inwardAngle(side: Side): number {
-    if (side === 'left') return 0
-    if (side === 'right') return Math.PI
-    if (side === 'top') return Math.PI / 2
-    return -Math.PI / 2
   }
 
   /**
@@ -528,9 +554,11 @@ export class PixiCourt {
     const shakeY = (Math.sin(t * 1.37 + 2.1) + Math.sin(t * 3.11 + 0.4) * 0.5) * amplitude * 0.7
 
     // Pivot at the court centre so the punch scales about the middle of play
-    // rather than the top-left of the canvas.
+    // rather than the top-left of the canvas. The world is also rotated around
+    // this same pivot so every client sees their own paddle on the bottom wall.
     this.stage.pivot.set(half, half)
     this.stage.scale.set(1 + this.punch)
+    this.stage.rotation = courtRotationForSide(this.viewSide)
     this.stage.position.set(
       (this.app.screen.width - w) / 2 + half + shakeX,
       (this.app.screen.height - w) / 2 + half + shakeY,
@@ -747,6 +775,7 @@ export class PixiCourt {
 
     this.drawSeatMark(seat, x, y, width, height, horizontal, length, thickness)
     this.drawCooldown(player, x, y, width, height, horizontal, length, thickness)
+    if (this.focusPlayerIds.has(player.id)) this.drawFocusMarker(player.side, x, y, width, height, thickness)
 
     if (this.bloomFilter) {
       const ready = player.cooldownTicks <= 0 ? 0.3 : 0
@@ -767,6 +796,31 @@ export class PixiCourt {
       this.overlays.roundRect(x - thickness * 0.35, y - thickness * 0.35, width + thickness * 0.7, height + thickness * 0.7, thickness)
         .stroke({ color: player.color, alpha: 0.12 + pulse * 0.2, width: Math.max(1, w * 0.0025) })
     }
+  }
+
+  /** A persistent outline and outward arrow identify the paddle owned by this client. */
+  private drawFocusMarker(side: Side, x: number, y: number, width: number, height: number, thickness: number): void {
+    const pad = Math.max(2, thickness * 0.42)
+    this.overlays.roundRect(x - pad, y - pad, width + pad * 2, height + pad * 2, thickness)
+      .stroke({ color: COURT_PALETTE.paper.color, alpha: 0.82, width: Math.max(2, thickness * 0.2) })
+
+    const centreX = x + width / 2
+    const centreY = y + height / 2
+    const outwardX = side === 'left' ? -1 : side === 'right' ? 1 : 0
+    const outwardY = side === 'top' ? -1 : side === 'bottom' ? 1 : 0
+    const perpendicularX = -outwardY
+    const perpendicularY = outwardX
+    const tipDistance = thickness * 2.5
+    const baseDistance = thickness * 1.55
+    const wing = thickness * 0.55
+    this.overlays.poly([
+      centreX + outwardX * tipDistance,
+      centreY + outwardY * tipDistance,
+      centreX + outwardX * baseDistance + perpendicularX * wing,
+      centreY + outwardY * baseDistance + perpendicularY * wing,
+      centreX + outwardX * baseDistance - perpendicularX * wing,
+      centreY + outwardY * baseDistance - perpendicularY * wing,
+    ]).fill({ color: COURT_PALETTE.paper.color, alpha: 0.9 })
   }
 
   /**
@@ -1003,7 +1057,9 @@ export class PixiCourt {
       const cx = this.point(burst.x)
       const cy = this.point(burst.y)
       const radius = w * (0.03 + progress * 0.12)
-      if (burst.ability === 'pulse') {
+      if (burst.ability === 'dash') {
+        this.drawDashBurst(burst)
+      } else if (burst.ability === 'pulse') {
         for (let ring = 0; ring < 3; ring += 1) {
           this.overlays.circle(cx, cy, radius * (0.62 + ring * 0.28))
             .stroke({ color: burst.color, alpha: burst.life * (0.72 - ring * 0.16), width: Math.max(1, w * 0.006) })
@@ -1022,19 +1078,6 @@ export class PixiCourt {
           this.overlays.arc(cx, cy, radius * (0.72 + arc * 0.12), start, start + 1.5)
             .stroke({ color: burst.color, alpha: burst.life * 0.75, width: Math.max(2, w * 0.006), cap: 'round' })
         }
-      } else {
-        const angle = this.inwardAngle(burst.side)
-        for (let step = 0; step < 3; step += 1) {
-          const distance = radius * (0.35 + step * 0.38)
-          const x = cx + Math.cos(angle) * distance
-          const y = cy + Math.sin(angle) * distance
-          const wing = w * 0.024
-          const back = angle + Math.PI
-          this.overlays.moveTo(x + Math.cos(back + 0.62) * wing, y + Math.sin(back + 0.62) * wing)
-            .lineTo(x, y)
-            .lineTo(x + Math.cos(back - 0.62) * wing, y + Math.sin(back - 0.62) * wing)
-            .stroke({ color: burst.color, alpha: burst.life * (0.9 - step * 0.18), width: Math.max(2, w * 0.006), cap: 'round', join: 'round' })
-        }
       }
     }
     this.abilityBursts = this.abilityBursts.filter((burst) => burst.life > 0)
@@ -1046,6 +1089,58 @@ export class PixiCourt {
       this.overlays.circle(w / 2, w / 2, this.point(0.03 + pulse * 0.09))
         .stroke({ color: COURT_PALETTE.paper.color, alpha: (1 - pulse) * 0.5, width: Math.max(1, w * 0.004) })
     }
+  }
+
+  /**
+   * Dash is represented as movement, not an explosion: three fading copies of
+   * the paddle connect its real start and finish, and one arrow states the
+   * direction. There are intentionally no radial rings or inward-facing rays.
+   */
+  private drawDashBurst(burst: AbilityBurst): void {
+    const w = this.width
+    const from = this.anchorAt(burst.side, burst.fromPosition)
+    const to = this.anchorAt(burst.side, burst.toPosition)
+    const fromX = this.point(from.x)
+    const fromY = this.point(from.y)
+    const toX = this.point(to.x)
+    const toY = this.point(to.y)
+    const dx = toX - fromX
+    const dy = toY - fromY
+    const distance = Math.hypot(dx, dy)
+    if (distance < 1) return
+
+    const horizontal = burst.side === 'top' || burst.side === 'bottom'
+    const length = this.point(BASE_PADDLE_LENGTH * 0.72)
+    const thickness = Math.max(7, w * 0.015)
+    for (let index = 0; index < 3; index += 1) {
+      const progress = (index + 1) / 4
+      const centreX = fromX + dx * progress
+      const centreY = fromY + dy * progress
+      this.overlays.roundRect(
+        centreX - (horizontal ? length : thickness) / 2,
+        centreY - (horizontal ? thickness : length) / 2,
+        horizontal ? length : thickness,
+        horizontal ? thickness : length,
+        thickness / 2,
+      ).fill({ color: burst.color, alpha: burst.life * (0.12 + index * 0.1) })
+    }
+
+    const directionX = dx / distance
+    const directionY = dy / distance
+    const perpendicularX = -directionY
+    const perpendicularY = directionX
+    const arrowX = fromX + dx * 0.72
+    const arrowY = fromY + dy * 0.72
+    const arrowLength = Math.min(w * 0.055, distance * 0.22)
+    const wing = Math.min(w * 0.022, distance * 0.1)
+    this.overlays.poly([
+      arrowX + directionX * arrowLength,
+      arrowY + directionY * arrowLength,
+      arrowX - directionX * arrowLength + perpendicularX * wing,
+      arrowY - directionY * arrowLength + perpendicularY * wing,
+      arrowX - directionX * arrowLength - perpendicularX * wing,
+      arrowY - directionY * arrowLength - perpendicularY * wing,
+    ]).fill({ color: COURT_PALETTE.paper.color, alpha: burst.life * 0.9 })
   }
 
   private drawTrails(state: GameState, deltaSeconds: number, ahead: number): void {

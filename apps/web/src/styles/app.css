@@ -131,13 +131,13 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   text-transform: uppercase;
 }
 
-.pg-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pg-space-3); }
+.pg-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pg-space-2); }
 .pg-action {
-  min-height: 94px;
-  padding: var(--pg-space-4);
+  min-height: 62px;
+  padding: 10px var(--pg-space-3);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: flex-start;
   gap: var(--pg-space-2);
   border: 1px solid var(--pg-line-strong);
@@ -154,11 +154,12 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-action:active { transform: translateY(0) scale(.985); }
 .pg-action--primary { color: var(--pg-ink-800); background: var(--pg-accent); border-color: transparent; }
 .pg-action--primary:hover { box-shadow: var(--pg-shadow-md), var(--pg-glow-accent); }
-.pg-action strong { font-family: var(--pg-font-display); font-size: var(--pg-text-lg); }
+.pg-action strong { font-family: var(--pg-font-display); font-size: var(--pg-text-md); line-height: 1.1; }
 /* `opacity` on the label would drop the primary card's ink below AA on lime.
    A dedicated muted colour per surface keeps both variants measurable. */
-.pg-action span { color: var(--pg-text-muted); font-size: var(--pg-text-sm); line-height: 1.35; }
+.pg-action span { color: var(--pg-text-muted); font-size: var(--pg-text-xs); line-height: 1.25; }
 .pg-action--primary span { color: rgb(18 35 27 / 78%); }
+.pg-action--quick { border-color: rgb(103 212 255 / 55%); background: rgb(103 212 255 / 8%); }
 
 .pg-config {
   padding: var(--pg-space-5);
@@ -185,6 +186,19 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   transition: border-color var(--pg-transition);
 }
 .pg-field input:hover, .pg-field select:hover { border-color: var(--pg-green-500); }
+.pg-skill-explainer {
+  padding: var(--pg-space-3);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px var(--pg-space-3);
+  border: 1px solid rgb(103 212 255 / 28%);
+  border-radius: var(--pg-radius-md);
+  background: rgb(103 212 255 / 6%);
+}
+.pg-skill-explainer > span { color: var(--pg-cyan); font: 800 var(--pg-text-xs) var(--pg-font-display); letter-spacing: .08em; text-transform: uppercase; }
+.pg-skill-explainer > strong { color: var(--pg-paper); font-family: var(--pg-font-display); }
+.pg-skill-explainer p, .pg-skill-explainer small { grid-column: 1 / -1; color: var(--pg-text-muted); }
+.pg-skill-explainer small { font-size: var(--pg-text-xs); }
 
 /* ---------------------------------------------------------- court preview */
 
@@ -421,6 +435,27 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   100% { opacity: 0; transform: translate(-50%, -10px) scale(1.05); }
 }
 
+.pg-view-guide {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 11%;
+  width: max-content;
+  max-width: 82%;
+  padding: 7px 12px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgb(255 253 247 / 45%);
+  border-radius: var(--pg-radius-pill);
+  background: rgb(11 22 17 / 78%);
+  color: var(--pg-paper);
+  text-align: center;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+.pg-view-guide strong { font: 800 var(--pg-text-xs) var(--pg-font-display); letter-spacing: .08em; }
+.pg-view-guide span { color: var(--pg-text-muted); font-size: clamp(.58rem, 1.8vw, .75rem); }
+
 /**
  * The colour-independent seat marks, mirroring `SeatIdentity.pattern`. These are
  * the DOM half of the same idea the renderer cuts into the paddle: if the
@@ -523,7 +558,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 
 /* ---------------------------------------------------------------- controls */
 
-.pg-controls { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--pg-space-3); width: min(100%, 820px); max-width: 100%; margin: 0 auto; }
+.pg-controls { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, auto); gap: var(--pg-space-3); width: min(100%, 820px); max-width: 100%; margin: 0 auto; }
 
 .pg-control-hint {
   min-height: var(--pg-touch-target-lg);
@@ -541,6 +576,22 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-control-hint strong { color: var(--pg-text); }
 .pg-control-hint span { font-size: var(--pg-text-xs); }
 
+.pg-ability-stack { display: grid; gap: var(--pg-space-2); }
+.pg-ability-stack--two { grid-template-columns: 1fr 1fr; grid-column: 1 / -1; }
+.pg-court-legend {
+  grid-column: 1 / -1;
+  padding: 8px var(--pg-space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--pg-space-2);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-radius-md);
+  background: rgb(255 255 255 / 3%);
+  font-size: var(--pg-text-xs);
+}
+.pg-court-legend strong { color: var(--pg-violet); }
+.pg-court-legend span { color: var(--pg-text-muted); }
+
 /**
  * The ability button doubles as the cooldown gauge. `--pg-ability-progress` is
  * written by React as a percentage and drives a fill that grows toward ready,
@@ -550,9 +601,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-ability-button {
   position: relative;
   overflow: hidden;
-  min-width: 128px;
-  min-height: var(--pg-touch-target-lg);
-  padding: 0 var(--pg-space-5);
+  min-width: 0;
+  min-height: 92px;
+  padding: 10px var(--pg-space-4);
   display: grid;
   align-content: center;
   gap: 2px;
@@ -573,7 +624,10 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   transition: width var(--pg-duration-fast) linear;
 }
 .pg-ability-button > * { position: relative; }
+.pg-ability-button__eyebrow { color: var(--pg-cyan); font: 800 .64rem var(--pg-font-display); letter-spacing: .09em; text-transform: uppercase; }
 .pg-ability-button__name { font-family: var(--pg-font-display); font-size: var(--pg-text-md); text-transform: uppercase; letter-spacing: .04em; }
+.pg-ability-button__description { max-width: 34ch; color: var(--pg-text-muted); font-size: .7rem; font-weight: 600; line-height: 1.25; }
+.pg-ability-button__effect { max-width: 36ch; color: var(--pg-cyan); font-size: .64rem; line-height: 1.25; }
 .pg-ability-button__state { color: var(--pg-text-muted); font-size: var(--pg-text-xs); font-variant-numeric: tabular-nums; }
 .pg-key-hint { font-size: inherit; }
 @media (pointer: coarse) { .pg-key-hint { display: none; } }
@@ -584,6 +638,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   box-shadow: var(--pg-glow-accent);
 }
 .pg-ability-button.is-ready .pg-ability-button__state { color: rgb(18 35 27 / 72%); }
+.pg-ability-button.is-ready .pg-ability-button__eyebrow,
+.pg-ability-button.is-ready .pg-ability-button__description,
+.pg-ability-button.is-ready .pg-ability-button__effect { color: rgb(18 35 27 / 72%); }
 .pg-ability-button.is-ready::before { display: none; }
 .pg-ability-button:active { transform: scale(.97); }
 
@@ -630,6 +687,18 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-player__identity { display: flex; align-items: center; gap: 10px; }
 .pg-player__dot { width: 14px; height: 10px; border-radius: 5px; background: currentColor; color: var(--pg-accent); }
 .pg-player small { color: var(--pg-text-muted); }
+.pg-quick-invite {
+  padding: var(--pg-space-4);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--pg-space-3);
+  border: 1px solid rgb(103 212 255 / 38%);
+  border-radius: var(--pg-radius-lg);
+  background: rgb(103 212 255 / 7%);
+}
+.pg-quick-invite div { display: grid; gap: 3px; }
+.pg-quick-invite span { color: var(--pg-text-muted); font-size: var(--pg-text-sm); }
 .pg-status { padding: var(--pg-space-3); border-radius: var(--pg-radius-md); color: var(--pg-text-muted); background: var(--pg-surface-raised); font-size: var(--pg-text-md); }
 .pg-status--error { color: var(--pg-orange-500); background: #46261a; }
 
@@ -707,7 +776,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 
 @media (max-width: 480px) {
   .pg-main { padding-inline: var(--pg-space-3); }
-  .pg-action-grid { grid-template-columns: 1fr; }
+  .pg-action-grid { grid-template-columns: 1fr 1fr; }
+  .pg-action { min-height: 58px; padding: 9px 10px; }
+  .pg-action strong { font-size: var(--pg-text-sm); }
   .pg-fields { grid-template-columns: 1fr; }
   .pg-header__account-label { display: none; }
   .pg-arena-poster { position: relative; top: auto; aspect-ratio: 4 / 3; }
@@ -716,7 +787,10 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   /* On a phone the drag hand is on the court, so the ability control has to be
      reachable by the other thumb without hunting: full width, first in reading
      order after the court, and larger than the default target. */
-  .pg-ability-button { min-height: var(--pg-touch-target-lg); text-align: center; justify-items: center; }
+  .pg-ability-button { min-height: 96px; text-align: center; justify-items: center; }
+  .pg-ability-stack--two { grid-template-columns: 1fr 1fr; }
+  .pg-ability-button__description { font-size: .66rem; }
+  .pg-quick-invite { grid-template-columns: 1fr; }
   .pg-hud-bar { gap: 6px; }
   .pg-scoreboard { gap: 0; font-size: var(--pg-text-xs); }
   .pg-score { padding-inline: 5px; }

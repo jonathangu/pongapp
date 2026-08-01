@@ -10,6 +10,7 @@ interface Props {
   serverUrl: string
   roomCode?: string
   createRequest?: CreateRoomRequest
+  quickStart?: boolean
   identity: { guestId: string; displayName: string; ability: AbilityId }
   effects: CourtEffectsSettings
   muted: boolean
@@ -19,12 +20,13 @@ interface Props {
 
 const initialView: RoomClientView = { status: 'idle', roomCode: '', lobby: null, gameState: null, participant: null, error: null, latencyMs: null }
 
-export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effects, muted, onExit, onResult }: Props) {
+export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = false, identity, effects, muted, onExit, onResult }: Props) {
   const [view, setView] = useState(initialView)
   const [copied, setCopied] = useState(false)
   const clientRef = useRef<RoomClient | null>(null)
   const renderFallbackRef = useRef<GameState | null>(null)
   const resultRecorded = useRef(false)
+  const quickReadySent = useRef(false)
 
   useEffect(() => {
     let disposed = false
@@ -42,6 +44,10 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
             resultRecorded.current = true
             onResult(next.gameState, next.participant.id)
           }
+          if (quickStart && next.lobby?.phase === 'lobby' && next.participant && next.participant.slot !== null && !next.participant.isReady && !quickReadySent.current) {
+            quickReadySent.current = true
+            client.setReady(true)
+          }
         })
         client.connect()
         window.location.hash = `/room/${code}`
@@ -56,7 +62,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       clientRef.current?.close()
       clientRef.current = null
     }
-  }, [createRequest, identity, onResult, roomCode, serverUrl])
+  }, [createRequest, identity, onResult, quickStart, roomCode, serverUrl])
 
   const exit = () => {
     window.location.hash = ''
@@ -71,6 +77,21 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
   }, [])
   const subscribeState = useCallback((listener: (state: GameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
   const participantId = view.participant?.id
+  const inviteUrl = `${window.location.origin}${import.meta.env.BASE_URL}${quickStart ? '?quick=1' : ''}#/room/${view.roomCode}`
+  const copyInvite = async () => {
+    await navigator.clipboard.writeText(inviteUrl)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
+  const shareInvite = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Play PongApp 1v1', text: 'Join my PongApp duel', url: inviteUrl })
+        return
+      } catch { /* Closing the share sheet is not an error. */ }
+    }
+    await copyInvite()
+  }
 
   if (view.status === 'error') {
     return <div className="pg-lobby"><div className="pg-lobby-card"><p className="pg-kicker">Connection error</p><h2>Room unavailable</h2><div className="pg-status pg-status--error">{view.error}</div><button className="pg-primary-button" onClick={exit}>Back home</button></div></div>
@@ -83,11 +104,13 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
         <div className="pg-game-topbar"><div className="pg-game-title"><strong>Online room</strong><span>{view.status === 'connecting' ? 'Connecting…' : 'Invite your rivals'}</span></div><button className="pg-pill" onClick={exit}>Leave</button></div>
         <div className="pg-lobby-card">
           <p className="pg-kicker">Private invite code</p>
-          <div className="pg-room-code"><strong>{view.roomCode || '······'}</strong><button className="pg-pill" onClick={() => {
-            void navigator.clipboard.writeText(`${window.location.origin}${import.meta.env.BASE_URL}#/room/${view.roomCode}`)
-            setCopied(true)
-            window.setTimeout(() => setCopied(false), 1600)
-          }}>{copied ? 'Copied!' : 'Copy link'}</button></div>
+          <div className="pg-room-code"><strong>{view.roomCode || '······'}</strong><button className="pg-pill" onClick={() => void copyInvite()}>{copied ? 'Copied!' : 'Copy link'}</button></div>
+          {quickStart && (
+            <div className="pg-quick-invite">
+              <div><strong>Phone 1 is ready</strong><span>Send this invite to Phone 2. The duel starts as soon as they open it.</span></div>
+              <button className="pg-primary-button" onClick={() => void shareInvite()}>Share 1v1 invite</button>
+            </div>
+          )}
           <div className="pg-player-list">
             {(view.lobby?.participants ?? []).map((participant, index) => {
               // Seat identity comes from the shared palette, and from the seat the
@@ -114,8 +137,8 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
             })}
           </div>
           {view.error && <div className="pg-status pg-status--error">{view.error}</div>}
-          <div className="pg-status">The match starts when every connected player is ready and at least {view.lobby?.mode === 'crosscourt' ? 'four' : view.lobby?.mode === 'arena' ? 'three' : 'two'} paddles are filled.</div>
-          {me?.slot !== null && <button className="pg-primary-button" onClick={() => clientRef.current?.setReady(!me?.isReady)}>{me?.isReady ? 'Not ready' : 'Ready up'}</button>}
+          <div className="pg-status">{quickStart ? 'Waiting for the second phone. No AI will take their place.' : <>The match starts when every connected player is ready and at least {view.lobby?.mode === 'crosscourt' ? 'four' : view.lobby?.mode === 'arena' ? 'three' : 'two'} paddles are filled.</>}</div>
+          {me && me.slot !== null && !quickStart && <button className="pg-primary-button" onClick={() => clientRef.current?.setReady(!me.isReady)}>{me.isReady ? 'Not ready' : 'Ready up'}</button>}
         </div>
       </section>
     )

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { aiInputs, createAiMemory, createGame, restartGame, stepGame, TICK_RATE, type GameState, type MatchConfig } from '@pongapp/game-core'
 import { GameCourt } from './GameCourt'
+import { screenDirectionToLogical } from './perspective'
 import type { CourtEffectsSettings } from './PixiCourt'
 
 interface Props {
@@ -33,11 +34,13 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
         const state = stateRef.current
         const inputs = aiInputs(state, aiMemory.current)
         const gamepads = navigator.getGamepads?.() ?? []
+        const viewSide = state.players[humanPlayerIds[0]!]?.side ?? 'bottom'
         for (const [index, id] of humanPlayerIds.entries()) {
           const gamepad = gamepads[index]
           const player = state.players[id]
           if (gamepad && player) {
-            const axis = player.side === 'left' || player.side === 'right' ? (gamepad.axes[1] ?? 0) : (gamepad.axes[0] ?? 0)
+            const screenAxis = gamepad.axes[0] ?? 0
+            const axis = screenDirectionToLogical(screenAxis, player.side, viewSide)
             if (Math.abs(axis) > 0.16) targets.current[id] = Math.max(0, Math.min(1, (targets.current[id] ?? 0.5) + axis * 0.024))
             const pressed = Boolean(gamepad.buttons[0]?.pressed)
             if (pressed && !gamepadButtons.current[index]) abilities.current.add(id)
