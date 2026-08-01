@@ -1,0 +1,19 @@
+{
+  "name": "PONG! by RackeTapp",
+  "short_name": "PONG!",
+  "description": "Four walls. One winner.",
+  "start_url": "/pongapp/",
+  "scope": "/pongapp/",
+  "display": "standalone",
+  "background_color": "#0b1611",
+  "theme_color": "#0b1611",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

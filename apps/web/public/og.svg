@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="46%" r="60%">
+      <stop offset="0" stop-color="#1a3428"/>
+      <stop offset="1" stop-color="#0b1611"/>
+    </radialGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="14"/></filter>
+  </defs>
+  <rect width="1200" height="630" rx="42" fill="url(#g)"/>
+  <rect x="410" y="72" width="380" height="380" rx="42" fill="#123f2e" stroke="#dfff68" stroke-width="7"/>
+  <path d="M600 72v380M410 262h380" stroke="#dfff68" stroke-width="3" stroke-dasharray="16 14" opacity=".45"/>
+  <circle cx="650" cy="205" r="42" fill="#dfff68" opacity=".35" filter="url(#glow)"/>
+  <circle cx="650" cy="205" r="17" fill="#fffdf7"/>
+  <rect x="427" y="188" width="13" height="106" rx="7" fill="#dfff68"/>
+  <rect x="760" y="228" width="13" height="106" rx="7" fill="#f36f44"/>
+  <rect x="548" y="89" width="106" height="13" rx="7" fill="#67d4ff"/>
+  <rect x="594" y="422" width="106" height="13" rx="7" fill="#b59cff"/>
+  <text x="600" y="535" text-anchor="middle" fill="#fffdf7" font-family="Manrope, sans-serif" font-size="86" font-weight="800">PONG!</text>
+  <text x="600" y="585" text-anchor="middle" fill="#93a398" font-family="DM Sans, sans-serif" font-size="28">FOUR WALLS. ONE WINNER.</text>
+</svg>

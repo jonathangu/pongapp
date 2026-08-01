@@ -1,0 +1,35 @@
+:root {
+  --pg-ink-900: #0b1611;
+  --pg-ink-800: #12231b;
+  --pg-ink-700: #1a3428;
+  --pg-forest-700: #123f2e;
+  --pg-green-600: #1b6847;
+  --pg-green-500: #2c865f;
+  --pg-lime-400: #dfff68;
+  --pg-lime-300: #ecffa6;
+  --pg-orange-500: #f36f44;
+  --pg-paper: #fffdf7;
+  --pg-cyan: #67d4ff;
+  --pg-violet: #b59cff;
+  --pg-bg: var(--pg-ink-900);
+  --pg-surface: #13211a;
+  --pg-surface-raised: #17271f;
+  --pg-surface-accent: #172f22;
+  --pg-text: #e8f0e9;
+  --pg-text-muted: #93a398;
+  --pg-line: #24382c;
+  --pg-line-strong: #334d3d;
+  --pg-accent: var(--pg-lime-400);
+  --pg-danger: var(--pg-orange-500);
+  --pg-font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --pg-font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --pg-radius-sm: 8px;
+  --pg-radius-md: 12px;
+  --pg-radius-lg: 16px;
+  --pg-radius-xl: 22px;
+  --pg-radius-pill: 999px;
+  --pg-shadow-md: 0 10px 30px rgb(0 0 0 / 35%);
+  --pg-shadow-lg: 0 28px 70px rgb(0 0 0 / 52%);
+  --pg-transition: 160ms cubic-bezier(.2, 0, .2, 1);
+  color-scheme: dark;
+}

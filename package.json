@@ -1,0 +1,24 @@
+{
+  "name": "pongapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @pongapp/web dev",
+    "dev:worker": "pnpm --filter @pongapp/room-worker dev",
+    "build": "pnpm -r --workspace-concurrency=1 build",
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
+    "test": "pnpm -r --workspace-concurrency=1 --if-present test",
+    "smoke:room": "node scripts/room-smoke.mjs",
+    "lint": "oxlint .",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "oxlint": "^1.75.0",
+    "typescript": "~6.0.2"
+  }
+}
