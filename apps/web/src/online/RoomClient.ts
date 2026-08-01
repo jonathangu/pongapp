@@ -7,7 +7,7 @@ import {
   type RoomParticipant,
   type ServerMessage,
 } from '@pongapp/protocol'
-import { ballPredictionEnabled, predictedHumanTarget, worldPredictionEnabled } from '../game/prediction'
+import { advanceLocalPaddlePreview, ballPredictionEnabled, predictedHumanTarget, worldPredictionEnabled } from '../game/prediction'
 
 export type RoomClientStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
 
@@ -41,6 +41,9 @@ export class RoomClient {
   private view: RoomClientView
   private reconnectToken: string | undefined
   private inputSeq = 0
+  private acknowledgedInputSeq = 0
+  private latestTargetSeq = 0
+  private targetChangedSinceFlush = false
   private latestTarget = 0.5
   private abilityPressed = false
   private inputTimer = 0
@@ -48,6 +51,9 @@ export class RoomClient {
   private closedByUser = false
   private reconnectAttempt = 0
   private latestSnapshotAt = 0
+  private localRenderPosition: number | null = null
+  private localRenderAt = 0
+  private localRenderPlayerId: string | null = null
 
   constructor(
     private readonly serverUrl: string,
@@ -112,7 +118,8 @@ export class RoomClient {
     const source = this.view.gameState
     if (!source) throw new Error('No game snapshot is available.')
     const clone = structuredClone(source)
-    const elapsed = Math.min(0.075, Math.max(0, (performance.now() - this.latestSnapshotAt) / 1000))
+    const now = performance.now()
+    const elapsed = Math.min(0.075, Math.max(0, (now - this.latestSnapshotAt) / 1000))
     if (ballPredictionEnabled(clone)) {
       for (const ball of clone.balls) {
         ball.x += ball.vx * elapsed
@@ -120,15 +127,40 @@ export class RoomClient {
       }
     }
     const local = this.view.participant?.id ? clone.players[this.view.participant.id] : undefined
-    if (local && worldPredictionEnabled(clone)) {
-      const target = predictedHumanTarget(clone, this.latestTarget)
-      local.position += (target - local.position) * Math.min(1, elapsed * 18)
+    if (local) {
+      if (this.localRenderPlayerId !== local.id || this.localRenderPosition === null) {
+        this.localRenderPlayerId = local.id
+        this.localRenderPosition = local.position
+        this.localRenderAt = now
+      }
+      const delta = Math.min(0.05, Math.max(0, (now - this.localRenderAt) / 1000))
+      this.localRenderAt = now
+      if (worldPredictionEnabled(clone)) {
+        const target = predictedHumanTarget(clone, this.latestTarget)
+        // While a newer target is still in flight, the snapshot is known to be
+        // stale for this paddle and must not pull the preview backward.
+        const serverHasLatestTarget = !this.targetChangedSinceFlush && this.acknowledgedInputSeq >= this.latestTargetSeq
+        const authority = serverHasLatestTarget ? local.position : this.localRenderPosition
+        const previous = this.localRenderPosition
+        this.localRenderPosition = advanceLocalPaddlePreview(previous, authority, target, delta)
+        local.position = this.localRenderPosition
+        if (delta > 0) local.velocity = (this.localRenderPosition - previous) / delta
+      } else {
+        // Hitstop is authoritative, but it should hold the continuous visual
+        // position instead of revealing the older snapshot underneath it.
+        local.position = this.localRenderPosition
+        local.velocity = 0
+      }
     }
     return clone
   }
 
   setReady(ready: boolean): void { this.send({ type: 'ready', ready }) }
-  setTarget(target: number): void { this.latestTarget = Math.max(0, Math.min(1, target)) }
+  setTarget(target: number): void {
+    const next = Math.max(0, Math.min(1, target))
+    if (Math.abs(next - this.latestTarget) > 0.0001) this.targetChangedSinceFlush = true
+    this.latestTarget = next
+  }
   useAbility(): void { this.abilityPressed = true }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
   rematch(): void { this.send({ type: 'rematch' }) }
@@ -139,12 +171,17 @@ export class RoomClient {
     window.clearInterval(this.pingTimer)
     this.socket?.close(1000, 'player left')
     this.socket = null
+    this.resetLocalPreview()
     this.patch({ status: 'closed' })
   }
 
   private flushInput(): void {
     if (this.socket?.readyState !== WebSocket.OPEN || !this.view.participant || this.view.participant.slot === null) return
     this.inputSeq += 1
+    if (this.targetChangedSinceFlush) {
+      this.latestTargetSeq = this.inputSeq
+      this.targetChangedSinceFlush = false
+    }
     this.send({ type: 'input', seq: this.inputSeq, target: this.latestTarget, abilityPressed: this.abilityPressed })
     this.abilityPressed = false
   }
@@ -165,6 +202,23 @@ export class RoomClient {
       this.patch({ participant, lobby: message.lobby, status: message.lobby.phase === 'lobby' ? 'lobby' : 'playing' })
     } else if (message.type === 'snapshot' || message.type === 'result') {
       const gameState = message.state
+      const previousTick = this.view.gameState?.tick
+      if (message.type === 'snapshot') {
+        // A reconnected client starts its sequence at zero while the room keeps
+        // the old high-water mark. Catch up immediately so its inputs are not
+        // ignored for seconds or minutes after a reload.
+        this.inputSeq = Math.max(this.inputSeq, message.acknowledgedSeq)
+        this.acknowledgedInputSeq = message.acknowledgedSeq
+      }
+      const localId = this.view.participant?.id
+      const local = localId ? gameState.players[localId] : undefined
+      const localTeleported = localId && gameState.events.some((candidate) =>
+        candidate.type === 'ability'
+        && candidate.playerId === localId
+        && Math.abs((candidate.toPosition ?? local?.position ?? 0) - (candidate.fromPosition ?? local?.position ?? 0)) > 0.001)
+      if (local && (this.localRenderPlayerId !== local.id || previousTick === undefined || gameState.tick < previousTick || localTeleported)) {
+        this.resetLocalPreview(local.id, local.position)
+      }
       this.latestSnapshotAt = performance.now()
       this.patch({ gameState, status: 'playing' })
       for (const listener of this.stateListeners) listener(gameState)
@@ -185,6 +239,12 @@ export class RoomClient {
     }
     this.reconnectAttempt += 1
     window.setTimeout(() => this.connect(), Math.min(4000, 500 * 2 ** this.reconnectAttempt))
+  }
+
+  private resetLocalPreview(playerId: string | null = null, position: number | null = null): void {
+    this.localRenderPlayerId = playerId
+    this.localRenderPosition = position
+    this.localRenderAt = performance.now()
   }
 
   private patch(next: Partial<RoomClientView>): void {
