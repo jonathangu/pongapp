@@ -6,11 +6,24 @@ describe('protocol', () => {
     expect(createRoomRequestSchema.safeParse({
       mode: 'arena',
       itemIntensity: 'standard',
+      mutator: 'bigBall',
       aiDifficulty: 'rally',
       aiSlots: 2,
       hostName: 'Jonathan',
       hostAbility: 'dash',
     }).success).toBe(true)
+  })
+
+  it('keeps old room requests compatible by defaulting the mutator', () => {
+    const parsed = createRoomRequestSchema.parse({
+      mode: 'duel',
+      itemIntensity: 'off',
+      aiDifficulty: 'rookie',
+      aiSlots: 1,
+      hostName: 'Player One',
+      hostAbility: 'dash',
+    })
+    expect(parsed.mutator).toBe('none')
   })
 
   it('rejects incompatible clients and invalid input', () => {

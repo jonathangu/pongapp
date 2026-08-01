@@ -6,14 +6,13 @@ import {
   BALL_SPEED_RAMP,
   BALL_START_SPEED,
   BASE_PADDLE_LENGTH,
-  FREEZE_TICKS,
+  BIG_BALL_RADIUS,
   GROWN_PADDLE_LENGTH,
   MATCH_COUNTDOWN_TICKS,
   PADDLE_OFFSET,
   PADDLE_SPEED,
-  PERFECT_RAMP_BONUS,
+  PERFECT_RETURN_SPEED_BOOST,
   POWER_UP_LIFETIME_TICKS,
-  POWER_UP_WEIGHTS,
   SERVE_DELAY_TICKS,
   TICK_RATE,
   TICK_SECONDS,
@@ -30,7 +29,6 @@ import type {
   PowerUpId,
   Side,
 } from './types'
-import { POWER_UPS, RALLY_STEPS, rallyMultiplier } from './types'
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value))
@@ -45,6 +43,14 @@ function randomFrom(state: GameState): number {
   return result.value
 }
 
+function mutatorFor(state: GameState) {
+  return state.config.mutator ?? 'none'
+}
+
+function radiusFor(state: GameState): number {
+  return mutatorFor(state) === 'bigBall' ? BIG_BALL_RADIUS : BALL_RADIUS
+}
+
 function freshBall(state: GameState, id: string, transientTicks: number | null = null): BallState {
   const angleSeed = randomFrom(state)
   let angle = angleSeed * Math.PI * 2
@@ -56,12 +62,37 @@ function freshBall(state: GameState, id: string, transientTicks: number | null =
     y: 0.5,
     vx: Math.cos(angle) * BALL_START_SPEED,
     vy: Math.sin(angle) * BALL_START_SPEED,
-    radius: BALL_RADIUS,
+    radius: radiusFor(state),
     spin: 0,
     lastToucherId: null,
     warpCooldownTicks: 0,
     transientTicks,
   }
+}
+
+function stagedBall(state: GameState, id: string, transientTicks: number | null): BallState {
+  return {
+    id,
+    x: 0.5,
+    y: 0.5,
+    vx: 0,
+    vy: 0,
+    radius: radiusFor(state),
+    spin: 0,
+    lastToucherId: null,
+    warpCooldownTicks: 0,
+    transientTicks,
+  }
+}
+
+/** Fill fields absent from rooms persisted by an older ruleset-v1 build. */
+export function normalizeGameState(state: GameState): GameState {
+  state.config.mutator ??= 'none'
+  state.servingPlayerId ??= null
+  state.rallyHits ??= 0
+  state.longestRallyHits ??= 0
+  state.freezeTicks ??= 0
+  return state
 }
 
 export function createGame(config: MatchConfig): GameState {
@@ -94,10 +125,10 @@ export function createGame(config: MatchConfig): GameState {
     remainingTicks: config.timeLimitTicks,
     overtime: false,
     serveTicks: SERVE_DELAY_TICKS,
-    rallyHits: 0,
-    longestRally: 0,
-    freezeTicks: 0,
     servingPlayerId: null,
+    rallyHits: 0,
+    longestRallyHits: 0,
+    freezeTicks: 0,
     players,
     balls: [],
     scores,
@@ -148,16 +179,14 @@ function activateAbility(state: GameState, player: PlayerState, input: GameInput
 function updatePlayers(state: GameState, inputs: InputMap): void {
   for (const player of Object.values(state.players)) {
     decrementPlayerTimers(player)
-    const input = inputs[player.id] ?? { target: player.position, abilityPressed: false }
+    const received = inputs[player.id] ?? { target: player.position, abilityPressed: false }
+    const input = mutatorFor(state) === 'mirroredControls' && !player.isAi
+      ? { ...received, target: 1 - received.target }
+      : received
     activateAbility(state, player, input)
     const previous = player.position
-    // The AI's handicap. It used to move at exactly the player's speed, and
-    // since PADDLE_SPEED (1.35) exceeds BALL_SPEED_CAP (1.12), a perfect
-    // predictor could always be where the ball was going — which is why
-    // reactionTicks never functioned as a difficulty knob. A *lower* cap keeps
-    // the existing "does not exceed the shared movement limit" test true.
-    const reach = player.isAi ? AI_PROFILE[player.aiDifficulty ?? 'rally'].speed : 1
-    const maximumMove = PADDLE_SPEED * reach * TICK_SECONDS
+    const profile = player.isAi ? AI_PROFILE[player.aiDifficulty ?? 'rally'] : null
+    const maximumMove = PADDLE_SPEED * (profile?.speed ?? 1) * TICK_SECONDS
     const delta = clamp(input.target - player.position, -maximumMove, maximumMove)
     player.position = clamp(player.position + delta, 0.08, 0.92)
     player.velocity = (player.position - previous) / TICK_SECONDS
@@ -238,6 +267,20 @@ function rampBall(ball: BallState, multiplier = BALL_SPEED_RAMP): void {
   ball.vy = (ball.vy / speed) * nextSpeed
 }
 
+export function rallyMultiplierForHits(hits: number): number {
+  return 1 + Math.min(2, Math.floor(Math.max(0, hits) / 8))
+}
+
+function registerRallyHit(state: GameState): void {
+  const previous = state.rallyHits
+  state.rallyHits += 1
+  state.longestRallyHits = Math.max(state.longestRallyHits, state.rallyHits)
+  const multiplier = rallyMultiplierForHits(state.rallyHits)
+  if (multiplier > rallyMultiplierForHits(previous)) {
+    state.events.push({ type: 'rallyHot', hits: state.rallyHits, multiplier })
+  }
+}
+
 function applyPaddleContact(state: GameState, ball: BallState, player: PlayerState): void {
   bounceFromSide(ball, player.side)
   const relative = clamp((coordinateForSide(ball, player.side) - player.position) / (lengthFor(player) / 2), -1, 1)
@@ -246,32 +289,24 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
   if (player.side === 'left' || player.side === 'right') ball.vy += tangent
   else ball.vx += tangent
   if (player.bendTicks > 0) {
-    // Bend used to add at most 0.08 rad/s decaying on an ~83-tick half-life:
-    // about six degrees of curvature across the ball's whole flight, which is
-    // invisible. The AI's predictor ignores spin entirely, so a curve it cannot
-    // read is one of the few genuine counters to a strong opponent — but only if
-    // the player can see it happen. This is roughly thirty degrees.
-    ball.spin += clamp(player.velocity * 0.045 + relative * 0.14, -0.25, 0.25)
+    ball.spin += clamp(player.velocity * 0.028 + relative * 0.09, -0.22, 0.22)
     player.bendTicks = 0
   }
+  let speedMultiplier = BALL_SPEED_RAMP
   if (player.overdriveHits > 0) {
-    rampBall(ball, 1.25)
+    speedMultiplier = 1.25
     player.overdriveHits -= 1
-  } else {
-    rampBall(ball)
   }
+  if (perfect) speedMultiplier *= PERFECT_RETURN_SPEED_BOOST
+  rampBall(ball, speedMultiplier)
   ball.lastToucherId = player.id
   player.returns += 1
-  state.rallyHits += 1
   if (perfect) {
     player.perfectReturns += 1
-    // The UI has always claimed a perfect return "fires back faster". Until now
-    // that was false — the ramp was identical for a centred hit and an edge
-    // one, and the only reward was the cooldown refund below.
-    rampBall(ball, PERFECT_RAMP_BONUS)
     player.cooldownTicks = Math.max(0, player.cooldownTicks - Math.round(0.5 * TICK_RATE))
   }
   state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect, speed: Math.hypot(ball.vx, ball.vy) })
+  registerRallyHit(state)
 }
 
 function applyPulse(state: GameState, ball: BallState): boolean {
@@ -284,10 +319,9 @@ function applyPulse(state: GameState, ball: BallState): boolean {
       rampBall(ball, 1.08)
       ball.lastToucherId = player.id
       player.pulseTicks = 0
-      // A parry keeps the rally alive, so it has to count toward it — this path
-      // returns early and never reaches `applyPaddleContact`.
-      state.rallyHits += 1
-      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: true, speed: Math.hypot(ball.vx, ball.vy) })
+      player.returns += 1
+      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: false, speed: Math.hypot(ball.vx, ball.vy) })
+      registerRallyHit(state)
       return true
     }
   }
@@ -302,27 +336,15 @@ function scoreGoal(state: GameState, ball: BallState, defender: PlayerState): vo
   const lastToucher = ball.lastToucherId ? state.players[ball.lastToucherId] : undefined
   const scorer = lastToucher && lastToucher.team !== defender.team ? lastToucher : fallbackScorer(state, defender)
   if (!scorer) return
-  // A long rally is worth more than a short one. Without this the escalation the
-  // renderer already draws — brighter rim, more bloom, longer trail — buys the
-  // player nothing, and a twenty-hit point scores exactly what an ace does.
-  const rallyHits = state.rallyHits ?? 0
-  const points = rallyMultiplier(rallyHits)
+  const rallyHits = state.rallyHits
+  const basePoints = rallyMultiplierForHits(rallyHits)
+  const points = basePoints * (mutatorFor(state) === 'doublePoints' ? 2 : 1)
   state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + points
-  state.events.push({
-    type: 'score',
-    scorerId: scorer.id,
-    team: scorer.team,
-    againstPlayerId: defender.id,
-    ballId: ball.id,
-    points,
-    rallyHits,
-  })
-  state.longestRally = Math.max(state.longestRally ?? 0, rallyHits)
-  state.rallyHits = 0
-  Object.assign(ball, freshBall(state, ball.id, ball.transientTicks))
-  // The conceding player serves, and aims it while the ball is held at centre.
-  state.servingPlayerId = defender.id
+  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points, rallyHits })
+  Object.assign(ball, stagedBall(state, ball.id, ball.transientTicks))
   state.serveTicks = SERVE_DELAY_TICKS
+  state.servingPlayerId = defender.id
+  state.rallyHits = 0
   checkWinner(state)
 }
 
@@ -351,6 +373,13 @@ function processSide(state: GameState, ball: BallState, side: Side): void {
   if (!approaching(ball, side)) return
   const player = playerAtSide(state, side)
   if (!player) {
+    if (mutatorFor(state) === 'noWalls') {
+      if (side === 'left' && ball.x + ball.radius < 0) ball.x = 1 + ball.radius
+      else if (side === 'right' && ball.x - ball.radius > 1) ball.x = -ball.radius
+      else if (side === 'top' && ball.y + ball.radius < 0) ball.y = 1 + ball.radius
+      else if (side === 'bottom' && ball.y - ball.radius > 1) ball.y = -ball.radius
+      return
+    }
     if (side === 'left' && ball.x - ball.radius <= 0) bounceFromWall(ball, side)
     if (side === 'right' && ball.x + ball.radius >= 1) bounceFromWall(ball, side)
     if (side === 'top' && ball.y - ball.radius <= 0) bounceFromWall(ball, side)
@@ -367,6 +396,7 @@ function processSide(state: GameState, ball: BallState, side: Side): void {
     bounceFromSide(ball, side)
     rampBall(ball, 1.02)
     state.events.push({ type: 'shield', playerId: player.id, ballId: ball.id })
+    registerRallyHit(state)
     return
   }
   scoreGoal(state, ball, player)
@@ -401,47 +431,54 @@ function applyPowerUp(state: GameState, id: PowerUpId, player: PlayerState | und
   state.events.push({ type: 'powerUp', playerId: player?.id ?? null, powerUp: id })
 }
 
-/** Weighted pick, so `wild` is qualitatively wilder and not merely more frequent. */
-function drawPowerUp(state: GameState): PowerUpId {
-  const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'
-  const weights = POWER_UP_WEIGHTS[intensity]
-  const total = POWER_UPS.reduce((sum, id) => sum + (weights[id] ?? 0), 0)
-  let roll = randomFrom(state) * total
-  for (const id of POWER_UPS) {
-    roll -= weights[id] ?? 0
-    if (roll <= 0) return id
-  }
-  return 'grow'
+const POWER_UP_WEIGHTS: Record<'standard' | 'wild', Array<{ id: PowerUpId; weight: number }>> = {
+  standard: [
+    { id: 'grow', weight: 34 },
+    { id: 'overdrive', weight: 30 },
+    { id: 'multiball', weight: 15 },
+    { id: 'warp', weight: 11 },
+    { id: 'gravity', weight: 10 },
+  ],
+  wild: [
+    { id: 'grow', weight: 10 },
+    { id: 'overdrive', weight: 15 },
+    { id: 'multiball', weight: 30 },
+    { id: 'warp', weight: 25 },
+    { id: 'gravity', weight: 20 },
+  ],
 }
 
-/**
- * Who collects an orb a ball reached without anyone having touched it.
- *
- * `grow` and `overdrive` were gated on a toucher existing, so an orb claimed by
- * a fresh serve or a `multiball` spawn — both of which start with
- * `lastToucherId === null` — was silently voided: the event fired and nothing
- * happened. Awarding it to whoever is closest keeps the pickup real.
- */
-function nearestPlayer(state: GameState, x: number, y: number): PlayerState | undefined {
-  let closest: PlayerState | undefined
-  let best = Number.POSITIVE_INFINITY
-  for (const player of Object.values(state.players)) {
-    const px = player.side === 'left' ? PADDLE_OFFSET : player.side === 'right' ? 1 - PADDLE_OFFSET : player.position
-    const py = player.side === 'top' ? PADDLE_OFFSET : player.side === 'bottom' ? 1 - PADDLE_OFFSET : player.position
-    const distance = Math.hypot(px - x, py - y)
-    if (distance < best) {
-      best = distance
-      closest = player
-    }
+export function powerUpForRoll(intensity: 'standard' | 'wild', roll: number): PowerUpId {
+  const table = POWER_UP_WEIGHTS[intensity]
+  let cursor = Math.min(0.999_999, Math.max(0, roll)) * table.reduce((total, item) => total + item.weight, 0)
+  for (const item of table) {
+    cursor -= item.weight
+    if (cursor < 0) return item.id
   }
-  return closest
+  return table.at(-1)?.id ?? 'grow'
+}
+
+function playerCourtPosition(player: PlayerState): { x: number; y: number } {
+  if (player.side === 'left') return { x: PADDLE_OFFSET, y: player.position }
+  if (player.side === 'right') return { x: 1 - PADDLE_OFFSET, y: player.position }
+  if (player.side === 'top') return { x: player.position, y: PADDLE_OFFSET }
+  return { x: player.position, y: 1 - PADDLE_OFFSET }
+}
+
+function nearestPlayer(state: GameState, x: number, y: number): PlayerState | undefined {
+  return Object.values(state.players).sort((first, second) => {
+    const a = playerCourtPosition(first)
+    const b = playerCourtPosition(second)
+    return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)
+  })[0]
 }
 
 function updatePowerUp(state: GameState): void {
   if (!state.powerUp) {
     state.powerUpSpawnTicks -= 1
     if (state.powerUpSpawnTicks > 0 || state.config.itemIntensity === 'off') return
-    const id = drawPowerUp(state)
+    const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'
+    const id = powerUpForRoll(intensity, randomFrom(state))
     state.powerUp = {
       id,
       x: 0.32 + randomFrom(state) * 0.36,
@@ -452,18 +489,15 @@ function updatePowerUp(state: GameState): void {
     return
   }
   state.powerUp.ageTicks += 1
-  // `ageTicks` was incremented and never read, so an orb nobody hit loitered for
-  // the rest of the match.
-  if (state.powerUp.ageTicks > POWER_UP_LIFETIME_TICKS) {
+  if (state.powerUp.ageTicks >= POWER_UP_LIFETIME_TICKS) {
     state.powerUp = null
     state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
     return
   }
   for (const ball of state.balls) {
     if (Math.hypot(ball.x - state.powerUp.x, ball.y - state.powerUp.y) > ball.radius + 0.028) continue
-    const player = ball.lastToucherId
-      ? state.players[ball.lastToucherId]
-      : nearestPlayer(state, state.powerUp.x, state.powerUp.y)
+    const player = (ball.lastToucherId ? state.players[ball.lastToucherId] : undefined)
+      ?? nearestPlayer(state, state.powerUp.x, state.powerUp.y)
     applyPowerUp(state, state.powerUp.id, player)
     state.powerUp = null
     state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
@@ -480,7 +514,7 @@ function updateBall(state: GameState, ball: BallState): void {
     const angle = Math.atan2(ball.vy, ball.vx) + ball.spin * TICK_SECONDS
     ball.vx = Math.cos(angle) * speed
     ball.vy = Math.sin(angle) * speed
-    ball.spin *= 0.992
+    ball.spin *= 0.991
   }
   ball.x += ball.vx * TICK_SECONDS
   ball.y += ball.vy * TICK_SECONDS
@@ -491,86 +525,19 @@ function updateBall(state: GameState, ball: BallState): void {
   processSide(state, ball, 'bottom')
 }
 
-/**
- * Point the held ball away from the server's wall, angled by where they are
- * standing, at the instant the serve is released.
- *
- * Re-aiming at release rather than at goal time is what makes it a decision:
- * the server has the whole `SERVE_DELAY_TICKS` window to slide their paddle and
- * pick a line, using the movement controls they already have.
- */
-function aimServe(state: GameState): void {
-  const server = state.servingPlayerId ? state.players[state.servingPlayerId] : undefined
-  const ball = state.balls[0]
-  if (!server || !ball) return
-  const speed = Math.hypot(ball.vx, ball.vy) || BALL_START_SPEED
-  // -1 at one end of their wall, +1 at the other, softened so a full-lock aim
-  // still crosses the court rather than skimming the side walls.
-  const lateral = clamp((server.position - 0.5) * 2, -1, 1) * 0.75
-  let dx = 0
-  let dy = 0
-  if (server.side === 'bottom') { dx = lateral; dy = -1 }
-  else if (server.side === 'top') { dx = lateral; dy = 1 }
-  else if (server.side === 'left') { dx = 1; dy = lateral }
-  else { dx = -1; dy = lateral }
-  const length = Math.hypot(dx, dy) || 1
-  ball.vx = (dx / length) * speed
-  ball.vy = (dy / length) * speed
-  ball.spin = 0
-}
-
 function emitCountdown(state: GameState): void {
   const before = Math.ceil((state.countdownTicks + 1) / TICK_RATE)
   const after = Math.ceil(state.countdownTicks / TICK_RATE)
   if (after !== before && after > 0) state.events.push({ type: 'countdown', value: after })
 }
 
-/** Announce each rally step exactly once, on the tick it is crossed. */
-function emitRallyMilestones(state: GameState, before: number): void {
-  for (const step of RALLY_STEPS) {
-    if (before < step.hits && state.rallyHits >= step.hits) {
-      state.events.push({ type: 'rallyHot', hits: step.hits, multiplier: step.multiplier })
-    }
-  }
-}
-
-/**
- * Hitstop, set from the events this tick produced.
- *
- * Freezing on contact is the largest single upgrade to how a hit feels, and
- * `docs/DESIGN.md` §7 requires it here rather than in the renderer: `LocalMatch`
- * owns the clock locally and the room worker owns it online, so a renderer-side
- * freeze would drift from a simulation that did not freeze. Because it is a
- * fixed tick count keyed off an event, every client and the server freeze
- * identically — and because it is in the simulation, it cannot be a per-player
- * comfort setting.
- */
-function applyHitstop(state: GameState): void {
-  let freeze = 0
-  for (const event of state.events) {
-    if (event.type === 'score') freeze = Math.max(freeze, FREEZE_TICKS.score)
-    else if (event.type === 'shield') freeze = Math.max(freeze, FREEZE_TICKS.shield)
-    else if (event.type === 'hit' && event.perfect) freeze = Math.max(freeze, FREEZE_TICKS.perfect)
-  }
-  if (freeze > 0) state.freezeTicks = freeze
-}
-
 export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
+  normalizeGameState(state)
   state.events = []
   if (state.phase === 'finished') return state
   state.tick += 1
-
-  // The world is held, but the tick still advances so snapshot cadence and the
-  // renderer's frame pacing are unaffected. `?? 0` because a room persisted
-  // before this field existed can rehydrate without it.
-  if ((state.freezeTicks ?? 0) > 0) {
-    state.freezeTicks -= 1
-    return state
-  }
-
-  const rallyBefore = state.rallyHits ?? 0
-  updatePlayers(state, inputs)
   if (state.phase === 'countdown') {
+    updatePlayers(state, inputs)
     state.countdownTicks -= 1
     emitCountdown(state)
     if (state.countdownTicks <= 0) {
@@ -579,20 +546,47 @@ export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
     }
     return state
   }
+  if (state.freezeTicks > 0) {
+    state.freezeTicks -= 1
+    return state
+  }
+  updatePlayers(state, inputs)
   if (!state.overtime) state.remainingTicks = Math.max(0, state.remainingTicks - 1)
   if (state.serveTicks > 0) {
     state.serveTicks -= 1
-    if (state.serveTicks === 0) aimServe(state)
+    if (state.serveTicks === 0 && state.servingPlayerId) {
+      const server = state.players[state.servingPlayerId]
+      if (server) {
+        const tangent = clamp((server.position - 0.5) * 0.72, -BALL_START_SPEED * 0.62, BALL_START_SPEED * 0.62)
+        const normal = Math.sqrt(Math.max(0, BALL_START_SPEED ** 2 - tangent ** 2))
+        for (const ball of state.balls) {
+          if (Math.hypot(ball.vx, ball.vy) > 1e-9) continue
+          if (server.side === 'left') { ball.vx = normal; ball.vy = tangent }
+          else if (server.side === 'right') { ball.vx = -normal; ball.vy = tangent }
+          else if (server.side === 'top') { ball.vx = tangent; ball.vy = normal }
+          else { ball.vx = tangent; ball.vy = -normal }
+        }
+      }
+      state.servingPlayerId = null
+    }
   } else {
-    for (const ball of state.balls) updateBall(state, ball)
+    for (const ball of state.balls) {
+      updateBall(state, ball)
+      if (state.winnerTeam !== null || state.serveTicks > 0) break
+    }
   }
   state.balls = state.balls.filter((ball, index) => index === 0 || ball.transientTicks === null || ball.transientTicks > 0)
   state.worldEffects.warpTicks = Math.max(0, state.worldEffects.warpTicks - 1)
   state.worldEffects.gravityTicks = Math.max(0, state.worldEffects.gravityTicks - 1)
   updatePowerUp(state)
   checkWinner(state)
-  emitRallyMilestones(state, rallyBefore)
-  applyHitstop(state)
+  let freezeTicks = 0
+  for (const event of state.events) {
+    if (event.type === 'score') freezeTicks = Math.max(freezeTicks, 8)
+    else if (event.type === 'shield') freezeTicks = Math.max(freezeTicks, 6)
+    else if (event.type === 'hit' && event.perfect) freezeTicks = Math.max(freezeTicks, 4)
+  }
+  state.freezeTicks = Math.max(state.freezeTicks, freezeTicks)
   return state
 }
 

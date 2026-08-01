@@ -12,6 +12,7 @@ import {
   type GameState,
   type ItemIntensity,
   type MatchConfig,
+  type MatchMutator,
   type PowerUpId,
 } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
@@ -47,6 +48,7 @@ export default function App() {
   const [ability, setAbility] = useState<AbilityId>(profile.favoriteAbility)
   const [difficulty, setDifficulty] = useState<AiDifficulty>('rally')
   const [items, setItems] = useState<ItemIntensity>('standard')
+  const [mutator, setMutator] = useState<MatchMutator>('none')
   const [aiSlots, setAiSlots] = useState(1)
   const [joinCode, setJoinCode] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -76,6 +78,7 @@ export default function App() {
       totalPlayers: mode === 'duel' ? 2 : 4,
       aiDifficulty: difficulty,
       itemIntensity: items,
+      mutator,
     })
     setScreen({ type: 'local', config, humanIds: [profile.id] })
   }
@@ -99,6 +102,7 @@ export default function App() {
         { id: secondId, name: 'Player Two', ability: ability === 'dash' ? 'pulse' : 'dash' },
       ],
       itemIntensity: items,
+      mutator,
     })
     setScreen({ type: 'local', config, humanIds: [profile.id, secondId] })
   }
@@ -118,6 +122,7 @@ export default function App() {
         itemIntensity: items,
         aiDifficulty: difficulty,
         aiSlots: 0,
+        mutator,
         hostName: profile.name,
         hostAbility: ability,
       },
@@ -130,6 +135,7 @@ export default function App() {
       itemIntensity: items,
       aiDifficulty: difficulty,
       aiSlots: Math.min(mode === 'duel' ? 1 : 3, aiSlots),
+      mutator,
       hostName: profile.name,
       hostAbility: ability,
     }
@@ -231,7 +237,7 @@ export default function App() {
         <details className="pg-lab">
           <summary className="pg-lab__summary">
             <span><strong>Match settings</strong><small>Mode, skill, AI level, power-ups</small></span>
-            <span className="pg-lab__record">{profile.matches} played · {profile.wins} won</span>
+            <span className="pg-lab__record">{profile.matches} played · {profile.wins} won{profile.bestRally > 0 ? ` · best rally ${profile.bestRally}` : ''}</span>
           </summary>
           <div className="pg-fields">
             <div className="pg-field"><label htmlFor="player-name">Player name</label><input id="player-name" maxLength={16} value={profile.name} onChange={(event) => updateProfile({ name: event.target.value.slice(0, 16) })} /></div>
@@ -246,6 +252,15 @@ export default function App() {
             </div>
             <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie · misses a lot</option><option value="rally">Rally · a fair game</option><option value="pro">Pro · punishes mistakes</option><option value="ace">Ace · nearly perfect</option></select></div>
             <div className="pg-field"><label htmlFor="items">Power-ups</label><select id="items" value={items} onChange={(event) => setItems(event.target.value as ItemIntensity)}><option value="off">Off · pure Pong</option><option value="standard">Standard · an orb now and then</option><option value="wild">Wild · orbs constantly</option></select></div>
+            <div className="pg-field">
+              <label htmlFor="mutator">Rule twist</label>
+              <select id="mutator" value={mutator} onChange={(event) => setMutator(event.target.value as MatchMutator)}>
+                {(Object.keys(MUTATOR_COPY) as MatchMutator[]).map((id) => (
+                  <option key={id} value={id}>{MUTATOR_COPY[id].label}</option>
+                ))}
+              </select>
+              <p className="pg-field__note">{MUTATOR_COPY[mutator].detail}</p>
+            </div>
             <div className="pg-field"><label htmlFor="ai-slots">Fill online seats with AI</label><select id="ai-slots" value={aiSlots} onChange={(event) => setAiSlots(Number(event.target.value))}><option value="0">None · wait for people</option><option value="1">1 AI</option>{mode !== 'duel' && <option value="2">2 AI</option>}{mode !== 'duel' && <option value="3">3 AI</option>}</select></div>
           </div>
           {/* The chosen skill explains itself here, including the visual tell to
@@ -262,6 +277,21 @@ export default function App() {
       {settingsOpen && <SettingsModal settings={settings} update={updateSettings} close={() => setSettingsOpen(false)} />}
     </Shell>
   )
+}
+
+/**
+ * Rule twists, in the player's words.
+ *
+ * The simulation calls these `MatchMutator` and applies them in four different
+ * places; none of that is a name anyone would pick from a menu. Keyed off the
+ * same union so a new twist cannot ship without copy.
+ */
+const MUTATOR_COPY: Record<MatchMutator, { label: string; detail: string }> = {
+  none: { label: 'None · standard rules', detail: 'The normal game.' },
+  bigBall: { label: 'Big ball', detail: 'A much larger ball. Easier to hit, far harder to place — angles get blunt and rallies run long.' },
+  noWalls: { label: 'No walls', detail: 'The court wraps around. A ball that leaves one side reappears on the other, so nothing ever bounces back to you.' },
+  doublePoints: { label: 'Double points', detail: 'Every point counts twice, on top of the rally bonus. Matches end fast and one long rally can win it.' },
+  mirroredControls: { label: 'Mirrored controls', detail: 'Your paddle moves the opposite way to your hand. Applies to human players only — the AI is not confused by it.' },
 }
 
 /**
@@ -362,6 +392,19 @@ function HowToPlayModal({ close }: { close: () => void }) {
               <div key={id} className="pg-help-row">
                 <dt style={{ color: POWER_UP_IDENTITIES[id].hex }}>{POWER_UP_IDENTITIES[id].label}</dt>
                 <dd>{POWER_UP_IDENTITIES[id].effect}.</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        <div className="pg-help-section">
+          <h3>Rule twists</h3>
+          <p className="pg-help-note">Optional, set in Match settings before you start. They change the rules for everyone in the match, never just one player.</p>
+          <dl className="pg-help-grid">
+            {(Object.keys(MUTATOR_COPY) as MatchMutator[]).filter((id) => id !== 'none').map((id) => (
+              <div key={id} className="pg-help-row">
+                <dt>{MUTATOR_COPY[id].label}</dt>
+                <dd>{MUTATOR_COPY[id].detail}</dd>
               </div>
             ))}
           </dl>

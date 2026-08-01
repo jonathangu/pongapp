@@ -34,8 +34,7 @@ import {
   GROWN_PADDLE_LENGTH,
   PADDLE_SPEED,
   POWER_UP_IDENTITIES,
-  RALLY_STEPS,
-  rallyMultiplier,
+  rallyMultiplierForHits,
   TICK_RATE,
   secondsRemaining,
   seatIdentityForColor,
@@ -75,6 +74,18 @@ interface TeamSummary {
   patternLabel: string
   isLocal: boolean
 }
+
+/**
+ * What each rally milestone is called on screen.
+ *
+ * The thresholds live in the simulation (`rallyMultiplierForHits`); only the
+ * wording is presentation, so it belongs here rather than in `game-core`, which
+ * has to stay framework-neutral and has no business holding UI copy.
+ */
+const RALLY_STEPS = [
+  { hits: 8, multiplier: 2, label: 'Hot rally · worth 2' },
+  { hits: 16, multiplier: 3, label: 'Blazing · worth 3' },
+] as const
 
 const ABILITY_MOMENT: Record<string, string> = {
   dash: 'paddle jumped',
@@ -444,8 +455,8 @@ export function GameCourt(props: Props) {
         >
           <b className="pg-rally__value">{state.rallyHits ?? 0}</b>
           <span className="pg-rally__label">rally</span>
-          {rallyMultiplier(state.rallyHits ?? 0) > 1 && (
-            <span className="pg-rally__multiplier">×{rallyMultiplier(state.rallyHits ?? 0)}</span>
+          {rallyMultiplierForHits(state.rallyHits ?? 0) > 1 && (
+            <span className="pg-rally__multiplier">×{rallyMultiplierForHits(state.rallyHits ?? 0)}</span>
           )}
         </div>
 
@@ -502,7 +513,7 @@ export function GameCourt(props: Props) {
                 </div>
                 {primaryPlayer && (
                   <p className="pg-result-line">
-                    {primaryPlayer.returns} returns · {primaryPlayer.perfectReturns} perfect · longest rally {state.longestRally ?? 0}
+                    {primaryPlayer.returns} returns · {primaryPlayer.perfectReturns} perfect · longest rally {state.longestRallyHits ?? 0}
                   </p>
                 )}
                 <div className="pg-button-row">

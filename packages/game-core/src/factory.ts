@@ -1,6 +1,6 @@
 import { defaultScoreToWin, DEFAULT_TIME_LIMIT_TICKS, sidesForMode, type SeatAxis } from './constants'
 import { seatIdentity } from './palette'
-import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, PlayerDefinition } from './types'
+import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, MatchMutator, PlayerDefinition } from './types'
 
 const ABILITY_ORDER: AbilityId[] = ['dash', 'bend', 'guard', 'pulse']
 
@@ -10,6 +10,7 @@ export interface MatchFactoryOptions {
   totalPlayers?: number
   aiDifficulty?: AiDifficulty
   itemIntensity?: ItemIntensity
+  mutator?: MatchMutator
   seed?: number
   /** Duel seating. `vertical` puts the two players at opposite ends of a phone. */
   axis?: SeatAxis
@@ -36,6 +37,7 @@ export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
     mode: options.mode,
     players,
     itemIntensity: options.itemIntensity ?? 'standard',
+    mutator: options.mutator ?? 'none',
     scoreToWin: defaultScoreToWin(options.mode),
     timeLimitTicks: DEFAULT_TIME_LIMIT_TICKS,
     seed: options.seed ?? Date.now() >>> 0,
