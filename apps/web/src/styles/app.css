@@ -315,6 +315,19 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   transition: border-color var(--pg-transition);
 }
 .pg-field input:hover, .pg-field select:hover { border-color: var(--pg-green-500); }
+.pg-skill-explainer {
+  padding: var(--pg-space-3);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px var(--pg-space-3);
+  border: 1px solid rgb(103 212 255 / 28%);
+  border-radius: var(--pg-radius-md);
+  background: rgb(103 212 255 / 6%);
+}
+.pg-skill-explainer > span { color: var(--pg-cyan); font: 800 var(--pg-text-xs) var(--pg-font-display); letter-spacing: .08em; text-transform: uppercase; }
+.pg-skill-explainer > strong { color: var(--pg-paper); font-family: var(--pg-font-display); }
+.pg-skill-explainer p, .pg-skill-explainer small { grid-column: 1 / -1; color: var(--pg-text-muted); }
+.pg-skill-explainer small { font-size: var(--pg-text-xs); }
 
 /* ---------------------------------------------------------- court preview */
 
@@ -551,6 +564,27 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   100% { opacity: 0; transform: translate(-50%, -10px) scale(1.05); }
 }
 
+.pg-view-guide {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 11%;
+  width: max-content;
+  max-width: 82%;
+  padding: 7px 12px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgb(255 253 247 / 45%);
+  border-radius: var(--pg-radius-pill);
+  background: rgb(11 22 17 / 78%);
+  color: var(--pg-paper);
+  text-align: center;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+.pg-view-guide strong { font: 800 var(--pg-text-xs) var(--pg-font-display); letter-spacing: .08em; }
+.pg-view-guide span { color: var(--pg-text-muted); font-size: clamp(.58rem, 1.8vw, .75rem); }
+
 /**
  * The colour-independent seat marks, mirroring `SeatIdentity.pattern`. These are
  * the DOM half of the same idea the renderer cuts into the paddle: if the
@@ -653,18 +687,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 
 /* ---------------------------------------------------------------- controls */
 
-/**
- * One control strip per seat that is sitting at this end of the device.
- * `--far` is the strip for a player at the top wall in pass-and-play; it is
- * rotated 180° so their controls face them rather than their opponent.
- */
-.pg-controls { min-width: 0; display: flex; flex-wrap: wrap; gap: var(--pg-space-2); width: min(100%, 820px); max-width: 100%; margin: 0 auto; }
-.pg-controls > * { flex: 1; }
-.pg-controls--far { transform: rotate(180deg); }
+.pg-controls { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, auto); gap: var(--pg-space-3); width: min(100%, 820px); max-width: 100%; margin: 0 auto; }
 
 .pg-control-hint {
-  width: min(100%, 820px);
-  margin: 0 auto;
   padding: 10px var(--pg-space-4);
   display: flex;
   flex-direction: column;
@@ -678,6 +703,22 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-control-hint strong { color: var(--pg-text); }
 .pg-control-hint span { font-size: var(--pg-text-xs); }
 
+.pg-ability-stack { display: grid; gap: var(--pg-space-2); }
+.pg-ability-stack--two { grid-template-columns: 1fr 1fr; grid-column: 1 / -1; }
+.pg-court-legend {
+  grid-column: 1 / -1;
+  padding: 8px var(--pg-space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--pg-space-2);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-radius-md);
+  background: rgb(255 255 255 / 3%);
+  font-size: var(--pg-text-xs);
+}
+.pg-court-legend strong { color: var(--pg-violet); }
+.pg-court-legend span { color: var(--pg-text-muted); }
+
 /**
  * The ability button doubles as the cooldown gauge. `--pg-ability-progress` is
  * written by React as a percentage and drives a fill that grows toward ready,
@@ -687,9 +728,9 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-ability-button {
   position: relative;
   overflow: hidden;
-  min-width: 128px;
-  min-height: var(--pg-touch-target-lg);
-  padding: 0 var(--pg-space-5);
+  min-width: 0;
+  min-height: 92px;
+  padding: 10px var(--pg-space-4);
   display: grid;
   align-content: center;
   gap: 2px;
@@ -710,11 +751,11 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   transition: width var(--pg-duration-fast) linear;
 }
 .pg-ability-button > * { position: relative; }
-.pg-ability-button__head { display: flex; align-items: center; gap: 8px; }
-.pg-ability-button__name { flex: 1; font-family: var(--pg-font-display); font-size: var(--pg-text-md); text-transform: uppercase; letter-spacing: .04em; }
+.pg-ability-button__eyebrow { color: var(--pg-cyan); font: 800 .64rem var(--pg-font-display); letter-spacing: .09em; text-transform: uppercase; }
+.pg-ability-button__name { font-family: var(--pg-font-display); font-size: var(--pg-text-md); text-transform: uppercase; letter-spacing: .04em; }
+.pg-ability-button__description { max-width: 34ch; color: var(--pg-text-muted); font-size: .7rem; font-weight: 600; line-height: 1.25; }
+.pg-ability-button__effect { max-width: 36ch; color: var(--pg-cyan); font-size: .64rem; line-height: 1.25; }
 .pg-ability-button__state { color: var(--pg-text-muted); font-size: var(--pg-text-xs); font-variant-numeric: tabular-nums; }
-/* The answer to "what does this do", on the control itself. */
-.pg-ability-button__verb { color: var(--pg-text-muted); font-size: var(--pg-text-xs); font-weight: 600; line-height: 1.25; }
 .pg-key-hint { font-size: inherit; }
 @media (pointer: coarse) { .pg-key-hint { display: none; } }
 /* Ready lights up in the player's own seat colour, so in pass-and-play each
@@ -725,8 +766,10 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   color: var(--pg-ink-800);
   box-shadow: 0 0 34px color-mix(in srgb, var(--pg-seat-color, var(--pg-accent)) 30%, transparent);
 }
-.pg-ability-button.is-ready .pg-ability-button__state,
-.pg-ability-button.is-ready .pg-ability-button__verb { color: rgb(18 35 27 / 74%); }
+.pg-ability-button.is-ready .pg-ability-button__state { color: rgb(18 35 27 / 72%); }
+.pg-ability-button.is-ready .pg-ability-button__eyebrow,
+.pg-ability-button.is-ready .pg-ability-button__description,
+.pg-ability-button.is-ready .pg-ability-button__effect { color: rgb(18 35 27 / 72%); }
 .pg-ability-button.is-ready::before { display: none; }
 .pg-ability-button:active { filter: brightness(.9); }
 
@@ -773,6 +816,18 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-player__identity { display: flex; align-items: center; gap: 10px; }
 .pg-player__dot { width: 14px; height: 10px; border-radius: 5px; background: currentColor; color: var(--pg-accent); }
 .pg-player small { color: var(--pg-text-muted); }
+.pg-quick-invite {
+  padding: var(--pg-space-4);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--pg-space-3);
+  border: 1px solid rgb(103 212 255 / 38%);
+  border-radius: var(--pg-radius-lg);
+  background: rgb(103 212 255 / 7%);
+}
+.pg-quick-invite div { display: grid; gap: 3px; }
+.pg-quick-invite span { color: var(--pg-text-muted); font-size: var(--pg-text-sm); }
 .pg-status { padding: var(--pg-space-3); border-radius: var(--pg-radius-md); color: var(--pg-text-muted); background: var(--pg-surface-raised); font-size: var(--pg-text-md); }
 .pg-status--error { color: var(--pg-orange-500); background: #46261a; }
 
@@ -852,11 +907,19 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   .pg-main { padding-inline: var(--pg-space-3); }
   .pg-fields { grid-template-columns: 1fr; }
   .pg-header__account-label { display: none; }
+  /* The two-column control grid has a 260px minimum on its second track, which
+     on a 390px phone squeezes the hint into ~180px and wraps it to one word per
+     line. Below this width the strip stacks instead. */
+  .pg-controls { grid-template-columns: 1fr; }
   .pg-arena-poster { position: relative; top: auto; aspect-ratio: 4 / 3; }
   .pg-arena-poster__hud { inset: auto var(--pg-space-4) var(--pg-space-4); }
   /* On a phone the drag hand is on the court, so the ability control has to be
      reachable by the other thumb without hunting: full width, first in reading
      order after the court, and larger than the default target. */
+  .pg-ability-button { min-height: 96px; text-align: center; justify-items: center; }
+  .pg-ability-stack--two { grid-template-columns: 1fr 1fr; }
+  .pg-ability-button__description { font-size: .66rem; }
+  .pg-quick-invite { grid-template-columns: 1fr; }
   .pg-ability-button { min-height: var(--pg-touch-target-lg); }
   /* Two columns is the whole point of the skinny rows — keep them on a phone.
      Only the join row, which holds an input and a button, needs the full width. */

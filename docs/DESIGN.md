@@ -138,6 +138,10 @@ mid-session is respected without a reload.
 
 ## 9. Input
 
+- **The local paddle is always at the bottom.** The simulation keeps one shared
+  world orientation, but each renderer rotates around court centre so its local
+  player's wall becomes the bottom wall. Pointer, keyboard and gamepad axes are
+  mapped back through that same rotation.
 - **Movement is level-triggered, actions are edge-triggered.** Holding a
   direction key travels at `PADDLE_SPEED` — the same constant the simulation
   clamps to, so the keyboard can neither out-run nor under-run the sim. Pressing
@@ -147,6 +151,9 @@ mid-session is respected without a reload.
 - **Touch grabs, or jumps.** Pressing on the paddle drags it relatively;
   pressing away from it jumps. A phone paddle is under the thumb and therefore
   invisible, so relative drag is the default and the jump is the escape hatch.
+- **Shared-screen Duel has two independent touch lanes.** The bottom half owns
+  Player One and the top half owns Player Two; pointer IDs are tracked in a map
+  so two fingers can move both paddles simultaneously.
 - **Pointer coordinates are mapped through the same letterbox the renderer
   uses.** The court is drawn square and centred; reading the raw wrapper rect
   puts the paddle a few percent off on any non-square wrapper.
@@ -186,7 +193,9 @@ The August 2026 pass extends rally heat into a full game language:
 - Duel, Arena and Crosscourt select Forest Core, Neon Midnight and Championship
   court materials while retaining the same seat palette and geometry.
 - Perfect returns cut a three-channel impact slice across the contact point.
-- Dash, Bend, Guard and Pulse each have a distinct vector burst.
+- Dash, Bend, Guard and Pulse each have a distinct, explained vector cue. Dash
+  uses paddle afterimages plus one along-wall arrow—never radial rings or rays
+  into the court—because it is movement, not a weapon.
 - Goals paint the conceded wall, wash the court in the scorer's colour, fire a
   directional edge spray and announce the moment in the DOM HUD.
 - Audio is procedural and event-layered, so local and online matches share the
@@ -197,6 +206,10 @@ The August 2026 pass extends rally heat into a full game language:
 The former delivery gaps are closed: the social card is now a 1200×630 JPEG,
 Manrope and DM Sans are self-hosted as Latin variable fonts, and the PWA ships
 separate regular and safe-zone maskable PNG icons.
+
+Phone 1v1 is a first-class quick start: it creates a Duel with zero AI slots,
+auto-readies both link participants, exposes the native share sheet when
+available, and begins as soon as the second phone opens the invite.
 
 ## Toolchain decisions
 

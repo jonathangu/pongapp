@@ -15,12 +15,12 @@ import {
   type PowerUpId,
 } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
-import { ABILITY_INFO } from './game/abilities'
+import { ABILITY_COPY } from './game/abilityCopy'
 import { LocalMatch } from './game/LocalMatch'
 import { OnlineRoom } from './online/OnlineRoom'
 import { loadProfile, loadSettings, recordResult, saveProfile, saveSettings, type AppSettings, type GuestProfile } from './store'
 
-type Screen = { type: 'home' } | { type: 'local'; config: MatchConfig; humanIds: string[] } | { type: 'online'; roomCode?: string; request?: CreateRoomRequest }
+type Screen = { type: 'home' } | { type: 'local'; config: MatchConfig; humanIds: string[] } | { type: 'online'; roomCode?: string; request?: CreateRoomRequest; quickStart?: boolean }
 
 const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || (import.meta.env.PROD
   ? 'https://pongapp-room.pongapp-room-worker.workers.dev'
@@ -31,6 +31,10 @@ function roomFromHash(): string | undefined {
   return match?.[1]?.toUpperCase()
 }
 
+function quickStartFromUrl(): boolean {
+  return new URLSearchParams(window.location.search).get('quick') === '1'
+}
+
 function Logo() {
   return <span className="pg-brand"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#dfff68"/><rect x="6" y="8" width="3" height="16" rx="1.5" fill="#12231b"/><rect x="23" y="8" width="3" height="16" rx="1.5" fill="#12231b"/><circle cx="16" cy="16" r="3" fill="#12231b"/></svg><span>PONG<span className="pg-brand__bang">!</span></span></span>
 }
@@ -38,7 +42,7 @@ function Logo() {
 export default function App() {
   const [profile, setProfile] = useState<GuestProfile>(() => loadProfile())
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
-  const [screen, setScreen] = useState<Screen>(() => roomFromHash() ? { type: 'online', roomCode: roomFromHash() } : { type: 'home' })
+  const [screen, setScreen] = useState<Screen>(() => roomFromHash() ? { type: 'online', roomCode: roomFromHash(), quickStart: quickStartFromUrl() } : { type: 'home' })
   const [mode, setMode] = useState<GameMode>('duel')
   const [ability, setAbility] = useState<AbilityId>(profile.favoriteAbility)
   const [difficulty, setDifficulty] = useState<AiDifficulty>('rally')
@@ -92,7 +96,7 @@ export default function App() {
       axis: 'vertical',
       humanPlayers: [
         { id: profile.id, name: profile.name, ability },
-        { id: secondId, name: 'P2', ability: ability === 'dash' ? 'pulse' : 'dash' },
+        { id: secondId, name: 'Player Two', ability: ability === 'dash' ? 'pulse' : 'dash' },
       ],
       itemIntensity: items,
     })
@@ -105,9 +109,10 @@ export default function App() {
    * duel with no AI filling the other paddle, because the whole point is that
    * the other paddle is the person you are about to send the link to.
    */
-  const startTwoPhones = () => {
+  const startPhoneDuel = () => {
     setScreen({
       type: 'online',
+      quickStart: true,
       request: {
         mode: 'duel',
         itemIntensity: items,
@@ -139,7 +144,7 @@ export default function App() {
     return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><LocalMatch config={screen.config} humanPlayerIds={screen.humanIds} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={(state) => record(state)} /></Shell>
   }
   if (screen.type === 'online') {
-    return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} identity={{ guestId: profile.id, displayName: profile.name, ability }} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={record} /></Shell>
+    return <Shell profile={profile} settingsOpen={() => setSettingsOpen(true)}><OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} quickStart={screen.quickStart} identity={{ guestId: profile.id, displayName: profile.name, ability }} effects={effects} muted={settings.muted} onExit={() => setScreen({ type: 'home' })} onResult={record} /></Shell>
   }
 
   return (
@@ -170,7 +175,7 @@ export default function App() {
               <SeatGlyph kind="pass" />
               <span className="pg-launch__text"><strong>Pass &amp; play</strong><small>Two on this phone, one at each end</small></span>
             </button>
-            <button className="pg-launch" onClick={startTwoPhones}>
+            <button className="pg-launch" onClick={startPhoneDuel}>
               <SeatGlyph kind="phones" />
               <span className="pg-launch__text"><strong>Two phones</strong><small>Send a link, play 1v1</small></span>
             </button>
@@ -234,16 +239,22 @@ export default function App() {
             <div className="pg-field">
               <label htmlFor="ability">Your skill</label>
               <select id="ability" value={ability} onChange={(event) => { const next = event.target.value as AbilityId; setAbility(next); updateProfile({ favoriteAbility: next }) }}>
-                {(Object.keys(ABILITY_INFO) as AbilityId[]).map((id) => (
-                  <option key={id} value={id}>{ABILITY_INFO[id].label} · {ABILITY_INFO[id].verb.toLowerCase()}</option>
+                {(Object.keys(ABILITY_COPY) as AbilityId[]).map((id) => (
+                  <option key={id} value={id}>{ABILITY_COPY[id].menu}</option>
                 ))}
               </select>
-              {/* The chosen skill explains itself here rather than only mid-match. */}
-              <p className="pg-field__note">{ABILITY_INFO[ability].detail}</p>
             </div>
             <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie · misses a lot</option><option value="rally">Rally · a fair game</option><option value="pro">Pro · punishes mistakes</option><option value="ace">Ace · nearly perfect</option></select></div>
             <div className="pg-field"><label htmlFor="items">Power-ups</label><select id="items" value={items} onChange={(event) => setItems(event.target.value as ItemIntensity)}><option value="off">Off · pure Pong</option><option value="standard">Standard · an orb now and then</option><option value="wild">Wild · orbs constantly</option></select></div>
             <div className="pg-field"><label htmlFor="ai-slots">Fill online seats with AI</label><select id="ai-slots" value={aiSlots} onChange={(event) => setAiSlots(Number(event.target.value))}><option value="0">None · wait for people</option><option value="1">1 AI</option>{mode !== 'duel' && <option value="2">2 AI</option>}{mode !== 'duel' && <option value="3">3 AI</option>}</select></div>
+          </div>
+          {/* The chosen skill explains itself here, including the visual tell to
+              look for on court, rather than only being discoverable mid-match. */}
+          <div className="pg-skill-explainer">
+            <span>Your selected skill</span>
+            <strong>{ABILITY_COPY[ability].label}</strong>
+            <p>{ABILITY_COPY[ability].action}</p>
+            <small>Visual cue: {ABILITY_COPY[ability].effect}</small>
           </div>
         </details>
       </section>
@@ -333,10 +344,10 @@ function HowToPlayModal({ close }: { close: () => void }) {
           <h3>The four skills</h3>
           <p className="pg-help-note">You pick one before the match. Tap the button under the court to use it, then wait for it to recharge.</p>
           <dl className="pg-help-grid">
-            {(Object.keys(ABILITY_INFO) as AbilityId[]).map((id) => (
+            {(Object.keys(ABILITY_COPY) as AbilityId[]).map((id) => (
               <div key={id} className="pg-help-row">
-                <dt>{ABILITY_INFO[id].label}<span>{Math.round(ABILITY_COOLDOWNS[id] / TICK_RATE)}s</span></dt>
-                <dd>{ABILITY_INFO[id].detail}</dd>
+                <dt>{ABILITY_COPY[id].label}<span>{Math.round(ABILITY_COOLDOWNS[id] / TICK_RATE)}s</span></dt>
+                <dd>{ABILITY_COPY[id].action} <em>{ABILITY_COPY[id].effect}</em></dd>
               </div>
             ))}
           </dl>

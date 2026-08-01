@@ -80,7 +80,7 @@ export type GameEvent =
   | { type: 'countdown'; value: number }
   | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number }
   | { type: 'score'; scorerId: string | null; team: string; againstPlayerId: string; ballId: string }
-  | { type: 'ability'; playerId: string; ability: AbilityId }
+  | { type: 'ability'; playerId: string; ability: AbilityId; fromPosition: number; toPosition: number }
   | { type: 'powerUpSpawn'; powerUp: PowerUpState }
   | { type: 'powerUp'; playerId: string | null; powerUp: PowerUpId }
   | { type: 'shield'; playerId: string; ballId: string }

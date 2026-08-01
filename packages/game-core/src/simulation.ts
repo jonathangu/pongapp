@@ -114,6 +114,7 @@ function decrementPlayerTimers(player: PlayerState): void {
 
 function activateAbility(state: GameState, player: PlayerState, input: GameInput): void {
   if (!input.abilityPressed || player.cooldownTicks > 0) return
+  const fromPosition = player.position
   player.cooldownTicks = ABILITY_COOLDOWNS[player.ability]
   player.abilityUses += 1
   if (player.ability === 'dash') {
@@ -126,7 +127,13 @@ function activateAbility(state: GameState, player: PlayerState, input: GameInput
   } else {
     player.pulseTicks = Math.round(0.2 * TICK_RATE)
   }
-  state.events.push({ type: 'ability', playerId: player.id, ability: player.ability })
+  state.events.push({
+    type: 'ability',
+    playerId: player.id,
+    ability: player.ability,
+    fromPosition,
+    toPosition: player.position,
+  })
 }
 
 function updatePlayers(state: GameState, inputs: InputMap): void {
