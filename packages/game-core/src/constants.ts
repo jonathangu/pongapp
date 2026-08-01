@@ -23,6 +23,26 @@ export const ABILITY_COOLDOWNS: Record<AbilityId, number> = {
   pulse: 12 * TICK_RATE,
 }
 
+/**
+ * What an AI opponent is called on screen.
+ *
+ * Two things were wrong with the old names. They were picked by *seat index*
+ * (`['Rookie', 'Rally', 'Pro', 'Ace'][index]`), so in a duel the opponent always
+ * sat in seat 1 and was always called "Rally" no matter which difficulty you
+ * chose — pick Ace, play someone labelled Rally. And "Rally" now collides with
+ * the rally counter, so the HUD showed `RALLY 2` (a player's score) beside
+ * `RALLY 0` (a rally length) and expected you to tell them apart.
+ *
+ * The `rally` tier keeps its id — it is in the protocol — but is displayed as
+ * "Steady", which leaves "rally" meaning exactly one thing to a player.
+ */
+export const AI_DIFFICULTY_LABEL: Record<AiDifficulty, string> = {
+  rookie: 'Rookie',
+  rally: 'Steady',
+  pro: 'Pro',
+  ace: 'Ace',
+}
+
 export interface AiProfile {
   reactionTicks: number
   bounces: number

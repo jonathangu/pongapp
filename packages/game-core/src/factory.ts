@@ -1,4 +1,4 @@
-import { defaultScoreToWin, DEFAULT_TIME_LIMIT_TICKS, sidesForMode, type SeatAxis } from './constants'
+import { AI_DIFFICULTY_LABEL, defaultScoreToWin, DEFAULT_TIME_LIMIT_TICKS, sidesForMode, type SeatAxis } from './constants'
 import { seatIdentity } from './palette'
 import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, MatchMutator, PlayerDefinition } from './types'
 
@@ -24,7 +24,7 @@ export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
     const team = options.mode === 'crosscourt' ? `team-${index < 2 ? 0 : 1}` : `team-${index}`
     return {
       id: human?.id ?? `ai-${index + 1}`,
-      name: human?.name ?? ['Rookie', 'Rally', 'Pro', 'Ace'][index] ?? `AI ${index + 1}`,
+      name: human?.name ?? AI_DIFFICULTY_LABEL[options.aiDifficulty ?? 'rally'],
       side,
       team,
       ability: human?.ability ?? ABILITY_ORDER[index] ?? 'dash',
