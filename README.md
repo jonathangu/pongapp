@@ -13,11 +13,11 @@ Requirements: Node 22 and pnpm 10.
 ```bash
 pnpm install
 pnpm dev
-pnpm dev:worker
+pnpm dev:server
 ```
 
 The web client runs at `http://localhost:5173/pongapp/`; the room service runs
-at `http://localhost:8787`.
+at `http://localhost:8080`.
 
 ```bash
 pnpm check
@@ -26,7 +26,8 @@ pnpm check
 ## Repository layout
 
 - `apps/web` — React shell, PixiJS court, inputs, audio, and room UI.
-- `apps/room-worker` — authoritative Cloudflare Durable Object rooms.
+- `apps/room-server` — authoritative Node/WebSocket room service for Fly.io.
+- `apps/room-worker` — preserved Cloudflare rollback room service.
 - `packages/game-core` — deterministic simulation, abilities, power-ups, AI.
 - `packages/protocol` — versioned client/server contracts.
 
@@ -34,12 +35,13 @@ pnpm check
 
 The static client is built with base path `/pongapp/` and deployed through
 GitHub Pages to `https://www.jonathangu.com/pongapp/`. The live WebSocket room
-service runs at `https://pongapp-room.pongapp-room-worker.workers.dev` and can
-be overridden through `VITE_ROOM_SERVER_URL`.
+service runs on one always-on `sjc` Fly Machine at
+`https://pongapp-room.fly.dev`, with room snapshots persisted to its encrypted
+volume. The client endpoint can be overridden through `VITE_ROOM_SERVER_URL`.
 
 ```bash
-pnpm --filter @pongapp/room-worker run deploy
-ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev pnpm smoke:room
+fly deploy --ha=false
+ROOM_SERVER_URL=https://pongapp-room.fly.dev pnpm smoke:room
 ```
 
 The current release is deliberately standalone. Identity and progression are

@@ -18,8 +18,8 @@ import { loadProfile, loadSettings, recordResult, saveProfile, saveSettings, typ
 type Screen = { type: 'home' } | { type: 'local'; config: MatchConfig; humanIds: string[] } | { type: 'online'; roomCode?: string; request?: CreateRoomRequest; quickStart?: boolean }
 
 const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || (import.meta.env.PROD
-  ? 'https://pongapp-room.pongapp-room-worker.workers.dev'
-  : 'http://localhost:8787')
+  ? 'https://pongapp-room.fly.dev'
+  : 'http://localhost:8080')
 
 function roomFromHash(): string | undefined {
   const match = /^#\/room\/([A-Z0-9]{6})$/i.exec(window.location.hash)
