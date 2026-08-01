@@ -1,35 +1,125 @@
+/**
+ * Design tokens.
+ *
+ * Three rules keep this file honest:
+ *
+ * 1. **Seat colours are not authored here.** `packages/game-core/src/palette.ts`
+ *    owns them, because the renderer needs them as numbers and the simulation
+ *    stamps them onto `player.color`. The values below are a mirror, and
+ *    `tests/tokens.test.ts` fails — printing both sides — if the mirror drifts.
+ * 2. **Ramps are ordered and complete.** The old file had `ink-900/800/700` but
+ *    then invented `--pg-surface`, `--pg-surface-raised` and
+ *    `--pg-surface-accent` as three more near-identical greens outside the ramp,
+ *    so there were six dark greens and no way to tell which one a new component
+ *    should use. Surfaces are now aliases *into* the ramp.
+ * 3. **Motion is a token, not a number typed at the call site.** A game and its
+ *    chrome disagreeing about timing is the most common way a UI stops feeling
+ *    like one object.
+ */
+
 :root {
+  /* --- Ink ramp: the space behind everything ------------------------------ */
   --pg-ink-900: #0b1611;
   --pg-ink-800: #12231b;
   --pg-ink-700: #1a3428;
+  --pg-ink-600: #24382c;
+  --pg-ink-500: #334d3d;
+
+  /* --- Court greens ------------------------------------------------------- */
+  --pg-forest-800: #0e3325;
   --pg-forest-700: #123f2e;
   --pg-green-600: #1b6847;
   --pg-green-500: #2c865f;
+
+  /* --- Brand and seats ---------------------------------------------------- */
   --pg-lime-400: #dfff68;
   --pg-lime-300: #ecffa6;
   --pg-orange-500: #f36f44;
   --pg-paper: #fffdf7;
   --pg-cyan: #67d4ff;
   --pg-violet: #b59cff;
+
+  /* Mirror of SEAT_PALETTE — see rule 1 above. */
+  --pg-seat-0: #dfff68;
+  --pg-seat-1: #f36f44;
+  --pg-seat-2: #67d4ff;
+  --pg-seat-3: #b59cff;
+
+  /* --- Semantic aliases --------------------------------------------------- */
   --pg-bg: var(--pg-ink-900);
-  --pg-surface: #13211a;
-  --pg-surface-raised: #17271f;
-  --pg-surface-accent: #172f22;
-  --pg-text: #e8f0e9;
-  --pg-text-muted: #93a398;
-  --pg-line: #24382c;
-  --pg-line-strong: #334d3d;
+  --pg-surface: var(--pg-ink-800);
+  --pg-surface-raised: var(--pg-ink-700);
+  --pg-line: var(--pg-ink-600);
+  --pg-line-strong: var(--pg-ink-500);
   --pg-accent: var(--pg-lime-400);
   --pg-danger: var(--pg-orange-500);
+
+  --pg-text: #e8f0e9;
+  /* #93a398 on --pg-ink-900 is 7.0:1, so it clears AA for body text and AAA for
+     the large type it is mostly used on. Do not darken it without re-measuring. */
+  --pg-text-muted: #93a398;
+
+  /* --- Type --------------------------------------------------------------- */
   --pg-font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
   --pg-font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* Tabular figures stop a score or a clock from reflowing as digits change —
+     the single most visible typographic bug in a live HUD. */
+  --pg-font-numeric: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+
+  --pg-text-xs: .69rem;
+  --pg-text-sm: .78rem;
+  --pg-text-md: .92rem;
+  --pg-text-lg: 1.1rem;
+  --pg-text-xl: 1.4rem;
+  --pg-text-2xl: 2rem;
+
+  /* --- Space: a 4px base, so nothing lands on a half pixel ---------------- */
+  --pg-space-1: 4px;
+  --pg-space-2: 8px;
+  --pg-space-3: 12px;
+  --pg-space-4: 16px;
+  --pg-space-5: 22px;
+  --pg-space-6: 30px;
+  --pg-space-7: 44px;
+
   --pg-radius-sm: 8px;
   --pg-radius-md: 12px;
   --pg-radius-lg: 16px;
   --pg-radius-xl: 22px;
   --pg-radius-pill: 999px;
+
   --pg-shadow-md: 0 10px 30px rgb(0 0 0 / 35%);
   --pg-shadow-lg: 0 28px 70px rgb(0 0 0 / 52%);
-  --pg-transition: 160ms cubic-bezier(.2, 0, .2, 1);
+  --pg-glow-accent: 0 0 40px rgb(223 255 104 / 22%);
+
+  /* --- Motion ------------------------------------------------------------- */
+  /* `--pg-ease-out` for anything entering or responding to a press;
+     `--pg-ease-spring` only for celebratory beats — it overshoots, and an
+     overshooting control feels broken rather than lively. */
+  --pg-ease-out: cubic-bezier(.2, 0, .2, 1);
+  --pg-ease-spring: cubic-bezier(.22, 1.4, .36, 1);
+  --pg-duration-fast: 110ms;
+  --pg-duration-base: 180ms;
+  --pg-duration-slow: 320ms;
+  --pg-transition: var(--pg-duration-base) var(--pg-ease-out);
+
+  /* Minimum comfortable target. Anything a thumb hits during a rally is 56px. */
+  --pg-touch-target: 44px;
+  --pg-touch-target-lg: 56px;
+
   color-scheme: dark;
+}
+
+/**
+ * The setting toggle and the OS preference must both be able to calm the UI. The
+ * app reads the media query into `AppSettings.reducedMotion` at first load, but
+ * a player who flips the OS switch mid-session gets the CSS side immediately.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --pg-duration-fast: 1ms;
+    --pg-duration-base: 1ms;
+    --pg-duration-slow: 1ms;
+    --pg-ease-spring: linear;
+  }
 }

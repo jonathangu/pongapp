@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AbilityId, GameState } from '@pongapp/game-core'
+import { seatIdentity } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
 import { GameCourt } from '../game/GameCourt'
 import type { CourtEffectsSettings } from '../game/PixiCourt'
@@ -87,12 +88,29 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
             window.setTimeout(() => setCopied(false), 1600)
           }}>{copied ? 'Copied!' : 'Copy link'}</button></div>
           <div className="pg-player-list">
-            {(view.lobby?.participants ?? []).map((participant, index) => (
-              <div className="pg-player" key={participant.id}>
-                <div className="pg-player__identity"><span className="pg-player__dot" style={{ background: ['#dfff68', '#f36f44', '#67d4ff', '#b59cff'][index % 4] }} /><div><strong>{participant.displayName}</strong><br /><small>{participant.isAi ? 'AI' : participant.ability}{participant.isHost ? ' · host' : ''}</small></div></div>
-                <small>{participant.isReady || participant.isAi ? 'READY' : 'WAITING'}</small>
-              </div>
-            ))}
+            {(view.lobby?.participants ?? []).map((participant, index) => {
+              // Seat identity comes from the shared palette, and from the seat the
+              // room assigned rather than the participant's position in this list:
+              // spectators do not hold a slot, so a list index would hand the next
+              // player a colour their paddle will not be drawn in.
+              const seat = seatIdentity(participant.slot ?? index)
+              return (
+                <div className="pg-player" key={participant.id}>
+                  <div className="pg-player__identity">
+                    <span
+                      className={`pg-player__dot pg-seat-mark pg-seat-mark--${seat.pattern}`}
+                      style={{ color: seat.hex }}
+                      aria-hidden="true"
+                    />
+                    <div>
+                      <strong>{participant.displayName}</strong><br />
+                      <small>{participant.isAi ? 'AI' : participant.ability}{participant.isHost ? ' · host' : ''} · {seat.label} ({seat.patternLabel})</small>
+                    </div>
+                  </div>
+                  <small>{participant.isReady || participant.isAi ? 'READY' : 'WAITING'}</small>
+                </div>
+              )
+            })}
           </div>
           {view.error && <div className="pg-status pg-status--error">{view.error}</div>}
           <div className="pg-status">The match starts when every connected player is ready and at least {view.lobby?.mode === 'crosscourt' ? 'four' : view.lobby?.mode === 'arena' ? 'three' : 'two'} paddles are filled.</div>
