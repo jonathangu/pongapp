@@ -42,7 +42,11 @@ volume. The client endpoint can be overridden through `VITE_ROOM_SERVER_URL`.
 ```bash
 fly deploy --ha=false
 ROOM_SERVER_URL=https://pongapp-room.fly.dev pnpm smoke:room
+pnpm smoke:prod
 ```
+
+Every production Pages deployment runs the same canonical-site and real-room
+smoke checks after publishing.
 
 The current release is deliberately standalone. Identity and progression are
 device-local; RackeTapp code and Supabase are not modified.
