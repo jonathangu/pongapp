@@ -250,7 +250,7 @@ export default function App() {
                 ))}
               </select>
             </div>
-            <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie · misses a lot</option><option value="rally">Rally · a fair game</option><option value="pro">Pro · punishes mistakes</option><option value="ace">Ace · nearly perfect</option></select></div>
+            <div className="pg-field"><label htmlFor="difficulty">AI level</label><select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as AiDifficulty)}><option value="rookie">Rookie · misses a lot</option><option value="rally">Steady · a fair game</option><option value="pro">Pro · punishes mistakes</option><option value="ace">Ace · nearly perfect</option></select></div>
             <div className="pg-field"><label htmlFor="items">Power-ups</label><select id="items" value={items} onChange={(event) => setItems(event.target.value as ItemIntensity)}><option value="off">Off · pure Pong</option><option value="standard">Standard · an orb now and then</option><option value="wild">Wild · orbs constantly</option></select></div>
             <div className="pg-field">
               <label htmlFor="mutator">Rule twist</label>

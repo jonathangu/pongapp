@@ -453,8 +453,8 @@ export function GameCourt(props: Props) {
           className={`pg-rally${(state.rallyHits ?? 0) >= RALLY_STEPS[0]!.hits ? ' is-hot' : ''}`}
           title={`Rally length. Past ${RALLY_STEPS.map((step) => step.hits).join(' and ')} hits the point is worth more.`}
         >
-          <b className="pg-rally__value">{state.rallyHits ?? 0}</b>
           <span className="pg-rally__label">rally</span>
+          <b className="pg-rally__value">{state.rallyHits ?? 0}</b>
           {rallyMultiplierForHits(state.rallyHits ?? 0) > 1 && (
             <span className="pg-rally__multiplier">×{rallyMultiplierForHits(state.rallyHits ?? 0)}</span>
           )}
