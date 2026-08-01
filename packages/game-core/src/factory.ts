@@ -1,7 +1,7 @@
 import { defaultScoreToWin, sidesForMode, TICK_RATE } from './constants'
+import { seatIdentity } from './palette'
 import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, PlayerDefinition } from './types'
 
-const COLORS = [0xdfff68, 0xf36f44, 0x67d4ff, 0xb59cff]
 const ABILITY_ORDER: AbilityId[] = ['dash', 'bend', 'guard', 'pulse']
 
 export interface MatchFactoryOptions {
@@ -27,7 +27,7 @@ export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
       ability: human?.ability ?? ABILITY_ORDER[index] ?? 'dash',
       isAi: !human,
       aiDifficulty: human ? undefined : options.aiDifficulty ?? 'rally',
-      color: COLORS[index] ?? 0xdfff68,
+      color: seatIdentity(index).color,
     }
   })
   return {

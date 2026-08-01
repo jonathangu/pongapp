@@ -1,5 +1,6 @@
 export * from './ai'
 export * from './constants'
 export * from './factory'
+export * from './palette'
 export * from './simulation'
 export * from './types'

@@ -1,18 +1,62 @@
-import { Application, BlurFilter, Container, Graphics, Text } from 'pixi.js'
-import type { GameEvent, GameState, PlayerState, PowerUpId, Side } from '@pongapp/game-core'
-import { BASE_PADDLE_LENGTH, GROWN_PADDLE_LENGTH, PADDLE_OFFSET } from '@pongapp/game-core'
+/**
+ * The court renderer.
+ *
+ * This replaces a version that redrew every shape, including the static court
+ * furniture, into one `Graphics` per frame and lit nothing. Four things drove
+ * the rewrite, in the order they matter:
+ *
+ * 1. **The court is furniture, not animation.** Lines, floor, bezel and lane
+ *    ticks only change when the canvas changes size, yet they were cleared and
+ *    re-tessellated 60 times a second next to the ball. They now live in their
+ *    own layer behind a `layoutWidth` check and are rebuilt on resize only.
+ * 2. **Two frame loops were running.** `Application` defaults to
+ *    `autoStart: true`, so Pixi's ticker rendered every frame while `GameCourt`
+ *    drove a second `requestAnimationFrame` that mutated the same graphics. We
+ *    now init with `autoStart: false` and call `app.render()` exactly once per
+ *    host frame, so the mutation and the draw cannot disagree.
+ * 3. **Sim time and display time are different clocks.** The simulation is a
+ *    fixed 60Hz and online snapshots arrive slower still, so on a 120Hz phone
+ *    every ball position was shown twice. `sinceTick` measures how far we are
+ *    past the last state we were handed and extrapolates the ball and paddles
+ *    along their own velocity, capped at one tick. Capped, because
+ *    extrapolation past a bounce points the wrong way: one tick of overshoot at
+ *    the speed cap is 0.019 of the court, a little over one ball radius, and
+ *    invisible. Anything longer is a ball travelling through a paddle.
+ * 4. **Nothing on screen answered "is this rally going well?"** Pong's entire
+ *    tension curve is `BALL_SPEED_RAMP` compounding across a rally, and the old
+ *    renderer drew a 0.48 ball and a 1.12 ball identically. `heat` is that ramp
+ *    normalised to 0..1 and it now drives rim brightness, bloom, trail length,
+ *    ball stretch and particle count together. One number, many channels — so
+ *    the escalation still reads with effects turned down.
+ *
+ * What is deliberately *not* here: a true hitstop. Freezing the world for 60ms
+ * on a perfect return is the single largest available upgrade to how a hit
+ * feels, but the renderer does not own the clock — `LocalMatch` does, and the
+ * room worker owns it online. A renderer that faked a freeze would drift from a
+ * sim that did not. The impact budget is spent instead on a camera punch, a
+ * shockwave and a directional spark cone, all of which stay honest about the
+ * simulation continuing underneath.
+ *
+ * Effect density is a real budget, not a taste setting. `low` drops the bloom
+ * pass entirely rather than merely thinning it — it is the only full-screen
+ * filter here, and on a mid-range phone the blur *is* the frame.
+ */
 
-interface Particle {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  life: number
-  color: number
-  size: number
-}
-
-interface TrailPoint { x: number; y: number; life: number }
+import { Application, BlurFilter, Container, Graphics } from 'pixi.js'
+import type { GameEvent, GameState, PlayerState, Side } from '@pongapp/game-core'
+import {
+  ABILITY_COOLDOWNS,
+  BALL_SPEED_CAP,
+  BALL_START_SPEED,
+  BASE_PADDLE_LENGTH,
+  COURT_PALETTE,
+  GROWN_PADDLE_LENGTH,
+  PADDLE_OFFSET,
+  POWER_UP_IDENTITIES,
+  TICK_SECONDS,
+  seatIdentityForColor,
+  type SeatIdentity,
+} from '@pongapp/game-core'
 
 export interface CourtEffectsSettings {
   reducedMotion: boolean
@@ -20,30 +64,75 @@ export interface CourtEffectsSettings {
   effectDensity: 'low' | 'standard' | 'high'
 }
 
-const POWER_COLORS: Record<PowerUpId, number> = {
-  grow: 0xdfff68,
-  overdrive: 0xf36f44,
-  multiball: 0xfffdf7,
-  warp: 0xb59cff,
-  gravity: 0x67d4ff,
+interface Particle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  decay: number
+  color: number
+  size: number
 }
+
+interface TrailPoint { x: number; y: number; life: number }
+interface Shockwave { x: number; y: number; life: number; color: number; reach: number }
+interface WallFlash { side: Side; life: number; color: number }
+
+/**
+ * Per-density budget. `bloom` is a blur strength and `0` means the filter is
+ * never attached, not that it is attached and weak — an attached filter still
+ * costs a render texture and a full-screen pass whatever its strength.
+ */
+const DENSITY = {
+  low: { particles: 0.4, trail: 8, bloom: 0, quality: 2, waves: false },
+  standard: { particles: 1, trail: 16, bloom: 9, quality: 3, waves: true },
+  high: { particles: 1.8, trail: 26, bloom: 15, quality: 4, waves: true },
+} as const
+
+/** Frame-rate independent approach: `retainedPerSecond` is the gap left after one second. */
+function approach(current: number, target: number, retainedPerSecond: number, dt: number): number {
+  return target + (current - target) * Math.pow(retainedPerSecond, dt)
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 
 export class PixiCourt {
   private readonly app = new Application()
   private readonly stage = new Container()
-  private readonly court = new Graphics()
+
+  /** Rebuilt on resize only. */
+  private readonly backdrop = new Graphics()
+  private readonly floor = new Graphics()
+  private readonly bezel = new Graphics()
+
+  /** Rebuilt every frame. */
+  private readonly rim = new Graphics()
+  private readonly walls = new Graphics()
   private readonly trail = new Graphics()
   private readonly actors = new Graphics()
+  private readonly overlays = new Graphics()
   private readonly particlesLayer = new Graphics()
-  private readonly glow = new Graphics()
-  private readonly powerLabel = new Text({
-    text: '',
-    style: { fontFamily: 'Manrope', fontSize: 13, fontWeight: '800', fill: 0x12231b },
-  })
+
+  /** Additive, blurred, and skipped entirely at `low` density. */
+  private readonly bloomLayer = new Container()
+  private readonly bloomGraphics = new Graphics()
+  private bloomFilter: BlurFilter | null = null
+
   private particles: Particle[] = []
   private trails = new Map<string, TrailPoint[]>()
-  private shake = 0
+  private shockwaves: Shockwave[] = []
+  private wallFlashes: WallFlash[] = []
+
+  private trauma = 0
+  private punch = 0
+  private heat = 0
+  private clock = 0
+  private sinceTick = 0
+  private lastTick = -1
   private width = 0
+  private layoutWidth = -1
+  private resizeObserver: ResizeObserver | null = null
   private settings: CourtEffectsSettings
 
   constructor(settings: CourtEffectsSettings) {
@@ -55,32 +144,86 @@ export class PixiCourt {
       backgroundAlpha: 0,
       antialias: true,
       autoDensity: true,
+      // The host drives the frame; see note 2 in the header.
+      autoStart: false,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       resizeTo: element,
     })
     element.appendChild(this.app.canvas)
     this.app.stage.addChild(this.stage)
-    this.stage.addChild(this.court, this.trail, this.glow, this.actors, this.particlesLayer, this.powerLabel)
-    this.glow.filters = [new BlurFilter({ strength: 12, quality: 3 })]
+    this.bloomLayer.addChild(this.bloomGraphics)
+    this.bloomLayer.blendMode = 'add'
+    this.trail.blendMode = 'add'
+    this.particlesLayer.blendMode = 'add'
+    this.stage.addChild(
+      this.backdrop,
+      this.floor,
+      this.walls,
+      this.rim,
+      this.bloomLayer,
+      this.trail,
+      this.actors,
+      this.overlays,
+      this.particlesLayer,
+      this.bezel,
+    )
+    this.applyDensity()
+
+    // `resizeTo` only listens to `window.resize` (see Pixi's ResizePlugin), so a
+    // court that changes size because the surrounding layout changed — not the
+    // window — would keep rendering at the old size. Observe the element too.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.app.resize())
+      this.resizeObserver.observe(element)
+    }
   }
 
   updateSettings(settings: CourtEffectsSettings): void {
+    const densityChanged = settings.effectDensity !== this.settings.effectDensity
     this.settings = settings
+    if (densityChanged) this.applyDensity()
+    if (settings.reducedMotion) {
+      this.particles = []
+      this.shockwaves = []
+      this.trauma = 0
+      this.punch = 0
+    }
   }
 
   render(state: GameState, deltaSeconds: number): void {
-    this.width = Math.min(this.app.screen.width, this.app.screen.height)
-    if (this.width <= 0) return
-    const offsetX = (this.app.screen.width - this.width) / 2
-    const offsetY = (this.app.screen.height - this.width) / 2
-    const shakeAmount = this.settings.screenShake && !this.settings.reducedMotion ? this.shake : 0
-    this.stage.x = offsetX + (Math.random() - 0.5) * shakeAmount
-    this.stage.y = offsetY + (Math.random() - 0.5) * shakeAmount
-    this.shake *= Math.pow(0.04, deltaSeconds)
-    this.drawCourt(state)
-    this.drawTrails(state, deltaSeconds)
-    this.drawActors(state)
+    const size = Math.min(this.app.screen.width, this.app.screen.height)
+    if (size <= 0) return
+    this.width = size
+    this.clock += deltaSeconds
+
+    if (state.tick !== this.lastTick) {
+      this.lastTick = state.tick
+      this.sinceTick = 0
+    } else {
+      this.sinceTick += deltaSeconds
+    }
+    const ahead = state.phase === 'playing' && state.serveTicks <= 0
+      ? Math.min(this.sinceTick, TICK_SECONDS)
+      : 0
+
+    this.updateHeat(state, deltaSeconds)
+    this.applyCamera(deltaSeconds)
+
+    if (this.layoutWidth !== size) {
+      this.layoutWidth = size
+      this.drawStaticLayers()
+    }
+
+    this.bloomGraphics.clear()
+    this.overlays.clear()
+    this.drawRim(state)
+    this.drawWalls(deltaSeconds)
+    this.drawTrails(state, deltaSeconds, ahead)
+    this.drawActors(state, ahead)
+    this.drawOverlays(state, deltaSeconds)
     this.updateParticles(deltaSeconds)
+
+    this.app.render()
   }
 
   onEvents(events: GameEvent[], state: GameState): void {
@@ -88,159 +231,622 @@ export class PixiCourt {
       if (event.type === 'hit') {
         const ball = state.balls.find((candidate) => candidate.id === event.ballId)
         const player = state.players[event.playerId]
-        if (ball && player) this.burst(ball.x, ball.y, player.color, event.perfect ? 18 : 8)
-        if (event.perfect) this.shake = Math.max(this.shake, 5)
+        if (!ball || !player) continue
+        // Sparks leave the paddle the way the ball does. The old renderer sprayed
+        // a full circle, which reads as an explosion at the wall rather than as a
+        // return.
+        this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), player.color, event.perfect ? 20 : 9, event.perfect ? 1.15 : 0.7)
+        this.wave(ball.x, ball.y, player.color, event.perfect ? 0.16 : 0.085)
+        this.shake(event.perfect ? 0.34 : 0.1)
+        this.zoom(event.perfect ? 0.012 : 0.004)
       } else if (event.type === 'score') {
         const defender = state.players[event.againstPlayerId]
-        if (defender) this.goalBurst(defender.side, defender.color)
-        this.shake = 12
-      } else if (event.type === 'powerUp' || event.type === 'warp') {
-        for (const ball of state.balls) this.burst(ball.x, ball.y, 0xdfff68, 20)
+        const scorer = event.scorerId ? state.players[event.scorerId] : undefined
+        const color = scorer?.color ?? COURT_PALETTE.paper.color
+        if (defender) {
+          this.wallFlashes.push({ side: defender.side, life: 1, color })
+          this.goalSpray(defender.side, color)
+        }
+        this.shake(0.85)
+        this.zoom(0.026)
+      } else if (event.type === 'powerUp') {
+        const identity = POWER_UP_IDENTITIES[event.powerUp]
+        for (const ball of state.balls) {
+          this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), identity.color, 22, 1.4)
+          this.wave(ball.x, ball.y, identity.color, 0.22)
+        }
+        this.shake(0.3)
+      } else if (event.type === 'warp') {
+        const ball = state.balls.find((candidate) => candidate.id === event.ballId)
+        if (ball) {
+          // A warped ball teleports; clearing its trail stops a stripe being drawn
+          // straight across the court between the two gates.
+          this.trails.delete(ball.id)
+          this.wave(ball.x, ball.y, POWER_UP_IDENTITIES.warp.color, 0.18)
+        }
       } else if (event.type === 'shield') {
         const defender = state.players[event.playerId]
-        if (defender) this.goalBurst(defender.side, 0xfffdf7)
+        if (defender) {
+          this.wallFlashes.push({ side: defender.side, life: 1, color: COURT_PALETTE.paper.color })
+          this.shake(0.45)
+          this.zoom(0.016)
+        }
+      } else if (event.type === 'matchEnd') {
+        this.shake(0.6)
       }
     }
   }
 
   destroy(): void {
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = null
     this.app.destroy(true, { children: true, texture: true })
   }
 
+  // ---------------------------------------------------------------- internals
+
+  private get density() { return DENSITY[this.settings.effectDensity] }
+
   private point(value: number): number { return value * this.width }
 
-  private drawCourt(state: GameState): void {
+  private applyDensity(): void {
+    const strength = this.density.bloom
+    if (strength <= 0) {
+      this.bloomLayer.filters = []
+      this.bloomFilter = null
+      this.bloomLayer.visible = false
+      return
+    }
+    this.bloomLayer.visible = true
+    this.bloomFilter = new BlurFilter({ strength, quality: this.density.quality })
+    this.bloomLayer.filters = [this.bloomFilter]
+  }
+
+  private shake(amount: number): void {
+    if (this.settings.reducedMotion || !this.settings.screenShake) return
+    this.trauma = Math.min(1, this.trauma + amount)
+  }
+
+  private zoom(amount: number): void {
+    if (this.settings.reducedMotion) return
+    this.punch = Math.min(0.05, this.punch + amount)
+  }
+
+  private updateHeat(state: GameState, deltaSeconds: number): void {
+    let fastest = 0
+    for (const ball of state.balls) fastest = Math.max(fastest, Math.hypot(ball.vx, ball.vy))
+    const target = state.phase === 'playing'
+      ? clamp01((fastest - BALL_START_SPEED) / (BALL_SPEED_CAP - BALL_START_SPEED))
+      : 0
+    this.heat = approach(this.heat, target, 0.08, deltaSeconds)
+  }
+
+  /**
+   * Trauma-squared camera. Amplitude falls off as trauma², so a routine bump
+   * settles almost immediately while a goal keeps its weight, and the offset is
+   * sampled from summed sines rather than `Math.random()` — white noise per
+   * frame is a buzz, sine is a camera being knocked.
+   */
+  private applyCamera(deltaSeconds: number): void {
+    this.trauma = Math.max(0, this.trauma - deltaSeconds * 1.9)
+    this.punch = approach(this.punch, 0, 0.0006, deltaSeconds)
+
+    const w = this.width
+    const half = w / 2
+    const amplitude = w * 0.022 * this.trauma * this.trauma
+    const t = this.clock * 24
+    const shakeX = (Math.sin(t) + Math.sin(t * 2.31 + 1.7) * 0.5) * amplitude * 0.7
+    const shakeY = (Math.sin(t * 1.37 + 2.1) + Math.sin(t * 3.11 + 0.4) * 0.5) * amplitude * 0.7
+
+    // Pivot at the court centre so the punch scales about the middle of play
+    // rather than the top-left of the canvas.
+    this.stage.pivot.set(half, half)
+    this.stage.scale.set(1 + this.punch)
+    this.stage.position.set(
+      (this.app.screen.width - w) / 2 + half + shakeX,
+      (this.app.screen.height - w) / 2 + half + shakeY,
+    )
+  }
+
+  private drawStaticLayers(): void {
     const w = this.width
     const inset = w * 0.018
-    this.court.clear()
-      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
-      .fill({ color: 0x123f2e })
-      .stroke({ color: 0x334d3d, width: Math.max(2, w * 0.005) })
-      .roundRect(w * 0.045, w * 0.045, w * 0.91, w * 0.91, w * 0.03)
-      .stroke({ color: 0xdfff68, alpha: 0.38, width: Math.max(1, w * 0.002) })
-      .moveTo(w / 2, w * 0.045).lineTo(w / 2, w * 0.955)
-      .moveTo(w * 0.045, w / 2).lineTo(w * 0.955, w / 2)
-      .stroke({ color: 0xdfff68, alpha: 0.2, width: Math.max(1, w * 0.0015) })
-      .circle(w / 2, w / 2, w * 0.105)
-      .stroke({ color: 0xdfff68, alpha: 0.12, width: Math.max(1, w * 0.0015) })
+    const ink = COURT_PALETTE.ink.color
+    const accent = COURT_PALETTE.accent.color
 
-    this.glow.clear()
+    // A radial pool of light under the court, stacked from circles rather than a
+    // gradient fill so it costs nothing at runtime — drawn once per resize and
+    // then never touched again.
+    this.backdrop.clear()
+    for (let step = 8; step >= 1; step -= 1) {
+      this.backdrop.circle(w / 2, w / 2, w * (0.22 + step * 0.062)).fill({ color: 0x1b6847, alpha: 0.018 })
+    }
+
+    this.floor.clear()
+      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
+      .fill({ color: COURT_PALETTE.floor.color })
+    // A darker core reads as depth without a texture: the eye takes the lighter
+    // border as the court lifting toward the walls.
+    this.floor
+      .roundRect(w * 0.14, w * 0.14, w * 0.72, w * 0.72, w * 0.06)
+      .fill({ color: COURT_PALETTE.floorDeep.color, alpha: 0.55 })
+
+    // Centre cross, dashed so it does not compete with the ball trail.
+    this.dashed(this.floor, w / 2, w * 0.06, w / 2, w * 0.94, w * 0.026, w * 0.022)
+    this.dashed(this.floor, w * 0.06, w / 2, w * 0.94, w / 2, w * 0.026, w * 0.022)
+    this.floor.stroke({ color: accent, alpha: 0.16, width: Math.max(1, w * 0.0016) })
+
+    this.floor.circle(w / 2, w / 2, w * 0.105).stroke({ color: accent, alpha: 0.14, width: Math.max(1, w * 0.0016) })
+    this.floor.circle(w / 2, w / 2, w * 0.028).stroke({ color: accent, alpha: 0.1, width: Math.max(1, w * 0.0014) })
+
+    // Lane ticks mark 0.08 and 0.92 — the actual clamp on paddle travel in
+    // `updatePlayers`. Players were guessing where a paddle stops; the court now
+    // says so, and the marks stay honest because they are derived from the same
+    // constant the simulation clamps to.
+    for (const mark of [0.08, 0.5, 0.92]) {
+      const along = this.point(mark)
+      const depth = w * (mark === 0.5 ? 0.022 : 0.014)
+      const lane = this.point(PADDLE_OFFSET)
+      this.floor.moveTo(lane - depth, along).lineTo(lane + depth, along)
+      this.floor.moveTo(w - lane - depth, along).lineTo(w - lane + depth, along)
+      this.floor.moveTo(along, lane - depth).lineTo(along, lane + depth)
+      this.floor.moveTo(along, w - lane - depth).lineTo(along, w - lane + depth)
+    }
+    this.floor.stroke({ color: accent, alpha: 0.3, width: Math.max(1, w * 0.002) })
+
+    this.bezel.clear()
+      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
+      .stroke({ color: COURT_PALETTE.line.color, width: Math.max(2, w * 0.005) })
+    this.bezel
+      .roundRect(inset * 0.35, inset * 0.35, w - inset * 0.7, w - inset * 0.7, w * 0.055)
+      .stroke({ color: ink, alpha: 0.55, width: Math.max(2, w * 0.012) })
+  }
+
+  private dashed(graphics: Graphics, x1: number, y1: number, x2: number, y2: number, dash: number, gap: number): void {
+    const length = Math.hypot(x2 - x1, y2 - y1)
+    const stepX = (x2 - x1) / length
+    const stepY = (y2 - y1) / length
+    for (let travelled = 0; travelled < length; travelled += dash + gap) {
+      const end = Math.min(length, travelled + dash)
+      graphics.moveTo(x1 + stepX * travelled, y1 + stepY * travelled).lineTo(x1 + stepX * end, y1 + stepY * end)
+    }
+  }
+
+  /** The rim is the heat gauge: it brightens and thickens as the rally accelerates. */
+  private drawRim(state: GameState): void {
+    const w = this.width
+    const inset = w * 0.045
+    const breathe = this.settings.reducedMotion ? 0 : Math.sin(this.clock * 2.2) * 0.04
+    const intensity = 0.22 + this.heat * 0.55 + breathe * this.heat
+
+    this.rim.clear()
+      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.03)
+      .stroke({ color: COURT_PALETTE.accent.color, alpha: intensity, width: Math.max(1, w * (0.0018 + this.heat * 0.0032)) })
+
+    if (this.bloomFilter && this.heat > 0.05) {
+      this.bloomGraphics
+        .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.03)
+        .stroke({ color: COURT_PALETTE.accent.color, alpha: this.heat * 0.32, width: Math.max(1, w * 0.003) })
+    }
+
+    // Gravity well and warp gates are world effects, so they belong with the
+    // court rather than with the actors that pass through them.
     if (state.worldEffects.gravityTicks > 0) {
-      this.glow.circle(w / 2, w / 2, w * 0.085).fill({ color: 0x67d4ff, alpha: 0.45 })
+      const identity = POWER_UP_IDENTITIES.gravity
+      for (let ring = 1; ring <= 3; ring += 1) {
+        const phase = (this.clock * 0.55 + ring / 3) % 1
+        this.rim.circle(w / 2, w / 2, this.point(0.02 + phase * 0.13))
+          .stroke({ color: identity.color, alpha: 0.4 * (1 - phase), width: Math.max(2, w * 0.004) })
+      }
+      this.bloomGraphics.circle(w / 2, w / 2, this.point(0.05)).fill({ color: identity.color, alpha: 0.35 })
     }
     if (state.worldEffects.warpTicks > 0) {
-      this.drawGate(this.glow, 0.32, 0.5, 0xb59cff, state.tick)
-      this.drawGate(this.glow, 0.68, 0.5, 0xdfff68, -state.tick)
+      this.drawGate(0.32, 0.5, POWER_UP_IDENTITIES.warp.color, 1)
+      this.drawGate(0.68, 0.5, COURT_PALETTE.accent.color, -1)
     }
   }
 
-  private drawGate(graphics: Graphics, x: number, y: number, color: number, tick: number): void {
-    const pulse = 1 + Math.sin(tick / 9) * 0.14
-    graphics.circle(this.point(x), this.point(y), this.point(0.034) * pulse)
-      .stroke({ color, alpha: 0.75, width: Math.max(3, this.width * 0.008) })
+  private drawGate(x: number, y: number, color: number, spin: number): void {
+    const w = this.width
+    const cx = this.point(x)
+    const cy = this.point(y)
+    // 0.035 is the capture radius `updateWorldEffects` tests against. Drawing the
+    // gate at any other size teaches the player the wrong hitbox.
+    const radius = this.point(0.035)
+    const angle = this.clock * 2.4 * spin
+    for (let arc = 0; arc < 3; arc += 1) {
+      const start = angle + (arc * Math.PI * 2) / 3
+      this.rim.arc(cx, cy, radius, start, start + 1.25)
+        .stroke({ color, alpha: 0.85, width: Math.max(3, w * 0.007), cap: 'round' })
+    }
+    this.bloomGraphics.circle(cx, cy, radius * 0.9).fill({ color, alpha: 0.4 })
   }
 
-  private drawActors(state: GameState): void {
+  /** Goal-mouth flashes: the wall that just conceded is painted in the scorer's colour. */
+  private drawWalls(deltaSeconds: number): void {
     const w = this.width
-    this.actors.clear()
-    for (const player of Object.values(state.players)) this.drawPaddle(player)
+    this.walls.clear()
+    for (const flash of this.wallFlashes) {
+      flash.life -= deltaSeconds * 1.5
+      if (flash.life <= 0) continue
+      const band = w * 0.09
+      if (flash.side === 'left') this.walls.rect(0, 0, band, w)
+      else if (flash.side === 'right') this.walls.rect(w - band, 0, band, w)
+      else if (flash.side === 'top') this.walls.rect(0, 0, w, band)
+      else this.walls.rect(0, w - band, w, band)
+      this.walls.fill({ color: flash.color, alpha: clamp01(flash.life) * 0.45 })
+    }
+    this.wallFlashes = this.wallFlashes.filter((flash) => flash.life > 0)
+  }
 
+  private drawActors(state: GameState, ahead: number): void {
+    this.actors.clear()
+    for (const player of Object.values(state.players)) this.drawPaddle(player, state, ahead)
     for (const ball of state.balls) {
       const owner = ball.lastToucherId ? state.players[ball.lastToucherId] : undefined
-      const color = owner?.color ?? 0xfffdf7
-      this.actors.circle(this.point(ball.x), this.point(ball.y), Math.max(4, this.point(ball.radius)))
-        .fill({ color: 0xfffdf7 })
-        .stroke({ color, alpha: 0.8, width: Math.max(2, w * 0.004) })
+      const color = owner?.color ?? COURT_PALETTE.paper.color
+      const x = clamp01(ball.x + ball.vx * ahead)
+      const y = clamp01(ball.y + ball.vy * ahead)
+      const speed = Math.hypot(ball.vx, ball.vy)
+      const radius = Math.max(4, this.point(ball.radius))
+
+      // Squash and stretch along the direction of travel, with the product held
+      // at 1 so the ball never looks like it grew.
+      const stretch = 1 + 0.38 * clamp01(speed / BALL_SPEED_CAP)
+      this.rotatedEllipse(this.actors, x, y, radius * stretch, radius / stretch, Math.atan2(ball.vy, ball.vx))
+      this.actors.fill({ color: COURT_PALETTE.paper.color })
+        .stroke({ color, alpha: 0.9, width: Math.max(2, this.width * (0.003 + this.heat * 0.003)) })
+
+      if (this.bloomFilter) {
+        this.bloomGraphics.circle(this.point(x), this.point(y), radius * (1.7 + this.heat * 1.4))
+          .fill({ color, alpha: 0.34 + this.heat * 0.3 })
+      }
+    }
+    this.drawPowerUp(state)
+  }
+
+  private drawPaddle(player: PlayerState, state: GameState, ahead: number): void {
+    const w = this.width
+    const seat = seatIdentityForColor(player.color)
+    const length = this.point(player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH)
+    const thickness = Math.max(8, w * 0.019)
+    const offset = this.point(PADDLE_OFFSET)
+    const position = Math.min(0.92, Math.max(0.08, player.position + player.velocity * ahead))
+    const along = this.point(position)
+    const horizontal = player.side === 'top' || player.side === 'bottom'
+
+    const x = horizontal ? along - length / 2 : (player.side === 'left' ? offset : w - offset) - thickness / 2
+    const y = horizontal ? (player.side === 'top' ? offset : w - offset) - thickness / 2 : along - length / 2
+    const width = horizontal ? length : thickness
+    const height = horizontal ? thickness : length
+
+    this.actors.roundRect(x, y, width, height, thickness / 2).fill({ color: player.color })
+    // A single highlight along the paddle face gives it a lit edge without a
+    // second material or a texture.
+    this.actors.roundRect(
+      horizontal ? x + length * 0.06 : x + thickness * 0.24,
+      horizontal ? y + thickness * 0.24 : y + length * 0.06,
+      horizontal ? length * 0.88 : thickness * 0.28,
+      horizontal ? thickness * 0.28 : length * 0.88,
+      thickness * 0.14,
+    ).fill({ color: COURT_PALETTE.paper.color, alpha: 0.22 })
+
+    this.drawSeatMark(seat, x, y, width, height, horizontal, length, thickness)
+    this.drawCooldown(player, x, y, width, height, horizontal, length, thickness)
+
+    if (this.bloomFilter) {
+      const ready = player.cooldownTicks <= 0 ? 0.3 : 0
+      this.bloomGraphics.roundRect(x, y, width, height, thickness / 2)
+        .fill({ color: player.color, alpha: 0.2 + ready + this.heat * 0.18 })
     }
 
-    if (state.powerUp) {
-      const color = POWER_COLORS[state.powerUp.id]
-      const pulse = 1 + Math.sin(state.tick / 8) * 0.16
-      this.actors.circle(this.point(state.powerUp.x), this.point(state.powerUp.y), this.point(0.027) * pulse)
-        .fill({ color })
-        .stroke({ color: 0xfffdf7, alpha: 0.8, width: Math.max(1, w * 0.003) })
-      this.powerLabel.text = state.powerUp.id.slice(0, 1).toUpperCase()
-      this.powerLabel.anchor.set(0.5)
-      this.powerLabel.x = this.point(state.powerUp.x)
-      this.powerLabel.y = this.point(state.powerUp.y)
-      this.powerLabel.visible = true
-    } else {
-      this.powerLabel.visible = false
+    if (player.guardTicks > 0) this.drawGuard(player.side, player.color)
+    if (player.pulseTicks > 0) {
+      const centreX = horizontal ? along : player.side === 'left' ? offset : w - offset
+      const centreY = horizontal ? (player.side === 'top' ? offset : w - offset) : along
+      this.overlays.circle(centreX, centreY, length * 0.78)
+        .stroke({ color: player.color, alpha: 0.6, width: Math.max(2, w * 0.006) })
+    }
+    if (state.phase === 'countdown' && !this.settings.reducedMotion) {
+      // A pre-serve breath on every paddle: the court is alive before the ball is.
+      const pulse = 0.5 + Math.sin(this.clock * 4 + seat.index) * 0.5
+      this.overlays.roundRect(x - thickness * 0.35, y - thickness * 0.35, width + thickness * 0.7, height + thickness * 0.7, thickness)
+        .stroke({ color: player.color, alpha: 0.12 + pulse * 0.2, width: Math.max(1, w * 0.0025) })
     }
   }
 
-  private drawPaddle(player: PlayerState): void {
-    const w = this.width
-    const length = this.point(player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH)
-    const thickness = Math.max(8, w * 0.018)
-    const offset = this.point(PADDLE_OFFSET)
-    const coordinate = this.point(player.position)
-    let x = 0; let y = 0; let width = thickness; let height = length
-    if (player.side === 'left') { x = offset - thickness / 2; y = coordinate - length / 2 }
-    else if (player.side === 'right') { x = w - offset - thickness / 2; y = coordinate - length / 2 }
-    else if (player.side === 'top') { x = coordinate - length / 2; y = offset - thickness / 2; width = length; height = thickness }
-    else { x = coordinate - length / 2; y = w - offset - thickness / 2; width = length; height = thickness }
+  /**
+   * Colour-independent seat marks, cut into the paddle in court ink.
+   *
+   * PLAN.md promised "accessible player patterns" and colour alone did not
+   * deliver them: seats 2 and 3 are a cyan/violet pair that collapse toward each
+   * other under deuteranopia and in a greyscale screenshot. Count and presence
+   * survive that and survive the ~8px paddle a phone actually draws; fine shape
+   * does not, so none of these ask the eye to resolve an outline.
+   */
+  private drawSeatMark(
+    seat: SeatIdentity,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    horizontal: boolean,
+    length: number,
+    thickness: number,
+  ): void {
+    if (seat.pattern === 'solid') return
+    const ink = COURT_PALETTE.ink.color
+    const alpha = 0.6
+    const markThickness = thickness * 0.34
+    const centreX = x + width / 2
+    const centreY = y + height / 2
 
-    this.actors.roundRect(x, y, width, height, thickness / 2).fill({ color: player.color })
-    if (player.guardTicks > 0) {
-      this.drawGuard(player.side, player.color)
+    if (seat.pattern === 'bar') {
+      const size = length * 0.16
+      this.actors.roundRect(
+        horizontal ? centreX - size / 2 : centreX - markThickness / 2,
+        horizontal ? centreY - markThickness / 2 : centreY - size / 2,
+        horizontal ? size : markThickness,
+        horizontal ? markThickness : size,
+        markThickness / 2,
+      ).fill({ color: ink, alpha })
+      return
     }
-    if (player.pulseTicks > 0) {
+
+    if (seat.pattern === 'notch') {
+      const size = length * 0.1
+      for (const side of [-1, 1]) {
+        const shift = side * length * 0.33
+        this.actors.roundRect(
+          horizontal ? centreX + shift - size / 2 : centreX - markThickness / 2,
+          horizontal ? centreY - markThickness / 2 : centreY + shift - size / 2,
+          horizontal ? size : markThickness,
+          horizontal ? markThickness : size,
+          markThickness / 2,
+        ).fill({ color: ink, alpha })
+      }
+      return
+    }
+
+    const radius = thickness * 0.19
+    for (const step of [-1, 0, 1]) {
+      const shift = step * length * 0.2
       this.actors.circle(
-        player.side === 'left' ? offset : player.side === 'right' ? w - offset : coordinate,
-        player.side === 'top' ? offset : player.side === 'bottom' ? w - offset : coordinate,
-        length * 0.75,
-      ).stroke({ color: player.color, alpha: 0.55, width: Math.max(2, w * 0.006) })
+        horizontal ? centreX + shift : centreX,
+        horizontal ? centreY : centreY + shift,
+        radius,
+      ).fill({ color: ink, alpha })
     }
+  }
+
+  /**
+   * Ability readiness, drawn on the paddle.
+   *
+   * It used to live only in a button below the court, which is the one place a
+   * player mid-rally is not looking. The bar runs along the outward face so it
+   * never overlaps the contact surface, and it fills *toward* ready rather than
+   * draining, because the useful question is "how soon" and not "how long ago".
+   */
+  private drawCooldown(
+    player: PlayerState,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    horizontal: boolean,
+    length: number,
+    thickness: number,
+  ): void {
+    const total = ABILITY_COOLDOWNS[player.ability]
+    const ready = player.cooldownTicks <= 0
+    const progress = ready ? 1 : clamp01(1 - player.cooldownTicks / total)
+    const bar = thickness * 0.18
+    const gap = thickness * 0.5
+    // The track is deliberately shorter than the paddle. A full-length bar in
+    // paper white sat close enough to the paddle to read as a second paddle, or
+    // as the wall — exactly the confusion a readability aid must not create.
+    const track = length * 0.62
+    const outward = player.side === 'left' || player.side === 'top' ? -1 : 1
+    const filled = track * progress
+    const start = (length - track) / 2
+
+    const trackX = horizontal ? x + start : x + (outward < 0 ? -gap : width + gap - bar)
+    const trackY = horizontal ? y + (outward < 0 ? -gap : height + gap - bar) : y + start
+
+    this.overlays
+      .roundRect(trackX, trackY, horizontal ? track : bar, horizontal ? bar : track, bar / 2)
+      .fill({ color: COURT_PALETTE.ink.color, alpha: 0.45 })
+    this.overlays.roundRect(
+      horizontal ? trackX + (track - filled) / 2 : trackX,
+      horizontal ? trackY : trackY + (track - filled) / 2,
+      horizontal ? filled : bar,
+      horizontal ? bar : filled,
+      bar / 2,
+    ).fill({ color: player.color, alpha: ready ? 0.95 : 0.55 })
   }
 
   private drawGuard(side: Side, color: number): void {
     const w = this.width
     const gap = w * 0.012
-    if (side === 'left') this.actors.moveTo(gap, w * 0.08).lineTo(gap, w * 0.92)
-    else if (side === 'right') this.actors.moveTo(w - gap, w * 0.08).lineTo(w - gap, w * 0.92)
-    else if (side === 'top') this.actors.moveTo(w * 0.08, gap).lineTo(w * 0.92, gap)
-    else this.actors.moveTo(w * 0.08, w - gap).lineTo(w * 0.92, w - gap)
-    this.actors.stroke({ color, alpha: 0.6, width: Math.max(3, w * 0.008) })
+    if (side === 'left') this.overlays.moveTo(gap, w * 0.08).lineTo(gap, w * 0.92)
+    else if (side === 'right') this.overlays.moveTo(w - gap, w * 0.08).lineTo(w - gap, w * 0.92)
+    else if (side === 'top') this.overlays.moveTo(w * 0.08, gap).lineTo(w * 0.92, gap)
+    else this.overlays.moveTo(w * 0.08, w - gap).lineTo(w * 0.92, w - gap)
+    this.overlays.stroke({ color, alpha: 0.7, width: Math.max(3, w * 0.008), cap: 'round' })
+    if (this.bloomFilter) {
+      this.bloomGraphics.circle(
+        side === 'left' ? gap : side === 'right' ? w - gap : w / 2,
+        side === 'top' ? gap : side === 'bottom' ? w - gap : w / 2,
+        w * 0.03,
+      ).fill({ color, alpha: 0.3 })
+    }
   }
 
-  private drawTrails(state: GameState, deltaSeconds: number): void {
+  private drawPowerUp(state: GameState): void {
+    if (!state.powerUp) return
+    const identity = POWER_UP_IDENTITIES[state.powerUp.id]
+    const w = this.width
+    const cx = this.point(state.powerUp.x)
+    const cy = this.point(state.powerUp.y)
+    // 0.028 is the capture radius in `updatePowerUp`; the orb is drawn to match.
+    const radius = this.point(0.028)
+    const pulse = this.settings.reducedMotion ? 1 : 1 + Math.sin(this.clock * 5) * 0.09
+
+    this.actors.circle(cx, cy, radius * pulse).fill({ color: COURT_PALETTE.ink.color, alpha: 0.85 })
+    this.actors.circle(cx, cy, radius * pulse)
+      .stroke({ color: identity.color, alpha: 0.95, width: Math.max(2, w * 0.005) })
+    this.drawPowerGlyph(identity.glyph, cx, cy, radius * 0.56, identity.color)
+    if (this.bloomFilter) {
+      this.bloomGraphics.circle(cx, cy, radius * 1.8).fill({ color: identity.color, alpha: 0.3 })
+    }
+  }
+
+  /**
+   * Vector glyphs, not letters.
+   *
+   * The orb used to be labelled `id[0]`, which gives **G** for both Grow and
+   * Gravity — the two power-ups least alike in effect — and it was set in
+   * Manrope, so before the webfont loaded it was a fallback letter at a
+   * different width. Shapes have neither problem.
+   */
+  private drawPowerGlyph(glyph: string, cx: number, cy: number, size: number, color: number): void {
+    const stroke = { color, alpha: 1, width: Math.max(2, size * 0.28), cap: 'round' as const, join: 'round' as const }
+    if (glyph === 'extend') {
+      this.actors.moveTo(cx - size, cy).lineTo(cx + size, cy).stroke(stroke)
+      this.actors.moveTo(cx - size * 0.45, cy - size * 0.5).lineTo(cx - size, cy).lineTo(cx - size * 0.45, cy + size * 0.5).stroke(stroke)
+      this.actors.moveTo(cx + size * 0.45, cy - size * 0.5).lineTo(cx + size, cy).lineTo(cx + size * 0.45, cy + size * 0.5).stroke(stroke)
+    } else if (glyph === 'chevron') {
+      for (const shift of [-size * 0.5, size * 0.25]) {
+        this.actors.moveTo(cx + shift - size * 0.2, cy - size * 0.6)
+          .lineTo(cx + shift + size * 0.35, cy)
+          .lineTo(cx + shift - size * 0.2, cy + size * 0.6)
+          .stroke(stroke)
+      }
+    } else if (glyph === 'orbs') {
+      this.actors.circle(cx, cy - size * 0.45, size * 0.34).fill({ color })
+      this.actors.circle(cx - size * 0.55, cy + size * 0.4, size * 0.34).fill({ color })
+      this.actors.circle(cx + size * 0.55, cy + size * 0.4, size * 0.34).fill({ color })
+    } else if (glyph === 'gate') {
+      this.actors.arc(cx - size * 0.35, cy, size * 0.75, Math.PI * 0.55, Math.PI * 1.45).stroke(stroke)
+      this.actors.arc(cx + size * 0.35, cy, size * 0.75, Math.PI * 1.55, Math.PI * 0.45).stroke(stroke)
+    } else {
+      this.actors.circle(cx, cy, size * 0.9).stroke(stroke)
+      this.actors.circle(cx, cy, size * 0.3).fill({ color })
+    }
+  }
+
+  private drawOverlays(state: GameState, deltaSeconds: number): void {
+    const w = this.width
+    for (const wave of this.shockwaves) {
+      wave.life -= deltaSeconds * 2.6
+      if (wave.life <= 0) continue
+      const progress = 1 - wave.life
+      this.overlays.circle(this.point(wave.x), this.point(wave.y), this.point(wave.reach * progress))
+        .stroke({ color: wave.color, alpha: wave.life * 0.55, width: Math.max(1, w * 0.006 * wave.life) })
+    }
+    this.shockwaves = this.shockwaves.filter((wave) => wave.life > 0)
+
+    // The serve telegraph: while the ball is parked at centre waiting to serve,
+    // ring it so nobody is surprised by a ball that was already moving.
+    if (state.serveTicks > 0 && state.phase === 'playing' && !this.settings.reducedMotion) {
+      const pulse = (this.clock * 1.6) % 1
+      this.overlays.circle(w / 2, w / 2, this.point(0.03 + pulse * 0.09))
+        .stroke({ color: COURT_PALETTE.paper.color, alpha: (1 - pulse) * 0.5, width: Math.max(1, w * 0.004) })
+    }
+  }
+
+  private drawTrails(state: GameState, deltaSeconds: number, ahead: number): void {
+    const maximum = this.settings.reducedMotion
+      ? 4
+      : Math.round(this.density.trail * (0.7 + this.heat * 0.5))
+
     for (const ball of state.balls) {
       const points = this.trails.get(ball.id) ?? []
-      points.push({ x: ball.x, y: ball.y, life: 1 })
-      const maximum = this.settings.effectDensity === 'high' ? 24 : this.settings.effectDensity === 'low' ? 8 : 15
+      points.push({ x: ball.x + ball.vx * ahead, y: ball.y + ball.vy * ahead, life: 1 })
       while (points.length > maximum) points.shift()
       for (const point of points) point.life -= deltaSeconds * 2.7
       this.trails.set(ball.id, points.filter((point) => point.life > 0))
     }
+    // Multiball spawns and expires transient balls, so trails outlive their ball
+    // unless they are reaped here. Deleting the current key mid-iteration is
+    // defined behaviour for Map, so no snapshot of the keys is needed.
+    for (const id of this.trails.keys()) {
+      if (!state.balls.some((ball) => ball.id === id)) this.trails.delete(id)
+    }
+
     this.trail.clear()
     for (const [ballId, points] of this.trails) {
+      if (points.length < 2) continue
       const ball = state.balls.find((candidate) => candidate.id === ballId)
       const owner = ball?.lastToucherId ? state.players[ball.lastToucherId] : undefined
-      const color = owner?.color ?? 0xfffdf7
-      if (points.length < 2) continue
-      this.trail.moveTo(this.point(points[0]!.x), this.point(points[0]!.y))
-      for (const point of points.slice(1)) this.trail.lineTo(this.point(point.x), this.point(point.y))
-      this.trail.stroke({ color, alpha: 0.35, width: Math.max(2, this.width * 0.009) })
+      const color = owner?.color ?? COURT_PALETTE.paper.color
+      const head = Math.max(3, this.point(ball?.radius ?? 0.015)) * 1.05
+
+      // Quads rather than one polyline: a constant-width, constant-alpha stroke
+      // reads as a wire dragged behind the ball. Tapering both width and alpha
+      // toward the tail is what makes it read as motion.
+      for (let index = 1; index < points.length; index += 1) {
+        const from = points[index - 1]!
+        const to = points[index]!
+        const fromWeight = index / points.length
+        const toWeight = (index + 1) / points.length
+        const dx = to.x - from.x
+        const dy = to.y - from.y
+        const span = Math.hypot(dx, dy) || 1
+        const nx = (-dy / span) * head
+        const ny = (dx / span) * head
+        const fx = this.point(from.x)
+        const fy = this.point(from.y)
+        const tx = this.point(to.x)
+        const ty = this.point(to.y)
+        this.trail.poly([
+          fx + nx * fromWeight, fy + ny * fromWeight,
+          tx + nx * toWeight, ty + ny * toWeight,
+          tx - nx * toWeight, ty - ny * toWeight,
+          fx - nx * fromWeight, fy - ny * fromWeight,
+        ]).fill({ color, alpha: 0.06 + 0.3 * toWeight * clamp01(to.life) })
+      }
     }
   }
 
-  private burst(x: number, y: number, color: number, requestedCount: number): void {
+  private wave(x: number, y: number, color: number, reach: number): void {
+    if (this.settings.reducedMotion || !this.density.waves) return
+    this.shockwaves.push({ x, y, life: 1, color, reach })
+  }
+
+  /** A spark cone aimed along `angle`, so an impact reads as a deflection. */
+  private cone(x: number, y: number, angle: number, color: number, requested: number, spreadScale: number): void {
     if (this.settings.reducedMotion) return
-    const multiplier = this.settings.effectDensity === 'high' ? 1.5 : this.settings.effectDensity === 'low' ? 0.5 : 1
-    const count = Math.round(requestedCount * multiplier)
+    const count = Math.round(requested * this.density.particles)
     for (let index = 0; index < count; index += 1) {
-      const angle = Math.random() * Math.PI * 2
-      const speed = 0.12 + Math.random() * 0.38
-      this.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, color, size: 2 + Math.random() * 4 })
+      const direction = angle + (Math.random() - 0.5) * 1.5 * spreadScale
+      const speed = 0.16 + Math.random() * 0.5
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(direction) * speed,
+        vy: Math.sin(direction) * speed,
+        life: 1,
+        decay: 1.9 + Math.random() * 1.4,
+        color,
+        size: 1.6 + Math.random() * 3.4,
+      })
     }
   }
 
-  private goalBurst(side: Side, color: number): void {
+  private goalSpray(side: Side, color: number): void {
+    const inward = side === 'left' ? 0 : side === 'right' ? Math.PI : side === 'top' ? Math.PI / 2 : -Math.PI / 2
     const horizontal = side === 'top' || side === 'bottom'
-    for (let index = 0; index < 28; index += 1) {
-      const coordinate = 0.1 + Math.random() * 0.8
-      this.burst(horizontal ? coordinate : side === 'left' ? 0.02 : 0.98, horizontal ? side === 'top' ? 0.02 : 0.98 : coordinate, color, 1)
+    for (let index = 0; index < 14; index += 1) {
+      const along = 0.12 + Math.random() * 0.76
+      this.cone(
+        horizontal ? along : side === 'left' ? 0.02 : 0.98,
+        horizontal ? (side === 'top' ? 0.02 : 0.98) : along,
+        inward,
+        color,
+        3,
+        0.8,
+      )
     }
   }
 
@@ -249,12 +855,38 @@ export class PixiCourt {
     for (const particle of this.particles) {
       particle.x += particle.vx * deltaSeconds
       particle.y += particle.vy * deltaSeconds
-      particle.vx *= Math.pow(0.16, deltaSeconds)
-      particle.vy *= Math.pow(0.16, deltaSeconds)
-      particle.life -= deltaSeconds * 2.2
-      this.particlesLayer.circle(this.point(particle.x), this.point(particle.y), particle.size * Math.max(0.2, particle.life))
-        .fill({ color: particle.color, alpha: Math.max(0, particle.life) })
+      const drag = Math.pow(0.12, deltaSeconds)
+      particle.vx *= drag
+      particle.vy *= drag
+      particle.life -= deltaSeconds * particle.decay
+      if (particle.life <= 0) continue
+      this.particlesLayer
+        .circle(this.point(particle.x), this.point(particle.y), particle.size * Math.max(0.2, particle.life))
+        .fill({ color: particle.color, alpha: Math.max(0, particle.life) * 0.85 })
     }
     this.particles = this.particles.filter((particle) => particle.life > 0)
+  }
+
+  /**
+   * Pixi `Graphics` has no rotated-ellipse primitive and `Graphics.rotation`
+   * would spin the whole layer, so the path is tessellated. Twenty segments is
+   * indistinguishable from a curve at the sizes a ball is ever drawn.
+   */
+  private rotatedEllipse(graphics: Graphics, x: number, y: number, rx: number, ry: number, rotation: number): void {
+    const cx = this.point(x)
+    const cy = this.point(y)
+    const cos = Math.cos(rotation)
+    const sin = Math.sin(rotation)
+    const segments = 20
+    for (let index = 0; index <= segments; index += 1) {
+      const theta = (index / segments) * Math.PI * 2
+      const px = Math.cos(theta) * rx
+      const py = Math.sin(theta) * ry
+      const rotatedX = cx + px * cos - py * sin
+      const rotatedY = cy + px * sin + py * cos
+      if (index === 0) graphics.moveTo(rotatedX, rotatedY)
+      else graphics.lineTo(rotatedX, rotatedY)
+    }
+    graphics.closePath()
   }
 }
