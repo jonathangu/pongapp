@@ -1,4 +1,4 @@
-import { defaultScoreToWin, sidesForMode, TICK_RATE, type SeatAxis } from './constants'
+import { defaultScoreToWin, DEFAULT_TIME_LIMIT_TICKS, sidesForMode, type SeatAxis } from './constants'
 import { seatIdentity } from './palette'
 import type { AbilityId, AiDifficulty, GameMode, ItemIntensity, MatchConfig, PlayerDefinition } from './types'
 
@@ -37,7 +37,7 @@ export function buildMatchConfig(options: MatchFactoryOptions): MatchConfig {
     players,
     itemIntensity: options.itemIntensity ?? 'standard',
     scoreToWin: defaultScoreToWin(options.mode),
-    timeLimitTicks: 4 * 60 * TICK_RATE,
+    timeLimitTicks: DEFAULT_TIME_LIMIT_TICKS,
     seed: options.seed ?? Date.now() >>> 0,
   }
 }

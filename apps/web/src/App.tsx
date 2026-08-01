@@ -336,7 +336,9 @@ function HowToPlayModal({ close }: { close: () => void }) {
         <ol className="pg-help-list">
           <li><strong>You are the paddle at the bottom.</strong> Drag anywhere on the court to move it. Grab your paddle to slide it; press somewhere else and it jumps there. On a keyboard, hold <b>W</b>/<b>S</b> or the arrow keys.</li>
           <li><strong>Score by getting the ball past your opponent.</strong> If it goes past you, they score. First to the number shown above the court wins.</li>
-          <li><strong>Hit the ball dead centre for a perfect return.</strong> It fires back faster and takes half a second off your skill cooldown. The court brightens as a rally speeds up.</li>
+          <li><strong>Long rallies are worth more.</strong> Past 8 hits the point counts double, past 16 it counts triple — the rally counter beside the score lights up when it happens. The court brightens as the ball speeds up, and a faster ball is harder for your opponent to meet cleanly.</li>
+          <li><strong>Hit the ball dead centre for a perfect return.</strong> It fires back faster <em>and</em> takes half a second off your skill cooldown.</li>
+          <li><strong>Whoever concedes serves next.</strong> The ball is held at the centre for a moment — slide your paddle during that pause to aim where it goes.</li>
           <li><strong>Glowing orbs are power-ups.</strong> Hit one <em>with the ball</em> to claim it — whoever touched the ball last gets the effect, so they are contested, not collected.</li>
         </ol>
 

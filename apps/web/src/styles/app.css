@@ -557,6 +557,39 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-moment--score { color: var(--pg-paper); border-color: var(--pg-orange-500); box-shadow: 0 0 38px rgb(243 111 68 / 34%); }
 .pg-moment--skill { color: var(--pg-cyan); border-color: var(--pg-cyan); }
 .pg-moment--power { color: var(--pg-violet); border-color: var(--pg-violet); }
+.pg-moment--rally { color: var(--pg-ink-800); background: var(--pg-accent); border-color: transparent; }
+
+/**
+ * The rally counter.
+ *
+ * `heat` has been brightening the court across a long point for a while with
+ * nothing behind it. This is the number that escalation is now worth, so it
+ * lives beside the score rather than on the play surface — the same reason the
+ * scoreboard moved off the court.
+ */
+.pg-rally {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-radius-pill);
+  background: var(--pg-surface);
+  color: var(--pg-text-muted);
+  font-size: var(--pg-text-xs);
+  transition: color var(--pg-transition), background var(--pg-transition), border-color var(--pg-transition);
+}
+.pg-rally__value { font: 800 var(--pg-text-md) var(--pg-font-numeric); font-variant-numeric: tabular-nums; }
+.pg-rally__label { text-transform: uppercase; letter-spacing: .06em; }
+.pg-rally__multiplier { font-weight: 800; }
+/* Lit from the first milestone on, so the payoff is visible before the point ends. */
+.pg-rally.is-hot {
+  border-color: transparent;
+  background: var(--pg-accent);
+  color: var(--pg-ink-800);
+  box-shadow: var(--pg-glow-accent);
+}
 @keyframes pg-moment {
   0% { opacity: 0; transform: translate(-50%, 16px) scale(.8); letter-spacing: .25em; }
   18% { opacity: 1; transform: translate(-50%, 0) scale(1.04); }

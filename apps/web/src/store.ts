@@ -59,7 +59,10 @@ export function recordResult(profile: GuestProfile, state: GameState, playerId: 
   if (!player) return profile
   const matches = profile.matches + 1
   const wins = profile.wins + (state.winnerTeam === player.team ? 1 : 0)
-  const bestRally = Math.max(profile.bestRally, player.returns)
+  // `player.returns` is a whole-match total, so "best rally" used to record
+  // roughly "longest match" — a 30-point grind beat a genuine 20-hit rally. The
+  // match screen now tracks the real per-rally peak and passes it in.
+  const bestRally = Math.max(profile.bestRally, state.longestRally ?? 0)
   const unlocked = new Set(profile.unlockedCosmetics)
   if (matches >= 3) unlocked.add('paper-trail')
   if (wins >= 3) unlocked.add('court-orange')

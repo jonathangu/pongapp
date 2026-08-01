@@ -48,6 +48,11 @@ export class GameAudio {
         this.tone(760, 0.12, 0.07, 'sine', 0.012, 1180)
         this.tone(1520, 0.07, 0.035, 'sine', 0.02)
       }
+    } else if (event.type === 'rallyHot') {
+      // Rises with each step, so the second milestone is audibly above the first.
+      const base = event.multiplier >= 3 ? 880 : 660
+      this.tone(base, 0.11, 0.05, 'triangle', 0, base * 1.5)
+      this.tone(base * 1.5, 0.09, 0.032, 'sine', 0.06)
     } else if (event.type === 'score') {
       this.noise(0.24, 0.105, 1150)
       this.tone(82, 0.42, 0.15, 'sine', 0, 46)

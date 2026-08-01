@@ -372,6 +372,14 @@ export class PixiCourt {
           this.shake(0.45)
           this.zoom(0.016)
         }
+      } else if (event.type === 'rallyHot') {
+        // The court already brightens with `heat`; this is the moment that
+        // escalation becomes worth points, so it gets its own beat. A ring from
+        // the centre outward rather than at the ball: the whole court just
+        // changed value, not one contact.
+        this.wave(0.5, 0.5, this.theme.accent, event.multiplier >= 3 ? 0.62 : 0.44)
+        this.shake(event.multiplier >= 3 ? 0.4 : 0.22)
+        this.zoom(event.multiplier >= 3 ? 0.014 : 0.008)
       } else if (event.type === 'matchEnd') {
         const winner = Object.values(state.players).find((player) => player.team === event.winnerTeam)
         const color = winner?.color ?? COURT_PALETTE.accent.color

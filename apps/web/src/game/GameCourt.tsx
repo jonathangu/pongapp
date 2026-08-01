@@ -34,6 +34,8 @@ import {
   GROWN_PADDLE_LENGTH,
   PADDLE_SPEED,
   POWER_UP_IDENTITIES,
+  RALLY_STEPS,
+  rallyMultiplier,
   TICK_RATE,
   secondsRemaining,
   seatIdentityForColor,
@@ -147,7 +149,7 @@ export function GameCourt(props: Props) {
   const stateRef = useRef(state)
   stateRef.current = state
   const [servePrompt, setServePrompt] = useState(false)
-  const [moment, setMoment] = useState<{ label: string; kind: 'perfect' | 'score' | 'skill' | 'power'; tick: number } | null>(null)
+  const [moment, setMoment] = useState<{ label: string; kind: 'perfect' | 'score' | 'skill' | 'power' | 'rally'; tick: number } | null>(null)
   const momentTimer = useRef(0)
   const audio = useMemo(() => new GameAudio(), [])
   const localPlayerKey = props.localPlayerIds.join('\u001f')
@@ -241,7 +243,16 @@ export function GameCourt(props: Props) {
 
     const headline = [...state.events].reverse().map((event) => {
       if (event.type === 'hit' && event.perfect) return { label: 'Perfect return', kind: 'perfect' as const }
-      if (event.type === 'score') return { label: 'Goal line broken', kind: 'score' as const }
+      if (event.type === 'score') {
+        // Say *why* the number jumped. A score that silently adds 3 reads as a
+        // bug the first time you see it.
+        const points = event.points ?? 1
+        return { label: points > 1 ? `${points} points · ${event.rallyHits ?? 0}-hit rally` : 'Goal line broken', kind: 'score' as const }
+      }
+      if (event.type === 'rallyHot') {
+        const step = RALLY_STEPS.find((candidate) => candidate.hits === event.hits)
+        return { label: step?.label ?? `Worth ${event.multiplier}`, kind: 'rally' as const }
+      }
       if (event.type === 'ability') {
         const player = state.players[event.playerId]
         const owner = props.localPlayerIds.includes(event.playerId) ? 'You' : player?.name ?? 'Opponent'
@@ -422,6 +433,22 @@ export function GameCourt(props: Props) {
           </div>
         </div>
 
+        {/*
+          The rally counter. `heat` has been brightening the court for a while
+          with nothing behind it — this is the number that escalation is now
+          actually worth, so it sits next to the score rather than on the court.
+        */}
+        <div
+          className={`pg-rally${(state.rallyHits ?? 0) >= RALLY_STEPS[0]!.hits ? ' is-hot' : ''}`}
+          title={`Rally length. Past ${RALLY_STEPS.map((step) => step.hits).join(' and ')} hits the point is worth more.`}
+        >
+          <b className="pg-rally__value">{state.rallyHits ?? 0}</b>
+          <span className="pg-rally__label">rally</span>
+          {rallyMultiplier(state.rallyHits ?? 0) > 1 && (
+            <span className="pg-rally__multiplier">×{rallyMultiplier(state.rallyHits ?? 0)}</span>
+          )}
+        </div>
+
         <div className={`pg-timer${state.overtime ? ' pg-timer--overtime' : ''}`}>
           {state.overtime
             ? 'OVERTIME'
@@ -475,7 +502,7 @@ export function GameCourt(props: Props) {
                 </div>
                 {primaryPlayer && (
                   <p className="pg-result-line">
-                    {primaryPlayer.returns} returns · {primaryPlayer.perfectReturns} perfect · {primaryPlayer.abilityUses} skills used
+                    {primaryPlayer.returns} returns · {primaryPlayer.perfectReturns} perfect · longest rally {state.longestRally ?? 0}
                   </p>
                 )}
                 <div className="pg-button-row">
@@ -492,7 +519,7 @@ export function GameCourt(props: Props) {
         <div className="pg-control-hint">
           {localPlayers.length > 1
             ? <><strong>Shared screen: Player One is bottom; Player Two is top.</strong><span>Drag your half left or right—even at the same time. Keyboard: Player One A/D + Space; Player Two ←/→ + Enter.</span></>
-            : <><strong>You are the outlined paddle at the bottom.</strong><span>Drag left/right, or tap where you want to move. Keyboard: A/D or ←/→. Perfect returns shorten your skill recharge.</span></>}
+            : <><strong>You are the outlined paddle at the bottom.</strong><span>Drag left/right, or tap where you want to move. Keyboard: A/D or ←/→. Long rallies are worth more; centre hits fire back faster.</span></>}
         </div>
         <div className={`pg-ability-stack${localPlayers.length > 1 ? ' pg-ability-stack--two' : ''}`}>
           {localPlayers.map((player, index) => {
