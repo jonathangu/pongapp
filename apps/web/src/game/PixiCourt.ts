@@ -30,13 +30,10 @@
  *    ball stretch and particle count together. One number, many channels — so
  *    the escalation still reads with effects turned down.
  *
- * What is deliberately *not* here: a true hitstop. Freezing the world for 60ms
- * on a perfect return is the single largest available upgrade to how a hit
- * feels, but the renderer does not own the clock — `LocalMatch` does, and the
- * room worker owns it online. A renderer that faked a freeze would drift from a
- * sim that did not. The impact budget is spent instead on a camera punch, a
- * shockwave and a directional spark cone, all of which stay honest about the
- * simulation continuing underneath.
+ * Hitstop now belongs to game-core, where local and authoritative online play
+ * freeze on the same ticks. The renderer's responsibility is smaller but
+ * essential: never extrapolate through that freeze, or the ball creeps forward
+ * and snaps back while the simulation is correctly holding still.
  *
  * Effect density is a real budget, not a taste setting. `low` drops every
  * full-screen filter. Standard and high keep one persistent bloom pass, while
@@ -58,9 +55,11 @@ import {
   POWER_UP_IDENTITIES,
   TICK_SECONDS,
   seatIdentityForColor,
+  serveVelocityForPlayer,
   type SeatIdentity,
 } from '@pongapp/game-core'
 import { courtRotationForSide } from './perspective'
+import { ballPredictionEnabled } from './prediction'
 
 export interface CourtEffectsSettings {
   reducedMotion: boolean
@@ -273,7 +272,7 @@ export class PixiCourt {
     } else {
       this.sinceTick += deltaSeconds
     }
-    const ahead = extrapolate && state.phase === 'playing' && state.serveTicks <= 0
+    const ahead = extrapolate && ballPredictionEnabled(state)
       ? Math.min(this.sinceTick, TICK_SECONDS)
       : 0
 
@@ -1080,12 +1079,43 @@ export class PixiCourt {
     }
     this.abilityBursts = this.abilityBursts.filter((burst) => burst.life > 0)
 
-    // The serve telegraph: while the ball is parked at centre waiting to serve,
-    // ring it so nobody is surprised by a ball that was already moving.
-    if (state.serveTicks > 0 && state.phase === 'playing' && !this.settings.reducedMotion) {
-      const pulse = (this.clock * 1.6) % 1
-      this.overlays.circle(w / 2, w / 2, this.point(0.03 + pulse * 0.09))
-        .stroke({ color: COURT_PALETTE.paper.color, alpha: (1 - pulse) * 0.5, width: Math.max(1, w * 0.004) })
+    // The serve telegraph is instructional, not decoration. The chevrons use
+    // game-core's exact serve vector and update with the server's paddle, so
+    // moving during the pause visibly aims the launch. They remain in reduced
+    // motion mode; only the expanding ring is removed.
+    if (state.serveTicks > 0 && state.phase === 'playing') {
+      if (!this.settings.reducedMotion) {
+        const pulse = (this.clock * 1.6) % 1
+        this.overlays.circle(w / 2, w / 2, this.point(0.03 + pulse * 0.09))
+          .stroke({ color: COURT_PALETTE.paper.color, alpha: (1 - pulse) * 0.5, width: Math.max(1, w * 0.004) })
+      }
+      const server = state.servingPlayerId ? state.players[state.servingPlayerId] : undefined
+      if (server) this.drawServeAim(server)
+    }
+  }
+
+  /** Three compact chevrons read as direction without becoming another trail. */
+  private drawServeAim(server: PlayerState): void {
+    const velocity = serveVelocityForPlayer(server)
+    const speed = Math.hypot(velocity.vx, velocity.vy) || 1
+    const forwardX = velocity.vx / speed
+    const forwardY = velocity.vy / speed
+    const sideX = -forwardY
+    const sideY = forwardX
+    const centre = this.width / 2
+    for (let index = 0; index < 3; index += 1) {
+      const distance = this.width * (0.052 + index * 0.033)
+      const wing = this.width * (0.011 + index * 0.0015)
+      const depth = this.width * 0.018
+      const tipX = centre + forwardX * distance
+      const tipY = centre + forwardY * distance
+      const backX = tipX - forwardX * depth
+      const backY = tipY - forwardY * depth
+      this.overlays
+        .moveTo(backX + sideX * wing, backY + sideY * wing)
+        .lineTo(tipX, tipY)
+        .lineTo(backX - sideX * wing, backY - sideY * wing)
+        .stroke({ color: server.color, alpha: 0.48 + index * 0.18, width: Math.max(2, this.width * 0.005), cap: 'round', join: 'round' })
     }
   }
 

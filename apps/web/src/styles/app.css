@@ -619,6 +619,33 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-view-guide strong { font: 800 var(--pg-text-xs) var(--pg-font-display); letter-spacing: .08em; }
 .pg-view-guide span { color: var(--pg-text-muted); font-size: clamp(.58rem, 1.8vw, .75rem); }
 
+.pg-serve-guide {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 13%;
+  width: max-content;
+  max-width: 88%;
+  padding: 8px 13px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--pg-serve-color, var(--pg-paper));
+  border-radius: var(--pg-radius-pill);
+  background: rgb(11 22 17 / 84%);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--pg-serve-color, var(--pg-paper)) 24%, transparent);
+  color: var(--pg-paper);
+  text-align: center;
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+  animation: pg-serve-rise var(--pg-duration-fast) var(--pg-ease-out) both;
+}
+.pg-serve-guide strong { color: var(--pg-serve-color, var(--pg-paper)); font: 800 var(--pg-text-xs) var(--pg-font-display); letter-spacing: .07em; text-transform: uppercase; }
+.pg-serve-guide span { color: var(--pg-text-muted); font-size: clamp(.58rem, 1.8vw, .72rem); }
+@keyframes pg-serve-rise {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
 /**
  * The colour-independent seat marks, mirroring `SeatIdentity.pattern`. These are
  * the DOM half of the same idea the renderer cuts into the paddle: if the

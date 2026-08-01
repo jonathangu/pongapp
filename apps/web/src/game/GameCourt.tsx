@@ -399,6 +399,17 @@ export function GameCourt(props: Props) {
 
   const countdown = countdownValue(state)
   const winner = state.winnerTeam ? teams.find((team) => team.team === state.winnerTeam) : undefined
+  const servingPlayer = state.servingPlayerId ? state.players[state.servingPlayerId] : undefined
+  const servingLocalIndex = servingPlayer ? localPlayers.findIndex((player) => player.id === servingPlayer.id) : -1
+  const servingIsLocal = servingLocalIndex >= 0
+  const servingSeat = servingPlayer ? seatIdentityForColor(servingPlayer.color) : null
+  const serveHeading = servingPlayer
+    ? servingIsLocal
+      ? localPlayers.length > 1
+        ? `${servingPlayer.name} serves · move to aim`
+        : 'Your serve · move to aim'
+      : `${servingPlayer.name} serves`
+    : null
   const abilityStatus = (player: PlayerState) => ({
     ready: player.cooldownTicks <= 0,
     // Fills toward ready against the skill's real shared cooldown.
@@ -484,6 +495,16 @@ export function GameCourt(props: Props) {
       >
         <div className="pg-hud">
           {moment && <div className={`pg-moment pg-moment--${moment.kind}`} key={moment.tick} aria-hidden="true">{moment.label}</div>}
+          {serveHeading && state.serveTicks > 0 && state.phase === 'playing' && (
+            <div
+              className="pg-serve-guide"
+              role="status"
+              style={{ ['--pg-serve-color' as string]: servingSeat?.hex ?? '#fffdf7' }}
+            >
+              <strong>{serveHeading}</strong>
+              <span>{servingIsLocal ? 'Your paddle position sets the launch direction.' : 'Watch their paddle—their position sets the launch direction.'}</span>
+            </div>
+          )}
           {countdown !== null && primaryPlayer && (
             <div className="pg-view-guide">
               {localPlayers.length > 1
