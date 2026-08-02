@@ -105,10 +105,16 @@ describe('simulation', () => {
     expect(Math.abs(player.position - before)).toBeLessThanOrEqual(1.35 / TICK_RATE + 1e-8)
   })
 
-  it('reports the real start and finish of a dash', () => {
+  it('boost turbocharges a live ball without moving the paddle', () => {
     const state = duel()
+    state.phase = 'playing'
+    state.serveTicks = 0
     const player = state.players.human!
     player.position = 0.5
+    const ball = state.balls[0]!
+    ball.vx = 0.48
+    ball.vy = 0.3
+    const speedBefore = Math.hypot(ball.vx, ball.vy)
     stepGame(state, { human: { target: 0.9, abilityPressed: true } })
     const event = state.events.find((candidate) => candidate.type === 'ability')
     expect(event).toMatchObject({
@@ -116,8 +122,40 @@ describe('simulation', () => {
       playerId: 'human',
       ability: 'dash',
       fromPosition: 0.5,
-      toPosition: 0.85,
+      toPosition: 0.5,
     })
+    expect(player.position).not.toBe(0.5)
+    expect(player.position).toBeLessThan(0.53)
+    expect(Math.hypot(ball.vx, ball.vy)).toBeGreaterThan(speedBefore + 0.15)
+    expect(ball.lastToucherId).toBe('human')
+  })
+
+  it('does not spend Boost during the serve pause', () => {
+    const state = duel()
+    state.phase = 'playing'
+    state.serveTicks = 20
+    const player = state.players.human!
+    const cooldownBefore = player.cooldownTicks
+    stepGame(state, { human: { target: 0.5, abilityPressed: true } })
+    expect(player.cooldownTicks).toBe(cooldownBefore)
+    expect(state.events.some((event) => event.type === 'ability')).toBe(false)
+  })
+
+  it('collects a large power-up and grants the stronger effect', () => {
+    const state = duel()
+    state.phase = 'playing'
+    state.serveTicks = 0
+    const ball = state.balls[0]!
+    ball.x = 0.5
+    ball.y = 0.5
+    ball.vx = 0
+    ball.vy = 0.5
+    ball.lastToucherId = 'human'
+    state.powerUp = { id: 'overdrive', x: 0.56, y: 0.5, vx: 0, vy: 0, ageTicks: 0 }
+    stepGame(state, {})
+    expect(state.powerUp).toBeNull()
+    expect(state.players.human!.overdriveHits).toBe(3)
+    expect(state.events).toContainEqual({ type: 'powerUp', playerId: 'human', powerUp: 'overdrive' })
   })
 
   it('pairs opposite sides as teammates in crosscourt doubles', () => {

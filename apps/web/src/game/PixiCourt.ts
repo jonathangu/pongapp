@@ -49,10 +49,12 @@ import {
   BALL_SPEED_CAP,
   BALL_START_SPEED,
   BASE_PADDLE_LENGTH,
+  BOOST_BALL_SPEED_CAP,
   COURT_PALETTE,
   GROWN_PADDLE_LENGTH,
   PADDLE_OFFSET,
   POWER_UP_IDENTITIES,
+  POWER_UP_RADIUS,
   TICK_SECONDS,
   seatIdentityForColor,
   serveVelocityForPlayer,
@@ -92,6 +94,7 @@ interface AbilityBurst {
   fromPosition: number
   toPosition: number
 }
+interface BallBoostBurst { x: number; y: number; angle: number; life: number; color: number }
 interface GoalFlash { side: Side; life: number; color: number }
 interface PostEffect {
   elapsed: number
@@ -172,6 +175,7 @@ export class PixiCourt {
   private wallFlashes: WallFlash[] = []
   private impactSlices: ImpactSlice[] = []
   private abilityBursts: AbilityBurst[] = []
+  private ballBoostBursts: BallBoostBurst[] = []
   private goalFlash: GoalFlash | null = null
 
   private trauma = 0
@@ -247,6 +251,7 @@ export class PixiCourt {
       this.shockwaves = []
       this.impactSlices = []
       this.abilityBursts = []
+      this.ballBoostBursts = []
       this.goalFlash = null
       this.detachPostEffect()
       this.trauma = 0
@@ -328,7 +333,18 @@ export class PixiCourt {
         this.zoom(0.026)
       } else if (event.type === 'ability') {
         const player = state.players[event.playerId]
-        if (player && !this.settings.reducedMotion) {
+        if (player && event.ability === 'dash') {
+          for (const ball of state.balls) {
+            const angle = Math.atan2(ball.vy, ball.vx)
+            if (!this.settings.reducedMotion) {
+              this.ballBoostBursts.push({ x: ball.x, y: ball.y, angle, life: 1, color: player.color })
+            }
+            this.cone(ball.x, ball.y, angle, player.color, 28, 1.25)
+            this.wave(ball.x, ball.y, player.color, 0.24)
+          }
+          this.shake(0.36)
+          this.zoom(0.015)
+        } else if (player && !this.settings.reducedMotion) {
           const anchor = this.playerAnchor(player)
           this.abilityBursts.push({
             ...anchor,
@@ -342,20 +358,25 @@ export class PixiCourt {
             fromPosition: event.fromPosition ?? player.position,
             toPosition: event.toPosition ?? player.position,
           })
-          // Dash is movement along a wall. A radial wave and sparks fired into
-          // the court made it look like a weapon; its dedicated afterimages
-          // below now show only the actual start, direction and landing point.
-          if (event.ability !== 'dash') {
-            this.wave(anchor.x, anchor.y, player.color, event.ability === 'pulse' ? 0.24 : 0.14)
-          }
+          this.wave(anchor.x, anchor.y, player.color, event.ability === 'pulse' ? 0.24 : 0.14)
         }
       } else if (event.type === 'powerUp') {
         const identity = POWER_UP_IDENTITIES[event.powerUp]
         for (const ball of state.balls) {
-          this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), identity.color, 22, 1.4)
-          this.wave(ball.x, ball.y, identity.color, 0.22)
+          this.cone(ball.x, ball.y, Math.atan2(ball.vy, ball.vx), identity.color, 30, 1.65)
+          this.wave(ball.x, ball.y, identity.color, 0.28)
         }
-        this.shake(0.3)
+        this.shake(0.44)
+        this.zoom(0.018)
+      } else if (event.type === 'powerUpSpawn') {
+        const identity = POWER_UP_IDENTITIES[event.powerUp.id]
+        this.wave(event.powerUp.x, event.powerUp.y, identity.color, 0.18)
+        if (!this.settings.reducedMotion) {
+          for (let index = 0; index < 4; index += 1) {
+            this.cone(event.powerUp.x, event.powerUp.y, index * Math.PI / 2, identity.color, 5, 0.5)
+          }
+        }
+        this.zoom(0.004)
       } else if (event.type === 'warp') {
         const ball = state.balls.find((candidate) => candidate.id === event.ballId)
         if (ball) {
@@ -747,6 +768,7 @@ export class PixiCourt {
       const y = clamp01(ball.y + ball.vy * ahead)
       const speed = Math.hypot(ball.vx, ball.vy)
       const radius = Math.max(4, this.point(ball.radius))
+      const turbo = clamp01((speed - BALL_SPEED_CAP) / (BOOST_BALL_SPEED_CAP - BALL_SPEED_CAP))
 
       // Squash and stretch along the direction of travel, with the product held
       // at 1 so the ball never looks like it grew.
@@ -765,9 +787,14 @@ export class PixiCourt {
       this.actors.fill({ color: COURT_PALETTE.paper.color })
         .stroke({ color, alpha: 0.9, width: Math.max(2, this.width * (0.003 + this.heat * 0.003)) })
 
+      if (turbo > 0) {
+        this.actors.circle(this.point(x), this.point(y), radius * (1.65 + turbo * 0.75))
+          .stroke({ color, alpha: 0.25 + turbo * 0.5, width: Math.max(2, this.width * 0.006) })
+      }
+
       if (this.bloomFilter) {
-        this.bloomGraphics.circle(this.point(x), this.point(y), radius * (1.7 + this.heat * 1.4))
-          .fill({ color, alpha: 0.34 + this.heat * 0.3 })
+        this.bloomGraphics.circle(this.point(x), this.point(y), radius * (1.7 + this.heat * 1.4 + turbo * 1.8))
+          .fill({ color, alpha: 0.34 + this.heat * 0.3 + turbo * 0.22 })
       }
     }
     this.drawPowerUp(state)
@@ -982,16 +1009,43 @@ export class PixiCourt {
     const w = this.width
     const cx = this.point(state.powerUp.x)
     const cy = this.point(state.powerUp.y)
-    // 0.028 is the capture radius in `updatePowerUp`; the orb is drawn to match.
-    const radius = this.point(0.028)
-    const pulse = this.settings.reducedMotion ? 1 : 1 + Math.sin(this.clock * 5) * 0.09
+    const radius = this.point(POWER_UP_RADIUS)
+    const pulse = this.settings.reducedMotion ? 1 : 1 + Math.sin(this.clock * 5) * 0.075
+    const velocity = Math.hypot(state.powerUp.vx, state.powerUp.vy)
+    const unitX = velocity > 0 ? state.powerUp.vx / velocity : 0
+    const unitY = velocity > 0 ? state.powerUp.vy / velocity : 0
+
+    // A short chain of round embers makes the orb's drift readable without
+    // drawing another straight streak across the court.
+    if (!this.settings.reducedMotion) {
+      for (let index = 1; index <= 3; index += 1) {
+        this.actors.circle(
+          cx - unitX * radius * index * 0.48,
+          cy - unitY * radius * index * 0.48,
+          radius * (0.22 - index * 0.035),
+        ).fill({ color: identity.color, alpha: 0.38 - index * 0.08 })
+      }
+    }
 
     this.actors.circle(cx, cy, radius * pulse).fill({ color: COURT_PALETTE.ink.color, alpha: 0.85 })
     this.actors.circle(cx, cy, radius * pulse)
       .stroke({ color: identity.color, alpha: 0.95, width: Math.max(2, w * 0.005) })
-    this.drawPowerGlyph(identity.glyph, cx, cy, radius * 0.56, identity.color)
+    this.actors.circle(cx, cy, radius * pulse * 1.2)
+      .stroke({ color: identity.color, alpha: 0.28, width: Math.max(1, w * 0.0025) })
+    if (!this.settings.reducedMotion) {
+      const orbit = this.clock * 1.9
+      for (let index = 0; index < 3; index += 1) {
+        const angle = orbit + index * Math.PI * 2 / 3
+        this.actors.circle(
+          cx + Math.cos(angle) * radius * 1.38,
+          cy + Math.sin(angle) * radius * 1.38,
+          radius * 0.12,
+        ).fill({ color: identity.color, alpha: 0.8 })
+      }
+    }
+    this.drawPowerGlyph(identity.glyph, cx, cy, radius * 0.5, identity.color)
     if (this.bloomFilter) {
-      this.bloomGraphics.circle(cx, cy, radius * 1.8).fill({ color: identity.color, alpha: 0.3 })
+      this.bloomGraphics.circle(cx, cy, radius * 2.4).fill({ color: identity.color, alpha: 0.38 })
     }
   }
 
@@ -1021,8 +1075,18 @@ export class PixiCourt {
       this.actors.circle(cx - size * 0.55, cy + size * 0.4, size * 0.34).fill({ color })
       this.actors.circle(cx + size * 0.55, cy + size * 0.4, size * 0.34).fill({ color })
     } else if (glyph === 'gate') {
-      this.actors.arc(cx - size * 0.35, cy, size * 0.75, Math.PI * 0.55, Math.PI * 1.45).stroke(stroke)
-      this.actors.arc(cx + size * 0.35, cy, size * 0.75, Math.PI * 1.55, Math.PI * 0.45).stroke(stroke)
+      const radius = size * 0.75
+      const leftX = cx - size * 0.35
+      const rightX = cx + size * 0.35
+      const leftStart = Math.PI * 0.55
+      const rightStart = Math.PI * 1.55
+      // Pixi's `arc` connects from the Graphics object's previous current point.
+      // An explicit move starts a new subpath and prevents the unexplained long
+      // purple diagonals that used to escape from Warp orbs.
+      this.actors.moveTo(leftX + Math.cos(leftStart) * radius, cy + Math.sin(leftStart) * radius)
+        .arc(leftX, cy, radius, leftStart, Math.PI * 1.45).stroke(stroke)
+      this.actors.moveTo(rightX + Math.cos(rightStart) * radius, cy + Math.sin(rightStart) * radius)
+        .arc(rightX, cy, radius, rightStart, Math.PI * 0.45).stroke(stroke)
     } else {
       this.actors.circle(cx, cy, size * 0.9).stroke(stroke)
       this.actors.circle(cx, cy, size * 0.3).fill({ color })
@@ -1074,6 +1138,30 @@ export class PixiCourt {
     }
     this.impactSlices = this.impactSlices.filter((slice) => slice.life > 0)
 
+    // Boost reads at the ball itself for every client: a compact comet wedge
+    // and expanding ring, never a mysterious court-spanning line.
+    for (const burst of this.ballBoostBursts) {
+      burst.life -= deltaSeconds * 3
+      if (burst.life <= 0) continue
+      const progress = 1 - burst.life
+      const cx = this.point(burst.x)
+      const cy = this.point(burst.y)
+      const forwardX = Math.cos(burst.angle)
+      const forwardY = Math.sin(burst.angle)
+      const sideX = -forwardY
+      const sideY = forwardX
+      const length = w * (0.045 + burst.life * 0.07)
+      const halfWidth = w * 0.024 * burst.life
+      this.overlays.poly([
+        cx + forwardX * w * 0.018, cy + forwardY * w * 0.018,
+        cx - forwardX * length + sideX * halfWidth, cy - forwardY * length + sideY * halfWidth,
+        cx - forwardX * length - sideX * halfWidth, cy - forwardY * length - sideY * halfWidth,
+      ]).fill({ color: burst.color, alpha: burst.life * 0.38 })
+      this.overlays.circle(cx, cy, w * (0.022 + progress * 0.065))
+        .stroke({ color: burst.color, alpha: burst.life * 0.72, width: Math.max(2, w * 0.006) })
+    }
+    this.ballBoostBursts = this.ballBoostBursts.filter((burst) => burst.life > 0)
+
     for (const burst of this.abilityBursts) {
       burst.life -= deltaSeconds * 2.5
       if (burst.life <= 0) continue
@@ -1081,9 +1169,7 @@ export class PixiCourt {
       const cx = this.point(burst.x)
       const cy = this.point(burst.y)
       const radius = w * (0.03 + progress * 0.12)
-      if (burst.ability === 'dash') {
-        this.drawDashBurst(burst)
-      } else if (burst.ability === 'pulse') {
+      if (burst.ability === 'pulse') {
         this.overlays.circle(cx, cy, radius)
           .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, w * 0.007) })
       } else if (burst.ability === 'guard') {
@@ -1095,7 +1181,8 @@ export class PixiCourt {
         this.overlays.poly(points).stroke({ color: burst.color, alpha: burst.life * 0.82, width: Math.max(2, w * 0.007), join: 'round' })
       } else if (burst.ability === 'bend') {
         const spin = this.clock * 5
-        this.overlays.arc(cx, cy, radius, spin, spin + 2.2)
+        this.overlays.moveTo(cx + Math.cos(spin) * radius, cy + Math.sin(spin) * radius)
+          .arc(cx, cy, radius, spin, spin + 2.2)
           .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, w * 0.007), cap: 'round' })
       }
     }
@@ -1141,35 +1228,13 @@ export class PixiCourt {
     }
   }
 
-  /** Boost leaves paddle-shaped afterimages along the actual authoritative move. */
-  private drawDashBurst(burst: AbilityBurst): void {
-    const w = this.width
-    const from = this.anchorAt(burst.side, burst.fromPosition)
-    const to = this.anchorAt(burst.side, burst.toPosition)
-    const horizontal = burst.side === 'top' || burst.side === 'bottom'
-    const length = this.point(BASE_PADDLE_LENGTH)
-    const thickness = Math.max(8, w * 0.019)
-    for (let index = 0; index < 4; index += 1) {
-      const progress = index / 4
-      const x = this.point(from.x + (to.x - from.x) * progress)
-      const y = this.point(from.y + (to.y - from.y) * progress)
-      const alpha = burst.life * (0.1 + index * 0.07)
-      this.overlays.roundRect(
-        horizontal ? x - length / 2 : x - thickness / 2,
-        horizontal ? y - thickness / 2 : y - length / 2,
-        horizontal ? length : thickness,
-        horizontal ? thickness : length,
-        thickness / 2,
-      ).fill({ color: burst.color, alpha })
-    }
-  }
-
   private drawTrails(state: GameState, deltaSeconds: number, ahead: number): void {
-    const maximum = this.settings.reducedMotion
-      ? 4
-      : Math.round(this.density.trail * (0.7 + this.heat * 0.5))
-
     for (const ball of state.balls) {
+      const speed = Math.hypot(ball.vx, ball.vy)
+      const turbo = clamp01((speed - BALL_SPEED_CAP) / (BOOST_BALL_SPEED_CAP - BALL_SPEED_CAP))
+      const maximum = this.settings.reducedMotion
+        ? 4
+        : Math.round(this.density.trail * (0.7 + this.heat * 0.5 + turbo * 0.65))
       const points = this.trails.get(ball.id) ?? []
       points.push({ x: ball.x + ball.vx * ahead, y: ball.y + ball.vy * ahead, life: 1 })
       while (points.length > maximum) points.shift()

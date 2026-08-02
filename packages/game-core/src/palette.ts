@@ -85,11 +85,11 @@ export interface PowerUpIdentity {
 }
 
 export const POWER_UP_IDENTITIES: Record<PowerUpId, PowerUpIdentity> = {
-  grow: { id: 'grow', label: 'Grow', effect: 'Your paddle gets longer for six seconds', glyph: 'extend', color: 0xdfff68, hex: '#dfff68' },
-  overdrive: { id: 'overdrive', label: 'Overdrive', effect: 'Your next return is launched', glyph: 'chevron', color: 0xf36f44, hex: '#f36f44' },
-  multiball: { id: 'multiball', label: 'Multiball', effect: 'A second ball joins the rally', glyph: 'orbs', color: 0xfffdf7, hex: '#fffdf7' },
-  warp: { id: 'warp', label: 'Warp gates', effect: 'Two gates teleport the ball across the court', glyph: 'gate', color: 0xb59cff, hex: '#b59cff' },
-  gravity: { id: 'gravity', label: 'Gravity well', effect: 'The centre of the court pulls the ball in', glyph: 'well', color: 0x67d4ff, hex: '#67d4ff' },
+  grow: { id: 'grow', label: 'Mega Paddle', effect: 'Your paddle grows huge for eight seconds', glyph: 'extend', color: 0xdfff68, hex: '#dfff68' },
+  overdrive: { id: 'overdrive', label: 'Triple Drive', effect: 'Your next three returns launch hard', glyph: 'chevron', color: 0xf36f44, hex: '#f36f44' },
+  multiball: { id: 'multiball', label: 'Triple Ball', effect: 'Two extra balls explode into the rally', glyph: 'orbs', color: 0xfffdf7, hex: '#fffdf7' },
+  warp: { id: 'warp', label: 'Warp Storm', effect: 'Teleport gates scramble the court for ten seconds', glyph: 'gate', color: 0xb59cff, hex: '#b59cff' },
+  gravity: { id: 'gravity', label: 'Gravity Crush', effect: 'A strong gravity well bends every ball', glyph: 'well', color: 0x67d4ff, hex: '#67d4ff' },
 }
 
 /** Neutral surfaces the renderer shares with `tokens.css`. */

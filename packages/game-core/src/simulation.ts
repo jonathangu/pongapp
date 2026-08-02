@@ -1,6 +1,8 @@
 import {
   ABILITY_COOLDOWNS,
   AI_PROFILE,
+  BOOST_BALL_SPEED_CAP,
+  BOOST_BALL_SPEED_MULTIPLIER,
   BALL_RADIUS,
   BALL_SPEED_CAP,
   BALL_SPEED_RAMP,
@@ -12,7 +14,9 @@ import {
   PADDLE_OFFSET,
   PADDLE_SPEED,
   PERFECT_RETURN_SPEED_BOOST,
+  POWER_UP_DRIFT_SPEED,
   POWER_UP_LIFETIME_TICKS,
+  POWER_UP_RADIUS,
   SERVE_DELAY_TICKS,
   TICK_RATE,
   TICK_SECONDS,
@@ -106,6 +110,10 @@ export function normalizeGameState(state: GameState): GameState {
   state.rallyHits ??= 0
   state.longestRallyHits ??= 0
   state.freezeTicks ??= 0
+  if (state.powerUp) {
+    state.powerUp.vx ??= 0
+    state.powerUp.vy ??= 0
+  }
   return state
 }
 
@@ -167,13 +175,22 @@ function decrementPlayerTimers(player: PlayerState): void {
 }
 
 function activateAbility(state: GameState, player: PlayerState, input: GameInput): void {
-  if (!input.abilityPressed || player.cooldownTicks > 0) return
+  if (!input.abilityPressed || player.cooldownTicks > 0 || state.phase !== 'playing' || state.serveTicks > 0) return
+  const liveBalls = state.balls.filter((ball) => Math.hypot(ball.vx, ball.vy) > 1e-6)
+  // Boost is an immediate turbo, so pressing it during a staged serve must not
+  // consume the cooldown while there is nothing to accelerate.
+  if (player.ability === 'dash' && liveBalls.length === 0) return
   const fromPosition = player.position
   player.cooldownTicks = ABILITY_COOLDOWNS[player.ability]
   player.abilityUses += 1
   if (player.ability === 'dash') {
-    const direction = input.target >= player.position ? 1 : -1
-    player.position = clamp(player.position + direction * 0.35, 0.08, 0.92)
+    for (const ball of liveBalls) {
+      const speed = Math.hypot(ball.vx, ball.vy)
+      const nextSpeed = Math.min(BOOST_BALL_SPEED_CAP, Math.max(speed * BOOST_BALL_SPEED_MULTIPLIER, speed + 0.16))
+      ball.vx = (ball.vx / speed) * nextSpeed
+      ball.vy = (ball.vy / speed) * nextSpeed
+      ball.lastToucherId = player.id
+    }
   } else if (player.ability === 'bend') {
     player.bendTicks = 3 * TICK_RATE
   } else if (player.ability === 'guard') {
@@ -275,7 +292,10 @@ function bounceFromWall(ball: BallState, side: Side): void {
 
 function rampBall(ball: BallState, multiplier = BALL_SPEED_RAMP): void {
   const speed = Math.hypot(ball.vx, ball.vy)
-  const nextSpeed = Math.min(BALL_SPEED_CAP, speed * multiplier)
+  // A turbocharged rally stays turbocharged until a point ends. Ordinary balls
+  // still use the classic cap; only a Boost can open the higher speed band.
+  const cap = speed > BALL_SPEED_CAP ? BOOST_BALL_SPEED_CAP : BALL_SPEED_CAP
+  const nextSpeed = Math.min(cap, speed * multiplier)
   if (speed <= 0) return
   ball.vx = (ball.vx / speed) * nextSpeed
   ball.vy = (ball.vy / speed) * nextSpeed
@@ -437,8 +457,8 @@ function updateWorldEffects(state: GameState, ball: BallState): void {
     const dx = 0.5 - ball.x
     const dy = 0.5 - ball.y
     const distance = Math.max(0.08, Math.hypot(dx, dy))
-    ball.vx += (dx / distance) * 0.06 * TICK_SECONDS
-    ball.vy += (dy / distance) * 0.06 * TICK_SECONDS
+    ball.vx += (dx / distance) * 0.14 * TICK_SECONDS
+    ball.vy += (dy / distance) * 0.14 * TICK_SECONDS
   }
   if (state.worldEffects.warpTicks > 0 && ball.warpCooldownTicks <= 0) {
     const leftGate = Math.hypot(ball.x - 0.32, ball.y - 0.5) < 0.035
@@ -453,11 +473,13 @@ function updateWorldEffects(state: GameState, ball: BallState): void {
 }
 
 function applyPowerUp(state: GameState, id: PowerUpId, player: PlayerState | undefined): void {
-  if (id === 'grow' && player) player.growTicks = 6 * TICK_RATE
-  else if (id === 'overdrive' && player) player.overdriveHits += 1
-  else if (id === 'multiball') state.balls.push(freshBall(state, `ball-${state.tick}`, 8 * TICK_RATE))
-  else if (id === 'warp') state.worldEffects.warpTicks = 8 * TICK_RATE
-  else if (id === 'gravity') state.worldEffects.gravityTicks = 8 * TICK_RATE
+  if (id === 'grow' && player) player.growTicks = 8 * TICK_RATE
+  else if (id === 'overdrive' && player) player.overdriveHits += 3
+  else if (id === 'multiball') {
+    state.balls.push(freshBall(state, `ball-${state.tick}-a`, 9 * TICK_RATE))
+    state.balls.push(freshBall(state, `ball-${state.tick}-b`, 9 * TICK_RATE))
+  } else if (id === 'warp') state.worldEffects.warpTicks = 10 * TICK_RATE
+  else if (id === 'gravity') state.worldEffects.gravityTicks = 10 * TICK_RATE
   state.events.push({ type: 'powerUp', playerId: player?.id ?? null, powerUp: id })
 }
 
@@ -509,16 +531,32 @@ function updatePowerUp(state: GameState): void {
     if (state.powerUpSpawnTicks > 0 || state.config.itemIntensity === 'off') return
     const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'
     const id = powerUpForRoll(intensity, randomFrom(state))
+    const angle = randomFrom(state) * Math.PI * 2
+    const drift = POWER_UP_DRIFT_SPEED * (intensity === 'wild' ? 1.25 : 1)
     state.powerUp = {
       id,
-      x: 0.32 + randomFrom(state) * 0.36,
-      y: 0.32 + randomFrom(state) * 0.36,
+      x: 0.28 + randomFrom(state) * 0.44,
+      y: 0.28 + randomFrom(state) * 0.44,
+      vx: Math.cos(angle) * drift,
+      vy: Math.sin(angle) * drift,
       ageTicks: 0,
     }
     state.events.push({ type: 'powerUpSpawn', powerUp: { ...state.powerUp } })
     return
   }
   state.powerUp.ageTicks += 1
+  state.powerUp.x += state.powerUp.vx * TICK_SECONDS
+  state.powerUp.y += state.powerUp.vy * TICK_SECONDS
+  const driftMinimum = 0.2
+  const driftMaximum = 0.8
+  if (state.powerUp.x <= driftMinimum || state.powerUp.x >= driftMaximum) {
+    state.powerUp.x = clamp(state.powerUp.x, driftMinimum, driftMaximum)
+    state.powerUp.vx *= -1
+  }
+  if (state.powerUp.y <= driftMinimum || state.powerUp.y >= driftMaximum) {
+    state.powerUp.y = clamp(state.powerUp.y, driftMinimum, driftMaximum)
+    state.powerUp.vy *= -1
+  }
   if (state.powerUp.ageTicks >= POWER_UP_LIFETIME_TICKS) {
     state.powerUp = null
     state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
@@ -528,7 +566,7 @@ function updatePowerUp(state: GameState): void {
   // at centre. The orb still ages, so the pause does not extend its lifetime.
   if (state.serveTicks > 0) return
   for (const ball of state.balls) {
-    if (Math.hypot(ball.x - state.powerUp.x, ball.y - state.powerUp.y) > ball.radius + 0.028) continue
+    if (Math.hypot(ball.x - state.powerUp.x, ball.y - state.powerUp.y) > ball.radius + POWER_UP_RADIUS) continue
     const player = (ball.lastToucherId ? state.players[ball.lastToucherId] : undefined)
       ?? nearestPlayer(state, state.powerUp.x, state.powerUp.y)
     applyPowerUp(state, state.powerUp.id, player)
@@ -614,6 +652,7 @@ export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
   for (const event of state.events) {
     if (event.type === 'score') freezeTicks = Math.max(freezeTicks, 8)
     else if (event.type === 'shield') freezeTicks = Math.max(freezeTicks, 6)
+    else if (event.type === 'powerUp') freezeTicks = Math.max(freezeTicks, 3)
     else if (event.type === 'hit' && event.perfect) freezeTicks = Math.max(freezeTicks, 4)
   }
   state.freezeTicks = Math.max(state.freezeTicks, freezeTicks)

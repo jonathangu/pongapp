@@ -4,7 +4,7 @@ export const TICK_RATE = 60
 export const TICK_SECONDS = 1 / TICK_RATE
 export const PADDLE_OFFSET = 0.045
 export const BASE_PADDLE_LENGTH = 0.22
-export const GROWN_PADDLE_LENGTH = BASE_PADDLE_LENGTH * 1.35
+export const GROWN_PADDLE_LENGTH = BASE_PADDLE_LENGTH * 1.5
 export const PADDLE_SPEED = 1.35
 export const BALL_START_SPEED = 0.62
 export const BALL_SPEED_CAP = 1.12
@@ -12,7 +12,11 @@ export const BALL_SPEED_RAMP = 1.055
 export const BALL_RADIUS = 0.015
 export const BIG_BALL_RADIUS = BALL_RADIUS * 1.7
 export const PERFECT_RETURN_SPEED_BOOST = 1.06
-export const POWER_UP_LIFETIME_TICKS = 10 * TICK_RATE
+export const BOOST_BALL_SPEED_MULTIPLIER = 1.32
+export const BOOST_BALL_SPEED_CAP = 1.5
+export const POWER_UP_RADIUS = 0.052
+export const POWER_UP_DRIFT_SPEED = 0.055
+export const POWER_UP_LIFETIME_TICKS = 16 * TICK_RATE
 export const MATCH_COUNTDOWN_TICKS = 3 * TICK_RATE
 export const SERVE_DELAY_TICKS = Math.round(0.75 * TICK_RATE)
 
@@ -133,7 +137,7 @@ export function nextPowerUpDelay(intensity: ItemIntensity, random: number, first
   // enough that a normal point sees power-ups instead of only unusually long
   // rallies. Wild is intentionally close to constant once an orb is collected.
   const [minimum, spread] = firstSpawn
-    ? intensity === 'wild' ? [1, 1] : [2, 1.5]
-    : intensity === 'wild' ? [2, 2] : [4, 3]
+    ? intensity === 'wild' ? [0.75, 0.75] : [1.25, 1]
+    : intensity === 'wild' ? [1.5, 1.25] : [3, 2]
   return Math.round((minimum + random * spread) * TICK_RATE)
 }

@@ -67,11 +67,26 @@ export class GameAudio {
     } else if (event.type === 'ability') {
       this.ability(event.ability)
     } else if (event.type === 'powerUp') {
-      this.tone(360, 0.22, 0.055, 'triangle', 0, 920)
-      this.tone(720, 0.17, 0.035, 'sine', 0.05, 1240)
-      this.noise(0.12, 0.026, 5200)
+      if (event.powerUp === 'grow') {
+        this.tone(180, 0.25, 0.065, 'triangle', 0, 620)
+        this.tone(360, 0.2, 0.04, 'sine', 0.05, 880)
+      } else if (event.powerUp === 'overdrive') {
+        this.tone(220, 0.24, 0.065, 'sawtooth', 0, 1320)
+        this.noise(0.13, 0.03, 5400)
+      } else if (event.powerUp === 'multiball') {
+        for (const [index, frequency] of [420, 630, 840].entries()) {
+          this.tone(frequency, 0.18, 0.04, 'triangle', index * 0.035, frequency * 1.3)
+        }
+      } else if (event.powerUp === 'warp') {
+        this.tone(1280, 0.27, 0.065, 'sine', 0, 150)
+        this.noise(0.2, 0.035, 4200, 0, 360)
+      } else {
+        this.tone(92, 0.34, 0.11, 'sine', 0, 42)
+        this.tone(520, 0.2, 0.045, 'triangle', 0.03, 210)
+      }
     } else if (event.type === 'powerUpSpawn') {
-      this.tone(880, 0.14, 0.025, 'sine', 0, 1120)
+      this.tone(760, 0.15, 0.028, 'sine', 0, 1120)
+      this.tone(1140, 0.13, 0.018, 'triangle', 0.065, 1420)
     } else if (event.type === 'shield') {
       this.tone(112, 0.25, 0.11, 'square', 0, 74)
       this.tone(420, 0.18, 0.045, 'triangle', 0.02, 250)
@@ -110,8 +125,9 @@ export class GameAudio {
 
   private ability(ability: AbilityId): void {
     if (ability === 'dash') {
-      this.tone(180, 0.12, 0.065, 'sawtooth', 0, 820)
-      this.noise(0.095, 0.038, 3800)
+      this.tone(140, 0.2, 0.075, 'sawtooth', 0, 1280)
+      this.tone(420, 0.15, 0.045, 'triangle', 0.025, 1160)
+      this.noise(0.14, 0.042, 5200)
     } else if (ability === 'bend') {
       this.tone(340, 0.24, 0.05, 'sine', 0, 690)
       this.tone(356, 0.24, 0.035, 'sine', 0, 520)
