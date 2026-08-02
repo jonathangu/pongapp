@@ -154,7 +154,7 @@ export function createGame(config: MatchConfig): GameState {
     events: [],
   }
   state.balls = [freshBall(state, 'ball-1')]
-  state.powerUpSpawnTicks = nextPowerUpDelay(config.itemIntensity, randomFrom(state))
+  state.powerUpSpawnTicks = nextPowerUpDelay(config.itemIntensity, randomFrom(state), true)
   return state
 }
 
@@ -505,9 +505,6 @@ function nearestPlayer(state: GameState, x: number, y: number): PlayerState | un
 
 function updatePowerUp(state: GameState): void {
   if (!state.powerUp) {
-    // Hot rallies need one clear object of attention: the ball. Hold the spawn
-    // clock at 8+ hits and resume after the point instead of adding an orb.
-    if (state.rallyHits >= 8) return
     state.powerUpSpawnTicks -= 1
     if (state.powerUpSpawnTicks > 0 || state.config.itemIntensity === 'off') return
     const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'

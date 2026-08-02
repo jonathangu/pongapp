@@ -5,6 +5,7 @@ import type { CreateRoomRequest } from '@pongapp/protocol'
 import { ABILITY_COPY } from '../game/abilityCopy'
 import { GameCourt } from '../game/GameCourt'
 import type { CourtEffectsSettings } from '../game/PixiCourt'
+import { inviteUrlFor, normalizeRoomCode, pongHomeUrlFor } from './invite'
 import { RoomClient, type RoomClientView } from './RoomClient'
 
 interface Props {
@@ -24,6 +25,7 @@ const initialView: RoomClientView = { status: 'idle', roomCode: '', lobby: null,
 export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = false, identity, effects, muted, onExit, onResult }: Props) {
   const [view, setView] = useState(initialView)
   const [copied, setCopied] = useState(false)
+  const [inviteError, setInviteError] = useState<string | null>(null)
   const clientRef = useRef<RoomClient | null>(null)
   const renderFallbackRef = useRef<GameState | null>(null)
   const resultRecorded = useRef(false)
@@ -34,8 +36,10 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
     let unsubscribe: () => void = () => undefined
     const start = async () => {
       try {
-        const code = roomCode ?? (createRequest ? await RoomClient.createRoom(serverUrl, createRequest) : '')
+        const code = normalizeRoomCode(roomCode ?? (createRequest ? await RoomClient.createRoom(serverUrl, createRequest) : ''))
         if (!code || disposed) return
+        const nextUrl = inviteUrlFor(window.location.origin, import.meta.env.BASE_URL, code, quickStart)
+        if (nextUrl) window.history.replaceState(null, '', nextUrl)
         const client = new RoomClient(serverUrl, code, identity)
         clientRef.current = client
         unsubscribe = client.subscribe((next) => {
@@ -51,7 +55,6 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
           }
         })
         client.connect()
-        window.location.hash = `/room/${code}`
       } catch (error) {
         setView({ ...initialView, status: 'error', error: error instanceof Error ? error.message : 'Could not open the room.' })
       }
@@ -66,7 +69,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
   }, [createRequest, identity, onResult, quickStart, roomCode, serverUrl])
 
   const exit = () => {
-    window.location.hash = ''
+    window.history.replaceState(null, '', pongHomeUrlFor(window.location.origin, import.meta.env.BASE_URL))
     onExit()
   }
 
@@ -78,18 +81,30 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
   }, [])
   const subscribeState = useCallback((listener: (state: GameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
   const participantId = view.participant?.id
-  const inviteUrl = `${window.location.origin}${import.meta.env.BASE_URL}${quickStart ? '?quick=1' : ''}#/room/${view.roomCode}`
+  const activeRoomCode = normalizeRoomCode(view.roomCode || roomCode || '')
+  const inviteUrl = activeRoomCode ? inviteUrlFor(window.location.origin, import.meta.env.BASE_URL, activeRoomCode, quickStart) : null
   const copyInvite = async () => {
-    await navigator.clipboard.writeText(inviteUrl)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1600)
+    if (!inviteUrl) return
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setInviteError(null)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setInviteError('Could not copy automatically. Use your browser Share menu and send this page.')
+    }
   }
   const shareInvite = async () => {
+    if (!inviteUrl) return
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Play PongApp 1v1', text: 'Join my PongApp duel', url: inviteUrl })
         return
-      } catch { /* Closing the share sheet is not an error. */ }
+      } catch (error) {
+        // Cancelling a native share sheet is intentional. Other failures can
+        // still fall back to the clipboard without adding another funnel step.
+        if (error instanceof DOMException && error.name === 'AbortError') return
+      }
     }
     await copyInvite()
   }
@@ -98,18 +113,31 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
     return <div className="pg-lobby"><div className="pg-lobby-card"><p className="pg-kicker">Connection error</p><h2>Room unavailable</h2><div className="pg-status pg-status--error">{view.error}</div><button className="pg-primary-button" onClick={exit}>Back home</button></div></div>
   }
 
+  if (!activeRoomCode) {
+    return (
+      <section className="pg-lobby">
+        <div className="pg-game-topbar"><div className="pg-game-title"><strong>Online duel</strong><span>Opening a private room…</span></div><button className="pg-pill" onClick={exit}>Leave</button></div>
+        <div className="pg-lobby-card pg-lobby-card--creating" role="status" aria-live="polite">
+          <p className="pg-kicker">One moment</p>
+          <h2>Creating your duel…</h2>
+          <p>No code or invite is shown until the complete room link is ready.</p>
+        </div>
+      </section>
+    )
+  }
+
   if (!view.gameState || !participantId || view.lobby?.phase === 'lobby') {
     const me = view.participant
     return (
       <section className="pg-lobby">
         <div className="pg-game-topbar"><div className="pg-game-title"><strong>Online room</strong><span>{view.status === 'connecting' ? 'Connecting…' : 'Invite your rivals'}</span></div><button className="pg-pill" onClick={exit}>Leave</button></div>
         <div className="pg-lobby-card">
-          <p className="pg-kicker">Private invite code</p>
-          <div className="pg-room-code"><strong>{view.roomCode || '······'}</strong><button className="pg-pill" onClick={() => void copyInvite()}>{copied ? 'Copied!' : 'Copy link'}</button></div>
+          <p className="pg-kicker">{quickStart ? 'Your private duel' : 'Private invite code'}</p>
+          <div className="pg-room-code"><strong>{activeRoomCode}</strong>{!quickStart && <button className="pg-pill" onClick={() => void copyInvite()}>{copied ? 'Copied!' : 'Copy link'}</button>}</div>
           {quickStart && (
             <div className="pg-quick-invite">
-              <div><strong>Phone 1 is ready</strong><span>Send this invite to Phone 2. The duel starts as soon as they open it.</span></div>
-              <button className="pg-primary-button" onClick={() => void shareInvite()}>Share 1v1 invite</button>
+              <div><strong>You’re ready</strong><span>Send one invite. Phone 2 taps it once and the match starts automatically.</span></div>
+              <button className="pg-primary-button" onClick={() => void shareInvite()}>{copied ? 'Invite copied' : 'Invite Player 2'}</button>
             </div>
           )}
           <div className="pg-player-list">
@@ -138,6 +166,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, quickStart = fa
             })}
           </div>
           {view.error && <div className="pg-status pg-status--error">{view.error}</div>}
+          {inviteError && <div className="pg-status pg-status--error">{inviteError}</div>}
           <div className="pg-status">{quickStart ? 'Waiting for the second phone. No AI will take their place.' : <>The match starts when every connected player is ready and at least {view.lobby?.mode === 'crosscourt' ? 'four' : view.lobby?.mode === 'arena' ? 'three' : 'two'} paddles are filled.</>}</div>
           {me && me.slot !== null && !quickStart && <button className="pg-primary-button" onClick={() => clientRef.current?.setReady(!me.isReady)}>{me.isReady ? 'Not ready' : 'Ready up'}</button>}
         </div>

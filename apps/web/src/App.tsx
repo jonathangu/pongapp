@@ -13,6 +13,7 @@ import type { CreateRoomRequest } from '@pongapp/protocol'
 import { ABILITY_COPY, PLAYABLE_ABILITIES } from './game/abilityCopy'
 import { LocalMatch } from './game/LocalMatch'
 import { OnlineRoom } from './online/OnlineRoom'
+import { normalizeRoomCode } from './online/invite'
 import { loadProfile, loadSettings, recordResult, saveProfile, saveSettings, type AppSettings, type GuestProfile } from './store'
 
 type Screen = { type: 'home' } | { type: 'local'; config: MatchConfig; humanIds: string[] } | { type: 'online'; roomCode?: string; request?: CreateRoomRequest; quickStart?: boolean }
@@ -22,8 +23,8 @@ const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || (import.meta.env.PRO
   : 'http://localhost:8080')
 
 function roomFromHash(): string | undefined {
-  const match = /^#\/room\/([A-Z0-9]{6})$/i.exec(window.location.hash)
-  return match?.[1]?.toUpperCase()
+  const match = /^#\/room\/([^/]+)$/i.exec(window.location.hash)
+  return normalizeRoomCode(match?.[1] ?? '') ?? undefined
 }
 
 function quickStartFromUrl(): boolean {
@@ -70,7 +71,7 @@ export default function App() {
       humanPlayers: [{ id: profile.id, name: profile.name, ability }],
       totalPlayers: 2,
       aiDifficulty: difficulty,
-      itemIntensity: 'off',
+      itemIntensity: 'standard',
       mutator: 'none',
     })
     setScreen({ type: 'local', config, humanIds: [profile.id] })
@@ -94,7 +95,7 @@ export default function App() {
         { id: profile.id, name: profile.name, ability },
         { id: secondId, name: 'Player Two', ability: ability === 'dash' ? 'pulse' : 'dash' },
       ],
-      itemIntensity: 'off',
+      itemIntensity: 'standard',
       mutator: 'none',
     })
     setScreen({ type: 'local', config, humanIds: [profile.id, secondId] })
@@ -112,7 +113,7 @@ export default function App() {
       quickStart: true,
       request: {
         mode: 'duel',
-        itemIntensity: 'off',
+        itemIntensity: 'standard',
         aiDifficulty: difficulty,
         aiSlots: 0,
         mutator: 'none',
@@ -170,11 +171,11 @@ export default function App() {
           <div className="pg-launch-grid">
             <button className="pg-launch pg-launch--primary" onClick={startAi}>
               <SeatGlyph kind="solo" />
-              <span className="pg-launch__text"><strong>Quick Duel</strong><small>Clean 1v1 against AI</small></span>
+              <span className="pg-launch__text"><strong>Quick Duel</strong><small>AI · skills · power-ups</small></span>
             </button>
             <button className="pg-launch" onClick={startPhoneDuel}>
               <SeatGlyph kind="phones" />
-              <span className="pg-launch__text"><strong>Play a Friend</strong><small>Share a 1v1 link</small></span>
+              <span className="pg-launch__text"><strong>Play a Friend</strong><small>One invite · instant 1v1</small></span>
             </button>
             <button className="pg-launch" onClick={startLocal}>
               <SeatGlyph kind="pass" />
@@ -199,8 +200,8 @@ export default function App() {
               className="pg-join-inline"
               onSubmit={(event) => {
                 event.preventDefault()
-                const code = joinCode.trim().toUpperCase()
-                if (/^[A-Z0-9]{6}$/.test(code)) setScreen({ type: 'online', roomCode: code })
+                const code = normalizeRoomCode(joinCode)
+                if (code) setScreen({ type: 'online', roomCode: code })
               }}
             >
               <label className="pg-visually-hidden" htmlFor="join-code">Six-character room code</label>
@@ -215,7 +216,7 @@ export default function App() {
                 value={joinCode}
                 onChange={(event) => setJoinCode(event.target.value.replace(/[^a-z0-9]/gi, '').slice(0, 6))}
               />
-              <button className="pg-launch__go" type="submit" disabled={!/^[A-Z0-9]{6}$/i.test(joinCode)}>Join room</button>
+              <button className="pg-launch__go" type="submit" disabled={!normalizeRoomCode(joinCode)}>Join room</button>
             </form>
           )}
         </div>

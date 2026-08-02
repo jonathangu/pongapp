@@ -809,6 +809,8 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   background: var(--pg-surface);
   box-shadow: var(--pg-shadow-md);
 }
+.pg-lobby-card--creating { min-height: 220px; align-content: center; text-align: center; }
+.pg-lobby-card--creating p:last-child { color: var(--pg-text-muted); }
 .pg-room-code {
   display: flex;
   justify-content: space-between;

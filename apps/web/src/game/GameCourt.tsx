@@ -575,7 +575,9 @@ export function GameCourt(props: Props) {
                 }}
                 aria-label={`${player.name}, ${position}: ${copy.action} ${status.ready ? 'Ready now' : `Ready in ${status.seconds} seconds`}`}
                 title={copy.action}
-                onPointerDown={(event) => { event.stopPropagation(); void audio.unlock(); usePlayerAbility(player.id) }}
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); void audio.unlock(); usePlayerAbility(player.id) }}
               >
                 <span className="pg-ability-button__glyph" aria-hidden="true">{ABILITY_GLYPH[player.ability]}</span>
                 <span className="pg-ability-button__copy">
