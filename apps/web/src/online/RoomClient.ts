@@ -92,7 +92,7 @@ export class RoomClient {
         role: this.identity.role ?? 'player',
         reconnectToken: this.reconnectToken,
       })
-      this.inputTimer = window.setInterval(() => this.flushInput(), 1000 / 30)
+      this.inputTimer = window.setInterval(() => this.flushInput(), 1000 / 60)
       this.pingTimer = window.setInterval(() => this.send({ type: 'ping', sentAt: Date.now() }), 2000)
     })
     socket.addEventListener('message', (event) => this.onMessage(String(event.data)))
@@ -161,7 +161,12 @@ export class RoomClient {
     if (Math.abs(next - this.latestTarget) > 0.0001) this.targetChangedSinceFlush = true
     this.latestTarget = next
   }
-  useAbility(): void { this.abilityPressed = true }
+  useAbility(): void {
+    this.abilityPressed = true
+    // Skills are edge actions, not continuous steering. Send the edge now so a
+    // tap never waits behind the regular input cadence.
+    this.flushInput()
+  }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
   rematch(): void { this.send({ type: 'rematch' }) }
 

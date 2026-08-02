@@ -127,8 +127,13 @@ export function sidesForMode(
   return ['bottom', 'top', 'left', 'right'].slice(0, Math.max(3, Math.min(4, count))) as Side[]
 }
 
-export function nextPowerUpDelay(intensity: ItemIntensity, random: number): number {
+export function nextPowerUpDelay(intensity: ItemIntensity, random: number, firstSpawn = false): number {
   if (intensity === 'off') return Number.MAX_SAFE_INTEGER
-  const [minimum, spread] = intensity === 'wild' ? [4, 3] : [8, 5]
+  // The first orb establishes the rule immediately. Later gaps stay short
+  // enough that a normal point sees power-ups instead of only unusually long
+  // rallies. Wild is intentionally close to constant once an orb is collected.
+  const [minimum, spread] = firstSpawn
+    ? intensity === 'wild' ? [1, 1] : [2, 1.5]
+    : intensity === 'wild' ? [2, 2] : [4, 3]
   return Math.round((minimum + random * spread) * TICK_RATE)
 }

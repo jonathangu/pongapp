@@ -42,7 +42,7 @@ interface InternalParticipant extends RoomParticipant {
 interface SocketAttachment { participantId: string | null }
 
 const RECONNECT_GRACE_MS = 20_000
-const SNAPSHOT_EVERY_TICKS = 3
+const snapshotEveryTicks = (state: GameState): number => state.config.mode === 'duel' ? 2 : 3
 
 function corsHeaders(request: Request): HeadersInit {
   const origin = allowedOrigin(request.headers.get('origin'))
@@ -343,10 +343,10 @@ export class GameRoom extends DurableObject<Env> {
     stepGame(this.game, mergedInputs)
     for (const input of Object.values(this.inputs)) input.abilityPressed = false
     if (
-      this.game.tick % SNAPSHOT_EVERY_TICKS === 0
+      this.game.tick % snapshotEveryTicks(this.game) === 0
       // RoomClient renders effects from snapshots. Snapshot every event tick so
       // ordinary hits, skills, power-ups and warps cannot fall between the
-      // three-tick cadence and disappear online.
+      // regular cadence and disappear online.
       || this.game.events.length > 0
     ) this.broadcastSnapshot()
     for (const event of this.game.events) this.broadcast({ type: 'event', event })

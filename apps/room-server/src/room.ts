@@ -27,7 +27,7 @@ import type { StoredParticipant, StoredRoomRecord } from './persistence'
 interface InternalParticipant extends StoredParticipant {}
 
 const RECONNECT_GRACE_MS = 20_000
-const SNAPSHOT_EVERY_TICKS = 3
+const snapshotEveryTicks = (state: GameState): number => state.config.mode === 'duel' ? 2 : 3
 
 export class GameRoom {
   private readonly participants = new Map<string, InternalParticipant>()
@@ -269,7 +269,7 @@ export class GameRoom {
     const mergedInputs = { ...aiInputs(this.game, this.aiMemory), ...this.inputs }
     stepGame(this.game, mergedInputs)
     for (const input of Object.values(this.inputs)) input.abilityPressed = false
-    if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || this.game.events.length > 0) this.broadcastSnapshot()
+    if (this.game.tick % snapshotEveryTicks(this.game) === 0 || this.game.events.length > 0) this.broadcastSnapshot()
     for (const event of this.game.events) this.broadcast({ type: 'event', event })
     if (this.game.tick % 60 === 0 || this.game.phase === 'finished') void this.persist()
     if (this.game.phase === 'finished') {

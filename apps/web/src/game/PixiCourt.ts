@@ -1141,24 +1141,27 @@ export class PixiCourt {
     }
   }
 
-  /** Boost is one wall-aligned smear—no ghost paddles, arrows, rings or aim claim. */
+  /** Boost leaves paddle-shaped afterimages along the actual authoritative move. */
   private drawDashBurst(burst: AbilityBurst): void {
     const w = this.width
     const from = this.anchorAt(burst.side, burst.fromPosition)
     const to = this.anchorAt(burst.side, burst.toPosition)
-    const fromX = this.point(from.x)
-    const fromY = this.point(from.y)
-    const toX = this.point(to.x)
-    const toY = this.point(to.y)
-    const dx = toX - fromX
-    const dy = toY - fromY
-    const distance = Math.hypot(dx, dy)
-    if (distance < 1) return
-
-    this.overlays.moveTo(fromX, fromY).lineTo(toX, toY)
-      .stroke({ color: burst.color, alpha: burst.life * 0.52, width: Math.max(7, w * 0.015), cap: 'round' })
-    this.overlays.circle(toX, toY, Math.max(4, w * 0.008))
-      .fill({ color: COURT_PALETTE.paper.color, alpha: burst.life * 0.78 })
+    const horizontal = burst.side === 'top' || burst.side === 'bottom'
+    const length = this.point(BASE_PADDLE_LENGTH)
+    const thickness = Math.max(8, w * 0.019)
+    for (let index = 0; index < 4; index += 1) {
+      const progress = index / 4
+      const x = this.point(from.x + (to.x - from.x) * progress)
+      const y = this.point(from.y + (to.y - from.y) * progress)
+      const alpha = burst.life * (0.1 + index * 0.07)
+      this.overlays.roundRect(
+        horizontal ? x - length / 2 : x - thickness / 2,
+        horizontal ? y - thickness / 2 : y - length / 2,
+        horizontal ? length : thickness,
+        horizontal ? thickness : length,
+        thickness / 2,
+      ).fill({ color: burst.color, alpha })
+    }
   }
 
   private drawTrails(state: GameState, deltaSeconds: number, ahead: number): void {
