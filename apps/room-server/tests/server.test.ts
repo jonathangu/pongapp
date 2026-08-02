@@ -84,6 +84,16 @@ describe('Fly room server', () => {
     host.send(JSON.stringify({ type: 'input', seq: 1, target: 0.8, abilityPressed: false }))
     expect((await acknowledged).type).toBe('snapshot')
 
+    await waitFor(host, (message) => message.type === 'snapshot' && message.state.phase === 'playing' && message.state.serveTicks === 0)
+    const summoned = waitFor(host, (message) => message.type === 'snapshot'
+      && message.acknowledgedSeq === 3
+      && message.state.summonedPaddles.length === 3)
+    // The continuous steering packet must not erase the skill edge before the
+    // authoritative tick consumes it.
+    host.send(JSON.stringify({ type: 'input', seq: 2, target: 0.8, abilityPressed: true }))
+    host.send(JSON.stringify({ type: 'input', seq: 3, target: 0.8, abilityPressed: false }))
+    expect((await summoned).type).toBe('snapshot')
+
     host.close()
     guest.close()
     await roomServer.close()

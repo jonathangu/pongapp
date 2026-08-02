@@ -8,9 +8,9 @@ interface AbilityCopy {
 
 export const ABILITY_COPY: Record<AbilityId, AbilityCopy> = {
   dash: {
-    label: 'Boost',
-    menu: 'Boost · turbo every live ball',
-    action: 'Instantly turbocharges every live ball. Time it after your return—or risk speeding it toward yourself.',
+    label: 'Summon',
+    menu: 'Summon · call three Paddle Pals',
+    action: 'Calls three tiny Paddle Pals for eight seconds. Each returns one ball, then pops away.',
   },
   bend: {
     label: 'Bend',

@@ -211,7 +211,14 @@ export class GameRoom {
     } else if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
       participant.lastSeq = message.seq
       participant.lastTarget = message.target
-      this.inputs[participant.id] = { target: message.target, abilityPressed: message.abilityPressed }
+      // A skill tap is an edge, while steering packets are continuous. A
+      // regular input packet can arrive after the tap but before the next
+      // server tick, so latch the edge until stepGame consumes it instead of
+      // allowing that newer steering packet to erase the press.
+      this.inputs[participant.id] = {
+        target: message.target,
+        abilityPressed: message.abilityPressed || this.inputs[participant.id]?.abilityPressed === true,
+      }
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
     } else if (message.type === 'rematch' && participant.isHost && this.game?.phase === 'finished') {

@@ -88,13 +88,13 @@ const RALLY_STEPS = [
 ] as const
 
 const ABILITY_MOMENT: Record<string, string> = {
-  dash: 'turbocharged the ball',
+  dash: 'summoned Paddle Pals',
   bend: 'curve shot armed',
   guard: 'shield raised',
   pulse: 'parry window open',
 }
 
-const ABILITY_GLYPH: Record<string, string> = { dash: '»', bend: '↝', guard: '◇', pulse: '◉' }
+const ABILITY_GLYPH: Record<string, string> = { dash: '✦', bend: '↝', guard: '◇', pulse: '◉' }
 const SHOT_LABEL: Record<string, string> = { drive: 'DRIVE', cut: 'CUT', drop: 'DROP' }
 
 /**
@@ -134,15 +134,9 @@ function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
 
 function courtPointer(event: React.PointerEvent<HTMLDivElement>): { x: number; y: number } {
   const rect = event.currentTarget.getBoundingClientRect()
-  // The court is drawn square and centred inside the wrapper, so the pointer has
-  // to be mapped through the same letterbox the renderer uses or the paddle
-  // lands a few percent off on a non-square wrapper.
-  const size = Math.min(rect.width, rect.height)
-  const originX = rect.left + (rect.width - size) / 2
-  const originY = rect.top + (rect.height - size) / 2
   return {
-    x: Math.max(0, Math.min(1, (event.clientX - originX) / size)),
-    y: Math.max(0, Math.min(1, (event.clientY - originY) / size)),
+    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
   }
 }
 
@@ -196,9 +190,7 @@ export function GameCourt(props: Props) {
   const usePlayerAbility = useCallback((id: string) => {
     const current = stateRef.current
     const player = current.players[id]
-    const ballIsLive = current.balls.some((ball) => Math.hypot(ball.vx, ball.vy) > 0.000001)
     if (!player || current.phase !== 'playing' || current.serveTicks > 0 || player.cooldownTicks > 0) return
-    if (player.ability === 'dash' && !ballIsLive) return
     onAbilityRef.current(id)
   }, [])
 
@@ -272,6 +264,11 @@ export function GameCourt(props: Props) {
         const player = state.players[event.playerId]
         const owner = props.localPlayerIds.includes(event.playerId) ? 'You' : player?.name ?? 'Opponent'
         return { label: `${owner}: ${ABILITY_MOMENT[event.ability]}`, kind: 'skill' as const }
+      }
+      if (event.type === 'summonHit') {
+        const player = state.players[event.playerId]
+        const owner = props.localPlayerIds.includes(event.playerId) ? 'Your' : `${player?.name ?? 'Opponent'}'s`
+        return { label: `${owner} Paddle Pal saved it!`, kind: 'skill' as const }
       }
       if (event.type === 'powerUp') return { label: POWER_UP_IDENTITIES[event.powerUp].label, kind: 'power' as const }
       return null
@@ -414,14 +411,10 @@ export function GameCourt(props: Props) {
         : 'Your serve · move to aim'
       : `${servingPlayer.name} serves`
     : null
-  const ballIsLive = state.phase === 'playing'
-    && state.serveTicks <= 0
-    && state.balls.some((ball) => Math.hypot(ball.vx, ball.vy) > 0.000001)
   const abilityStatus = (player: PlayerState) => {
     const cooled = player.cooldownTicks <= 0
     const available = state.phase === 'playing'
       && state.serveTicks <= 0
-      && (player.ability !== 'dash' || ballIsLive)
     return {
       ready: cooled && available,
       waiting: cooled && !available,
@@ -430,6 +423,8 @@ export function GameCourt(props: Props) {
       seconds: Math.ceil(player.cooldownTicks / TICK_RATE),
     }
   }
+  const tallDuel = state.config.mode === 'duel'
+    && (!primaryPlayer || primaryPlayer.side === 'top' || primaryPlayer.side === 'bottom')
 
   return (
     <section className="pg-game-layout" aria-label="Pong match">
@@ -450,7 +445,7 @@ export function GameCourt(props: Props) {
         chip over a surface that ranges from near-black to full-bright lime
         loses contrast precisely when a rally is at its most intense.
       */}
-      <div className="pg-hud-bar">
+      <div className={`pg-hud-bar${tallDuel ? ' pg-hud-bar--tall-duel' : ''}`}>
         <div className={`pg-scoreboard pg-scoreboard--${teams.length}`}>
           {teams.map((team) => (
             <div
@@ -496,7 +491,7 @@ export function GameCourt(props: Props) {
 
       <div
         ref={mountRef}
-        className="pg-canvas-wrap"
+        className={`pg-canvas-wrap${tallDuel ? ' pg-canvas-wrap--tall-duel' : ''}`}
         data-phase={state.phase}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

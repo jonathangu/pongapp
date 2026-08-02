@@ -192,10 +192,14 @@ The August 2026 pass extends rally heat into a full game language:
 
 - Duel, Arena and Crosscourt select Forest Core, Neon Midnight and Championship
   court materials while retaining the same seat palette and geometry.
+- Default top/bottom duels render on a 4:5 court, giving the 1v1 battlefield
+  exactly 25% more vertical length while Arena, Crosscourt and classic side-on
+  duels remain square.
 - Perfect returns cut a three-channel impact slice across the contact point.
-- Dash, Bend, Guard and Pulse each have a distinct, explained vector cue. Dash
-  uses paddle afterimages plus one along-wall arrow—never radial rings or rays
-  into the court—because it is movement, not a weapon.
+- Summon, Bend, Guard and Pulse each have a distinct, explained cue. Summon
+  calls three authoritative one-hit Paddle Pals into a defensive formation;
+  their eyes face the rally, their hitboxes follow their patrol, and each pops
+  locally when it returns a ball.
 - Goals paint the conceded wall, wash the court in the scorer's colour, fire a
   directional edge spray and announce the moment in the DOM HUD.
 - Audio is procedural and event-layered, so local and online matches share the

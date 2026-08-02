@@ -66,6 +66,10 @@ export class GameAudio {
       this.tone(980, 0.16, 0.04, 'triangle', 0.11, 1380)
     } else if (event.type === 'ability') {
       this.ability(event.ability)
+    } else if (event.type === 'summonHit') {
+      this.tone(310, 0.11, 0.06, 'square', 0, 760)
+      this.tone(980, 0.09, 0.035, 'sine', 0.025, 1380)
+      this.noise(0.08, 0.026, 4300)
     } else if (event.type === 'powerUp') {
       if (event.powerUp === 'grow') {
         this.tone(180, 0.25, 0.065, 'triangle', 0, 620)
@@ -125,9 +129,10 @@ export class GameAudio {
 
   private ability(ability: AbilityId): void {
     if (ability === 'dash') {
-      this.tone(140, 0.2, 0.075, 'sawtooth', 0, 1280)
-      this.tone(420, 0.15, 0.045, 'triangle', 0.025, 1160)
-      this.noise(0.14, 0.042, 5200)
+      for (const [index, frequency] of [440, 660, 880].entries()) {
+        this.tone(frequency, 0.18, 0.038, 'triangle', index * 0.055, frequency * 1.28)
+      }
+      this.tone(180, 0.28, 0.05, 'sine', 0, 320)
     } else if (ability === 'bend') {
       this.tone(340, 0.24, 0.05, 'sine', 0, 690)
       this.tone(356, 0.24, 0.035, 'sine', 0, 520)
