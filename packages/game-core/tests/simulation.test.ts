@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiInputs, BALL_START_SPEED, buildMatchConfig, createAiMemory, createGame, serveVelocityForPlayer, stepGame, TICK_RATE } from '../src'
+import { aiInputs, BALL_START_SPEED, buildMatchConfig, createAiMemory, createGame, serveVelocityForPlayer, stepGame, summonedPaddleCoordinates, TICK_RATE } from '../src'
 
 function duel() {
   return createGame(buildMatchConfig({
@@ -105,7 +105,7 @@ describe('simulation', () => {
     expect(Math.abs(player.position - before)).toBeLessThanOrEqual(1.35 / TICK_RATE + 1e-8)
   })
 
-  it('boost turbocharges a live ball without moving the paddle', () => {
+  it('Summon calls three one-hit paddle pals without changing the ball', () => {
     const state = duel()
     state.phase = 'playing'
     state.serveTicks = 0
@@ -114,7 +114,7 @@ describe('simulation', () => {
     const ball = state.balls[0]!
     ball.vx = 0.48
     ball.vy = 0.3
-    const speedBefore = Math.hypot(ball.vx, ball.vy)
+    const velocityBefore = { vx: ball.vx, vy: ball.vy }
     stepGame(state, { human: { target: 0.9, abilityPressed: true } })
     const event = state.events.find((candidate) => candidate.type === 'ability')
     expect(event).toMatchObject({
@@ -126,11 +126,33 @@ describe('simulation', () => {
     })
     expect(player.position).not.toBe(0.5)
     expect(player.position).toBeLessThan(0.53)
-    expect(Math.hypot(ball.vx, ball.vy)).toBeGreaterThan(speedBefore + 0.15)
-    expect(ball.lastToucherId).toBe('human')
+    expect({ vx: ball.vx, vy: ball.vy }).toEqual(velocityBefore)
+    expect(state.summonedPaddles).toHaveLength(3)
+    expect(state.summonedPaddles.every((summon) => summon.ownerId === 'human' && summon.side === 'bottom')).toBe(true)
   })
 
-  it('does not spend Boost during the serve pause', () => {
+  it('a paddle pal returns one ball and disappears', () => {
+    const state = duel()
+    state.phase = 'playing'
+    state.serveTicks = 0
+    const ball = state.balls[0]!
+    ball.vx = 0
+    ball.vy = 0.6
+    stepGame(state, { human: { target: 0.5, abilityPressed: true } })
+    const summon = state.summonedPaddles[1]!
+    const coordinates = summonedPaddleCoordinates({ ...state, tick: state.tick + 1 }, summon)
+    ball.x = coordinates.x
+    ball.y = coordinates.y - ball.radius - 0.004
+    const returnsBefore = state.players.human!.returns
+    stepGame(state)
+    expect(ball.vy).toBeLessThan(0)
+    expect(ball.lastToucherId).toBe('human')
+    expect(state.players.human!.returns).toBe(returnsBefore + 1)
+    expect(state.summonedPaddles).toHaveLength(2)
+    expect(state.events).toContainEqual(expect.objectContaining({ type: 'summonHit', playerId: 'human', summonId: summon.id, ballId: ball.id }))
+  })
+
+  it('does not spend Summon during the serve pause', () => {
     const state = duel()
     state.phase = 'playing'
     state.serveTicks = 20

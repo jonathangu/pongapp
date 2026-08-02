@@ -447,6 +447,10 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 }
 .pg-canvas-wrap:active { cursor: grabbing; }
 .pg-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+.pg-canvas-wrap--tall-duel {
+  width: min(100%, calc(80dvh - 185.6px), 820px);
+  aspect-ratio: 4 / 5;
+}
 
 /* --------------------------------------------------------------------- HUD */
 
@@ -466,6 +470,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
   min-width: 0;
   margin: 0 auto;
 }
+.pg-hud-bar--tall-duel { width: min(100%, calc(80dvh - 185.6px), 820px); }
 
 .pg-scoreboard {
   display: flex;

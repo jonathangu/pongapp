@@ -76,6 +76,17 @@ export interface PowerUpState {
   ageTicks: number
 }
 
+/** A one-hit defensive helper created by the Summon skill (`dash` on the wire). */
+export interface SummonedPaddleState {
+  id: string
+  ownerId: string
+  side: Side
+  position: number
+  depth: number
+  phase: number
+  expiresAtTick: number
+}
+
 export interface WorldEffects {
   warpTicks: number
   gravityTicks: number
@@ -90,6 +101,7 @@ export type GameEvent =
   | { type: 'score'; scorerId: string | null; team: string; againstPlayerId: string; ballId: string; points: number; rallyHits: number }
   | { type: 'rallyHot'; hits: number; multiplier: number }
   | { type: 'ability'; playerId: string; ability: AbilityId; fromPosition: number; toPosition: number }
+  | { type: 'summonHit'; playerId: string; summonId: string; ballId: string; x: number; y: number }
   | { type: 'powerUpSpawn'; powerUp: PowerUpState }
   | { type: 'powerUp'; playerId: string | null; powerUp: PowerUpId }
   | { type: 'shield'; playerId: string; ballId: string }
@@ -111,6 +123,7 @@ export interface GameState {
   freezeTicks: number
   players: Record<string, PlayerState>
   balls: BallState[]
+  summonedPaddles: SummonedPaddleState[]
   scores: Record<string, number>
   powerUp: PowerUpState | null
   powerUpSpawnTicks: number

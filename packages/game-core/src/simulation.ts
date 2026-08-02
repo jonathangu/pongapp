@@ -1,8 +1,6 @@
 import {
   ABILITY_COOLDOWNS,
   AI_PROFILE,
-  BOOST_BALL_SPEED_CAP,
-  BOOST_BALL_SPEED_MULTIPLIER,
   BALL_RADIUS,
   BALL_SPEED_CAP,
   BALL_SPEED_RAMP,
@@ -18,6 +16,9 @@ import {
   POWER_UP_LIFETIME_TICKS,
   POWER_UP_RADIUS,
   SERVE_DELAY_TICKS,
+  SUMMON_PADDLE_COUNT,
+  SUMMON_PADDLE_LENGTH,
+  SUMMON_PADDLE_LIFETIME_TICKS,
   TICK_RATE,
   TICK_SECONDS,
   nextPowerUpDelay,
@@ -32,6 +33,7 @@ import type {
   PlayerState,
   PowerUpId,
   Side,
+  SummonedPaddleState,
 } from './types'
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -110,6 +112,7 @@ export function normalizeGameState(state: GameState): GameState {
   state.rallyHits ??= 0
   state.longestRallyHits ??= 0
   state.freezeTicks ??= 0
+  state.summonedPaddles ??= []
   if (state.powerUp) {
     state.powerUp.vx ??= 0
     state.powerUp.vy ??= 0
@@ -153,6 +156,7 @@ export function createGame(config: MatchConfig): GameState {
     freezeTicks: 0,
     players,
     balls: [],
+    summonedPaddles: [],
     scores,
     powerUp: null,
     powerUpSpawnTicks: 0,
@@ -174,23 +178,30 @@ function decrementPlayerTimers(player: PlayerState): void {
   player.pulseTicks = Math.max(0, player.pulseTicks - 1)
 }
 
+function summonPaddlePals(state: GameState, player: PlayerState): void {
+  const offsets = [-0.16, 0, 0.16]
+  const depths = [0.19, 0.27, 0.35]
+  state.summonedPaddles = state.summonedPaddles.filter((summon) => summon.ownerId !== player.id)
+  for (let index = 0; index < SUMMON_PADDLE_COUNT; index += 1) {
+    state.summonedPaddles.push({
+      id: `summon-${player.id}-${state.tick}-${index}`,
+      ownerId: player.id,
+      side: player.side,
+      position: clamp(player.position + (offsets[index] ?? 0), 0.12, 0.88),
+      depth: depths[index] ?? 0.27,
+      phase: index * Math.PI * 2 / SUMMON_PADDLE_COUNT,
+      expiresAtTick: state.tick + SUMMON_PADDLE_LIFETIME_TICKS,
+    })
+  }
+}
+
 function activateAbility(state: GameState, player: PlayerState, input: GameInput): void {
   if (!input.abilityPressed || player.cooldownTicks > 0 || state.phase !== 'playing' || state.serveTicks > 0) return
-  const liveBalls = state.balls.filter((ball) => Math.hypot(ball.vx, ball.vy) > 1e-6)
-  // Boost is an immediate turbo, so pressing it during a staged serve must not
-  // consume the cooldown while there is nothing to accelerate.
-  if (player.ability === 'dash' && liveBalls.length === 0) return
   const fromPosition = player.position
   player.cooldownTicks = ABILITY_COOLDOWNS[player.ability]
   player.abilityUses += 1
   if (player.ability === 'dash') {
-    for (const ball of liveBalls) {
-      const speed = Math.hypot(ball.vx, ball.vy)
-      const nextSpeed = Math.min(BOOST_BALL_SPEED_CAP, Math.max(speed * BOOST_BALL_SPEED_MULTIPLIER, speed + 0.16))
-      ball.vx = (ball.vx / speed) * nextSpeed
-      ball.vy = (ball.vy / speed) * nextSpeed
-      ball.lastToucherId = player.id
-    }
+    summonPaddlePals(state, player)
   } else if (player.ability === 'bend') {
     player.bendTicks = 3 * TICK_RATE
   } else if (player.ability === 'guard') {
@@ -292,10 +303,7 @@ function bounceFromWall(ball: BallState, side: Side): void {
 
 function rampBall(ball: BallState, multiplier = BALL_SPEED_RAMP): void {
   const speed = Math.hypot(ball.vx, ball.vy)
-  // A turbocharged rally stays turbocharged until a point ends. Ordinary balls
-  // still use the classic cap; only a Boost can open the higher speed band.
-  const cap = speed > BALL_SPEED_CAP ? BOOST_BALL_SPEED_CAP : BALL_SPEED_CAP
-  const nextSpeed = Math.min(cap, speed * multiplier)
+  const nextSpeed = Math.min(BALL_SPEED_CAP, speed * multiplier)
   if (speed <= 0) return
   ball.vx = (ball.vx / speed) * nextSpeed
   ball.vy = (ball.vy / speed) * nextSpeed
@@ -369,6 +377,76 @@ function applyPulse(state: GameState, ball: BallState): boolean {
       registerRallyHit(state)
       return true
     }
+  }
+  return false
+}
+
+/** The little helpers patrol a few pixels so they feel alive, and the hitbox follows. */
+export function summonedPaddlePosition(state: GameState, summon: SummonedPaddleState): number {
+  return clamp(summon.position + Math.sin(state.tick * 0.045 + summon.phase) * 0.035, 0.08, 0.92)
+}
+
+export function summonedPaddleCoordinates(state: GameState, summon: SummonedPaddleState): { x: number; y: number } {
+  const position = summonedPaddlePosition(state, summon)
+  if (summon.side === 'left') return { x: summon.depth, y: position }
+  if (summon.side === 'right') return { x: 1 - summon.depth, y: position }
+  if (summon.side === 'top') return { x: position, y: summon.depth }
+  return { x: position, y: 1 - summon.depth }
+}
+
+function crossedSummonedPaddle(ball: BallState, summon: SummonedPaddleState): boolean {
+  const previousX = ball.x - ball.vx * TICK_SECONDS
+  const previousY = ball.y - ball.vy * TICK_SECONDS
+  if (summon.side === 'left') {
+    return ball.vx < 0 && ball.x - ball.radius <= summon.depth && previousX - ball.radius > summon.depth
+  }
+  if (summon.side === 'right') {
+    const line = 1 - summon.depth
+    return ball.vx > 0 && ball.x + ball.radius >= line && previousX + ball.radius < line
+  }
+  if (summon.side === 'top') {
+    return ball.vy < 0 && ball.y - ball.radius <= summon.depth && previousY - ball.radius > summon.depth
+  }
+  const line = 1 - summon.depth
+  return ball.vy > 0 && ball.y + ball.radius >= line && previousY + ball.radius < line
+}
+
+function bounceFromSummonedPaddle(ball: BallState, summon: SummonedPaddleState): void {
+  if (summon.side === 'left') {
+    ball.x = summon.depth + ball.radius
+    ball.vx = Math.abs(ball.vx)
+  } else if (summon.side === 'right') {
+    ball.x = 1 - summon.depth - ball.radius
+    ball.vx = -Math.abs(ball.vx)
+  } else if (summon.side === 'top') {
+    ball.y = summon.depth + ball.radius
+    ball.vy = Math.abs(ball.vy)
+  } else {
+    ball.y = 1 - summon.depth - ball.radius
+    ball.vy = -Math.abs(ball.vy)
+  }
+}
+
+function applySummonedPaddle(state: GameState, ball: BallState): boolean {
+  for (const summon of state.summonedPaddles) {
+    if (!crossedSummonedPaddle(ball, summon)) continue
+    const owner = state.players[summon.ownerId]
+    if (!owner) continue
+    const position = summonedPaddlePosition(state, summon)
+    const coordinate = coordinateForSide(ball, summon.side)
+    if (Math.abs(coordinate - position) > SUMMON_PADDLE_LENGTH / 2 + ball.radius) continue
+    bounceFromSummonedPaddle(ball, summon)
+    const relative = clamp((coordinate - position) / (SUMMON_PADDLE_LENGTH / 2), -1, 1)
+    if (summon.side === 'left' || summon.side === 'right') ball.vy += relative * 0.2
+    else ball.vx += relative * 0.2
+    rampBall(ball, 1.06)
+    ball.lastToucherId = owner.id
+    owner.returns += 1
+    const { x, y } = summonedPaddleCoordinates(state, summon)
+    state.events.push({ type: 'summonHit', playerId: owner.id, summonId: summon.id, ballId: ball.id, x, y })
+    registerRallyHit(state)
+    state.summonedPaddles = state.summonedPaddles.filter((candidate) => candidate.id !== summon.id)
+    return true
   }
   return false
 }
@@ -589,6 +667,7 @@ function updateBall(state: GameState, ball: BallState): void {
   }
   ball.x += ball.vx * TICK_SECONDS
   ball.y += ball.vy * TICK_SECONDS
+  if (applySummonedPaddle(state, ball)) return
   if (applyPulse(state, ball)) return
   processSide(state, ball, 'left')
   processSide(state, ball, 'right')
@@ -622,6 +701,7 @@ export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
     return state
   }
   updatePlayers(state, inputs)
+  state.summonedPaddles = state.summonedPaddles.filter((summon) => summon.expiresAtTick > state.tick && Boolean(state.players[summon.ownerId]))
   if (!state.overtime) state.remainingTicks = Math.max(0, state.remainingTicks - 1)
   if (state.serveTicks > 0) {
     state.serveTicks -= 1
@@ -653,6 +733,7 @@ export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
     if (event.type === 'score') freezeTicks = Math.max(freezeTicks, 8)
     else if (event.type === 'shield') freezeTicks = Math.max(freezeTicks, 6)
     else if (event.type === 'powerUp') freezeTicks = Math.max(freezeTicks, 3)
+    else if (event.type === 'summonHit') freezeTicks = Math.max(freezeTicks, 3)
     else if (event.type === 'hit' && event.perfect) freezeTicks = Math.max(freezeTicks, 4)
   }
   state.freezeTicks = Math.max(state.freezeTicks, freezeTicks)

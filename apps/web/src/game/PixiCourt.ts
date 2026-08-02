@@ -43,21 +43,23 @@
 
 import { Application, BlurFilter, Container, Graphics, Rectangle } from 'pixi.js'
 import { ShockwaveFilter } from 'pixi-filters/shockwave'
-import type { AbilityId, GameEvent, GameMode, GameState, ItemIntensity, PlayerState, Side } from '@pongapp/game-core'
+import type { AbilityId, GameEvent, GameMode, GameState, ItemIntensity, PlayerState, Side, SummonedPaddleState } from '@pongapp/game-core'
 import {
   ABILITY_COOLDOWNS,
   BALL_SPEED_CAP,
   BALL_START_SPEED,
   BASE_PADDLE_LENGTH,
-  BOOST_BALL_SPEED_CAP,
   COURT_PALETTE,
   GROWN_PADDLE_LENGTH,
   PADDLE_OFFSET,
   POWER_UP_IDENTITIES,
   POWER_UP_RADIUS,
+  SUMMON_PADDLE_LENGTH,
+  SUMMON_PADDLE_LIFETIME_TICKS,
   TICK_SECONDS,
   seatIdentityForColor,
   serveVelocityForPlayer,
+  summonedPaddleCoordinates,
   type SeatIdentity,
 } from '@pongapp/game-core'
 import { courtRotationForSide } from './perspective'
@@ -94,7 +96,6 @@ interface AbilityBurst {
   fromPosition: number
   toPosition: number
 }
-interface BallBoostBurst { x: number; y: number; angle: number; life: number; color: number }
 interface GoalFlash { side: Side; life: number; color: number }
 interface PostEffect {
   elapsed: number
@@ -175,7 +176,6 @@ export class PixiCourt {
   private wallFlashes: WallFlash[] = []
   private impactSlices: ImpactSlice[] = []
   private abilityBursts: AbilityBurst[] = []
-  private ballBoostBursts: BallBoostBurst[] = []
   private goalFlash: GoalFlash | null = null
 
   private trauma = 0
@@ -185,7 +185,8 @@ export class PixiCourt {
   private sinceTick = 0
   private lastTick = -1
   private width = 0
-  private layoutWidth = -1
+  private height = 0
+  private layoutSize = ''
   private resizeObserver: ResizeObserver | null = null
   private settings: CourtEffectsSettings
   private readonly focusPlayerIds: Set<string>
@@ -251,7 +252,6 @@ export class PixiCourt {
       this.shockwaves = []
       this.impactSlices = []
       this.abilityBursts = []
-      this.ballBoostBursts = []
       this.goalFlash = null
       this.detachPostEffect()
       this.trauma = 0
@@ -260,15 +260,17 @@ export class PixiCourt {
   }
 
   render(state: GameState, deltaSeconds: number, extrapolate = true): void {
-    const size = Math.min(this.app.screen.width, this.app.screen.height)
-    if (size <= 0) return
-    this.width = size
+    const width = this.app.screen.width
+    const height = this.app.screen.height
+    if (width <= 0 || height <= 0) return
+    this.width = width
+    this.height = height
     this.clock += deltaSeconds
 
     const nextTheme = arenaTheme(state.config.mode, state.config.itemIntensity)
     if (nextTheme.key !== this.theme.key) {
       this.theme = nextTheme
-      this.layoutWidth = -1
+      this.layoutSize = ''
     }
 
     if (state.tick !== this.lastTick) {
@@ -284,8 +286,9 @@ export class PixiCourt {
     this.updateHeat(state, deltaSeconds)
     this.applyCamera(deltaSeconds)
 
-    if (this.layoutWidth !== size) {
-      this.layoutWidth = size
+    const layoutSize = `${Math.round(width)}x${Math.round(height)}`
+    if (this.layoutSize !== layoutSize) {
+      this.layoutSize = layoutSize
       this.drawStaticLayers()
     }
 
@@ -334,16 +337,17 @@ export class PixiCourt {
       } else if (event.type === 'ability') {
         const player = state.players[event.playerId]
         if (player && event.ability === 'dash') {
-          for (const ball of state.balls) {
-            const angle = Math.atan2(ball.vy, ball.vx)
+          for (const summon of state.summonedPaddles.filter((candidate) => candidate.ownerId === player.id)) {
+            const { x, y } = summonedPaddleCoordinates(state, summon)
+            this.wave(x, y, player.color, 0.13)
             if (!this.settings.reducedMotion) {
-              this.ballBoostBursts.push({ x: ball.x, y: ball.y, angle, life: 1, color: player.color })
+              for (let direction = 0; direction < 4; direction += 1) {
+                this.cone(x, y, direction * Math.PI / 2, player.color, 4, 0.45)
+              }
             }
-            this.cone(ball.x, ball.y, angle, player.color, 28, 1.25)
-            this.wave(ball.x, ball.y, player.color, 0.24)
           }
-          this.shake(0.36)
-          this.zoom(0.015)
+          this.shake(0.18)
+          this.zoom(0.008)
         } else if (player && !this.settings.reducedMotion) {
           const anchor = this.playerAnchor(player)
           this.abilityBursts.push({
@@ -360,6 +364,15 @@ export class PixiCourt {
           })
           this.wave(anchor.x, anchor.y, player.color, event.ability === 'pulse' ? 0.24 : 0.14)
         }
+      } else if (event.type === 'summonHit') {
+        const player = state.players[event.playerId]
+        const side = player?.side ?? 'bottom'
+        const angle = side === 'left' ? 0 : side === 'right' ? Math.PI : side === 'top' ? Math.PI / 2 : -Math.PI / 2
+        const color = player?.color ?? COURT_PALETTE.paper.color
+        this.cone(event.x, event.y, angle, color, 18, 0.8)
+        this.wave(event.x, event.y, color, 0.16)
+        this.shake(0.24)
+        this.zoom(0.009)
       } else if (event.type === 'powerUp') {
         const identity = POWER_UP_IDENTITIES[event.powerUp]
         for (const ball of state.balls) {
@@ -428,7 +441,9 @@ export class PixiCourt {
 
   private get density() { return DENSITY[this.settings.effectDensity] }
 
-  private point(value: number): number { return value * this.width }
+  private xPoint(value: number): number { return value * this.width }
+  private yPoint(value: number): number { return value * this.height }
+  private point(value: number): number { return value * Math.min(this.width, this.height) }
 
   private playerAnchor(player: PlayerState): { x: number; y: number } {
     return this.anchorAt(player.side, player.position)
@@ -473,10 +488,10 @@ export class PixiCourt {
     if (this.settings.reducedMotion || this.settings.effectDensity === 'low' || this.width <= 0) return
     const high = this.settings.effectDensity === 'high'
     void kind
-    const config = { duration: 0.4, strength: 0, amplitude: high ? 7 : 4.5, wavelength: 132, speed: 900, radius: this.width * 0.86 }
+    const config = { duration: 0.4, strength: 0, amplitude: high ? 7 : 4.5, wavelength: 132, speed: 900, radius: Math.max(this.width, this.height) * 0.86 }
 
     this.shaderShockwaveFilter ??= new ShockwaveFilter({
-      center: { x: x * this.width, y: y * this.width },
+      center: { x: x * this.width, y: y * this.height },
       amplitude: config.amplitude,
       wavelength: config.wavelength,
       speed: config.speed,
@@ -487,7 +502,7 @@ export class PixiCourt {
     this.postEffect = {
       elapsed: 0,
       centerX: x * this.width,
-      centerY: y * this.width,
+      centerY: y * this.height,
       ...config,
     }
     this.shaderShockwaveFilter.center = { x: this.postEffect.centerX, y: this.postEffect.centerY }
@@ -567,8 +582,10 @@ export class PixiCourt {
     this.punch = approach(this.punch, 0, 0.0006, deltaSeconds)
 
     const w = this.width
-    const half = w / 2
-    const amplitude = w * 0.022 * this.trauma * this.trauma
+    const h = this.height
+    const halfX = w / 2
+    const halfY = h / 2
+    const amplitude = Math.min(w, h) * 0.022 * this.trauma * this.trauma
     const t = this.clock * 24
     const shakeX = (Math.sin(t) + Math.sin(t * 2.31 + 1.7) * 0.5) * amplitude * 0.7
     const shakeY = (Math.sin(t * 1.37 + 2.1) + Math.sin(t * 3.11 + 0.4) * 0.5) * amplitude * 0.7
@@ -576,18 +593,17 @@ export class PixiCourt {
     // Pivot at the court centre so the punch scales about the middle of play
     // rather than the top-left of the canvas. The world is also rotated around
     // this same pivot so every client sees their own paddle on the bottom wall.
-    this.stage.pivot.set(half, half)
+    this.stage.pivot.set(halfX, halfY)
     this.stage.scale.set(1 + this.punch)
     this.stage.rotation = courtRotationForSide(this.viewSide)
-    this.stage.position.set(
-      (this.app.screen.width - w) / 2 + half + shakeX,
-      (this.app.screen.height - w) / 2 + half + shakeY,
-    )
+    this.stage.position.set(halfX + shakeX, halfY + shakeY)
   }
 
   private drawStaticLayers(): void {
     const w = this.width
-    const inset = w * 0.018
+    const h = this.height
+    const unit = Math.min(w, h)
+    const inset = unit * 0.018
     const ink = COURT_PALETTE.ink.color
     const accent = this.theme.accent
 
@@ -596,47 +612,49 @@ export class PixiCourt {
     // then never touched again.
     this.backdrop.clear()
     for (let step = 8; step >= 1; step -= 1) {
-      this.backdrop.circle(w / 2, w / 2, w * (0.22 + step * 0.062)).fill({ color: this.theme.aura, alpha: 0.02 })
+      this.backdrop.circle(w / 2, h / 2, unit * (0.22 + step * 0.062)).fill({ color: this.theme.aura, alpha: 0.02 })
     }
 
     this.floor.clear()
-      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
+      .roundRect(inset, inset, w - inset * 2, h - inset * 2, unit * 0.045)
       .fill({ color: this.theme.floor })
     // A darker core reads as depth without a texture: the eye takes the lighter
     // border as the court lifting toward the walls.
     this.floor
-      .roundRect(w * 0.14, w * 0.14, w * 0.72, w * 0.72, w * 0.06)
+      .roundRect(w * 0.14, h * 0.14, w * 0.72, h * 0.72, unit * 0.06)
       .fill({ color: this.theme.floorDeep, alpha: 0.6 })
 
     // Centre cross, dashed so it does not compete with the ball trail.
-    this.dashed(this.floor, w / 2, w * 0.06, w / 2, w * 0.94, w * 0.026, w * 0.022)
-    this.dashed(this.floor, w * 0.06, w / 2, w * 0.94, w / 2, w * 0.026, w * 0.022)
-    this.floor.stroke({ color: accent, alpha: 0.16, width: Math.max(1, w * 0.0016) })
+    this.dashed(this.floor, w / 2, h * 0.06, w / 2, h * 0.94, unit * 0.026, unit * 0.022)
+    this.dashed(this.floor, w * 0.06, h / 2, w * 0.94, h / 2, unit * 0.026, unit * 0.022)
+    this.floor.stroke({ color: accent, alpha: 0.16, width: Math.max(1, unit * 0.0016) })
 
-    this.floor.circle(w / 2, w / 2, w * 0.105).stroke({ color: accent, alpha: 0.14, width: Math.max(1, w * 0.0016) })
-    this.floor.circle(w / 2, w / 2, w * 0.028).stroke({ color: accent, alpha: 0.1, width: Math.max(1, w * 0.0014) })
+    this.floor.circle(w / 2, h / 2, unit * 0.105).stroke({ color: accent, alpha: 0.14, width: Math.max(1, unit * 0.0016) })
+    this.floor.circle(w / 2, h / 2, unit * 0.028).stroke({ color: accent, alpha: 0.1, width: Math.max(1, unit * 0.0014) })
 
     // Lane ticks mark 0.08 and 0.92 — the actual clamp on paddle travel in
     // `updatePlayers`. Players were guessing where a paddle stops; the court now
     // says so, and the marks stay honest because they are derived from the same
     // constant the simulation clamps to.
     for (const mark of [0.08, 0.5, 0.92]) {
-      const along = this.point(mark)
-      const depth = w * (mark === 0.5 ? 0.022 : 0.014)
-      const lane = this.point(PADDLE_OFFSET)
-      this.floor.moveTo(lane - depth, along).lineTo(lane + depth, along)
-      this.floor.moveTo(w - lane - depth, along).lineTo(w - lane + depth, along)
-      this.floor.moveTo(along, lane - depth).lineTo(along, lane + depth)
-      this.floor.moveTo(along, w - lane - depth).lineTo(along, w - lane + depth)
+      const alongX = this.xPoint(mark)
+      const alongY = this.yPoint(mark)
+      const depth = unit * (mark === 0.5 ? 0.022 : 0.014)
+      const laneX = this.xPoint(PADDLE_OFFSET)
+      const laneY = this.yPoint(PADDLE_OFFSET)
+      this.floor.moveTo(laneX - depth, alongY).lineTo(laneX + depth, alongY)
+      this.floor.moveTo(w - laneX - depth, alongY).lineTo(w - laneX + depth, alongY)
+      this.floor.moveTo(alongX, laneY - depth).lineTo(alongX, laneY + depth)
+      this.floor.moveTo(alongX, h - laneY - depth).lineTo(alongX, h - laneY + depth)
     }
-    this.floor.stroke({ color: accent, alpha: 0.3, width: Math.max(1, w * 0.002) })
+    this.floor.stroke({ color: accent, alpha: 0.3, width: Math.max(1, unit * 0.002) })
 
     this.bezel.clear()
-      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.045)
-      .stroke({ color: this.theme.line, width: Math.max(2, w * 0.005) })
+      .roundRect(inset, inset, w - inset * 2, h - inset * 2, unit * 0.045)
+      .stroke({ color: this.theme.line, width: Math.max(2, unit * 0.005) })
     this.bezel
-      .roundRect(inset * 0.35, inset * 0.35, w - inset * 0.7, w - inset * 0.7, w * 0.055)
-      .stroke({ color: ink, alpha: 0.55, width: Math.max(2, w * 0.012) })
+      .roundRect(inset * 0.35, inset * 0.35, w - inset * 0.7, h - inset * 0.7, unit * 0.055)
+      .stroke({ color: ink, alpha: 0.55, width: Math.max(2, unit * 0.012) })
   }
 
   private dashed(graphics: Graphics, x1: number, y1: number, x2: number, y2: number, dash: number, gap: number): void {
@@ -652,18 +670,20 @@ export class PixiCourt {
   /** The rim is the heat gauge: it brightens and thickens as the rally accelerates. */
   private drawRim(state: GameState): void {
     const w = this.width
-    const inset = w * 0.045
+    const h = this.height
+    const unit = Math.min(w, h)
+    const inset = unit * 0.045
     const breathe = this.settings.reducedMotion ? 0 : Math.sin(this.clock * 2.2) * 0.04
     const intensity = 0.22 + this.heat * 0.55 + breathe * this.heat
 
     this.rim.clear()
-      .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.03)
-      .stroke({ color: this.theme.accent, alpha: intensity, width: Math.max(1, w * (0.0018 + this.heat * 0.0032)) })
+      .roundRect(inset, inset, w - inset * 2, h - inset * 2, unit * 0.03)
+      .stroke({ color: this.theme.accent, alpha: intensity, width: Math.max(1, unit * (0.0018 + this.heat * 0.0032)) })
 
     if (this.bloomFilter && this.heat > 0.05) {
       this.bloomGraphics
-        .roundRect(inset, inset, w - inset * 2, w - inset * 2, w * 0.03)
-        .stroke({ color: this.theme.accent, alpha: this.heat * 0.32, width: Math.max(1, w * 0.003) })
+        .roundRect(inset, inset, w - inset * 2, h - inset * 2, unit * 0.03)
+        .stroke({ color: this.theme.accent, alpha: this.heat * 0.32, width: Math.max(1, unit * 0.003) })
     }
 
     // At high rally heat, short energy packets chase around the four rails. The
@@ -671,14 +691,17 @@ export class PixiCourt {
     if (this.heat > 0.32 && !this.settings.reducedMotion) {
       const travel = 0.11 + ((this.clock * (0.19 + this.heat * 0.12)) % 0.72)
       const span = 0.055 + this.heat * 0.045
-      const a = this.point(travel)
-      const b = this.point(Math.min(0.89, travel + span))
-      const edge = this.point(0.045)
-      this.rim.moveTo(a, edge).lineTo(b, edge)
-      this.rim.moveTo(w - a, w - edge).lineTo(w - b, w - edge)
-      this.rim.moveTo(edge, w - a).lineTo(edge, w - b)
-      this.rim.moveTo(w - edge, a).lineTo(w - edge, b)
-      this.rim.stroke({ color: this.theme.aura, alpha: 0.35 + this.heat * 0.5, width: Math.max(2, w * 0.006), cap: 'round' })
+      const ax = this.xPoint(travel)
+      const bx = this.xPoint(Math.min(0.89, travel + span))
+      const ay = this.yPoint(travel)
+      const by = this.yPoint(Math.min(0.89, travel + span))
+      const edgeX = this.xPoint(0.045)
+      const edgeY = this.yPoint(0.045)
+      this.rim.moveTo(ax, edgeY).lineTo(bx, edgeY)
+      this.rim.moveTo(w - ax, h - edgeY).lineTo(w - bx, h - edgeY)
+      this.rim.moveTo(edgeX, h - ay).lineTo(edgeX, h - by)
+      this.rim.moveTo(w - edgeX, ay).lineTo(w - edgeX, by)
+      this.rim.stroke({ color: this.theme.aura, alpha: 0.35 + this.heat * 0.5, width: Math.max(2, unit * 0.006), cap: 'round' })
     }
 
     // Gravity well and warp gates are world effects, so they belong with the
@@ -687,10 +710,10 @@ export class PixiCourt {
       const identity = POWER_UP_IDENTITIES.gravity
       for (let ring = 1; ring <= 3; ring += 1) {
         const phase = (this.clock * 0.55 + ring / 3) % 1
-        this.rim.circle(w / 2, w / 2, this.point(0.02 + phase * 0.13))
-          .stroke({ color: identity.color, alpha: 0.4 * (1 - phase), width: Math.max(2, w * 0.004) })
+        this.rim.circle(w / 2, h / 2, this.point(0.02 + phase * 0.13))
+          .stroke({ color: identity.color, alpha: 0.4 * (1 - phase), width: Math.max(2, unit * 0.004) })
       }
-      this.bloomGraphics.circle(w / 2, w / 2, this.point(0.05)).fill({ color: identity.color, alpha: 0.35 })
+      this.bloomGraphics.circle(w / 2, h / 2, this.point(0.05)).fill({ color: identity.color, alpha: 0.35 })
     }
     if (state.worldEffects.warpTicks > 0) {
       this.drawGate(0.32, 0.5, POWER_UP_IDENTITIES.warp.color, 1)
@@ -699,17 +722,18 @@ export class PixiCourt {
   }
 
   private drawGate(x: number, y: number, color: number, spin: number): void {
-    const w = this.width
-    const cx = this.point(x)
-    const cy = this.point(y)
+    const unit = Math.min(this.width, this.height)
+    const cx = this.xPoint(x)
+    const cy = this.yPoint(y)
     // 0.035 is the capture radius `updateWorldEffects` tests against. Drawing the
     // gate at any other size teaches the player the wrong hitbox.
     const radius = this.point(0.035)
     const angle = this.clock * 2.4 * spin
     for (let arc = 0; arc < 3; arc += 1) {
       const start = angle + (arc * Math.PI * 2) / 3
-      this.rim.arc(cx, cy, radius, start, start + 1.25)
-        .stroke({ color, alpha: 0.85, width: Math.max(3, w * 0.007), cap: 'round' })
+      this.rim.moveTo(cx + Math.cos(start) * radius, cy + Math.sin(start) * radius)
+        .arc(cx, cy, radius, start, start + 1.25)
+        .stroke({ color, alpha: 0.85, width: Math.max(3, unit * 0.007), cap: 'round' })
     }
     this.bloomGraphics.circle(cx, cy, radius * 0.9).fill({ color, alpha: 0.4 })
   }
@@ -717,6 +741,8 @@ export class PixiCourt {
   /** Goal-mouth flashes plus three persistent integrity segments per defended wall. */
   private drawWalls(state: GameState, deltaSeconds: number): void {
     const w = this.width
+    const h = this.height
+    const unit = Math.min(w, h)
     this.walls.clear()
 
     for (const player of Object.values(state.players)) {
@@ -724,17 +750,19 @@ export class PixiCourt {
         .filter(([team]) => team !== player.team)
         .map(([, score]) => score))
       const broken = Math.min(3, Math.ceil((pressure / Math.max(1, state.config.scoreToWin)) * 3))
-      const span = w * 0.18
-      const gap = w * 0.025
-      const start = w / 2 - (span * 1.5 + gap)
-      const depth = Math.max(3, w * 0.008)
+      const horizontal = player.side === 'top' || player.side === 'bottom'
+      const extent = horizontal ? w : h
+      const span = extent * 0.18
+      const gap = extent * 0.025
+      const start = extent / 2 - (span * 1.5 + gap)
+      const depth = Math.max(3, unit * 0.008)
       for (let index = 0; index < 3; index += 1) {
         const along = start + index * (span + gap)
         const intact = index >= broken
         const alpha = intact ? 0.42 : 0.1
         const color = intact ? player.color : this.theme.line
-        if (player.side === 'top' || player.side === 'bottom') {
-          const y = player.side === 'top' ? w * 0.026 : w * 0.974 - depth
+        if (horizontal) {
+          const y = player.side === 'top' ? h * 0.026 : h * 0.974 - depth
           this.walls.roundRect(along, y, span, depth, depth / 2).fill({ color, alpha })
           if (!intact) this.walls.rect(along + span * 0.43, y - 1, span * 0.14, depth + 2).fill({ color: this.theme.floorDeep, alpha: 0.9 })
         } else {
@@ -748,11 +776,11 @@ export class PixiCourt {
     for (const flash of this.wallFlashes) {
       flash.life -= deltaSeconds * 1.5
       if (flash.life <= 0) continue
-      const band = w * 0.09
-      if (flash.side === 'left') this.walls.rect(0, 0, band, w)
-      else if (flash.side === 'right') this.walls.rect(w - band, 0, band, w)
+      const band = unit * 0.09
+      if (flash.side === 'left') this.walls.rect(0, 0, band, h)
+      else if (flash.side === 'right') this.walls.rect(w - band, 0, band, h)
       else if (flash.side === 'top') this.walls.rect(0, 0, w, band)
-      else this.walls.rect(0, w - band, w, band)
+      else this.walls.rect(0, h - band, w, band)
       this.walls.fill({ color: flash.color, alpha: clamp01(flash.life) * 0.45 })
     }
     this.wallFlashes = this.wallFlashes.filter((flash) => flash.life > 0)
@@ -761,6 +789,7 @@ export class PixiCourt {
   private drawActors(state: GameState, ahead: number): void {
     this.actors.clear()
     for (const player of Object.values(state.players)) this.drawPaddle(player, state, ahead)
+    for (const summon of state.summonedPaddles) this.drawSummonedPaddle(state, summon)
     for (const ball of state.balls) {
       const owner = ball.lastToucherId ? state.players[ball.lastToucherId] : undefined
       const color = owner?.color ?? COURT_PALETTE.paper.color
@@ -768,33 +797,27 @@ export class PixiCourt {
       const y = clamp01(ball.y + ball.vy * ahead)
       const speed = Math.hypot(ball.vx, ball.vy)
       const radius = Math.max(4, this.point(ball.radius))
-      const turbo = clamp01((speed - BALL_SPEED_CAP) / (BOOST_BALL_SPEED_CAP - BALL_SPEED_CAP))
+      const direction = Math.atan2(ball.vy * this.height, ball.vx * this.width)
 
       // Squash and stretch along the direction of travel, with the product held
       // at 1 so the ball never looks like it grew.
       const stretch = 1 + 0.38 * clamp01(speed / BALL_SPEED_CAP)
       if (this.heat > 0.45 && !this.settings.reducedMotion) {
-        const direction = Math.atan2(ball.vy, ball.vx)
-        const offset = (radius * (0.35 + this.heat * 0.55)) / this.width
-        const dx = Math.cos(direction + Math.PI / 2) * offset
-        const dy = Math.sin(direction + Math.PI / 2) * offset
+        const offset = radius * (0.35 + this.heat * 0.55)
+        const dx = Math.cos(direction + Math.PI / 2) * offset / this.width
+        const dy = Math.sin(direction + Math.PI / 2) * offset / this.height
         this.rotatedEllipse(this.actors, x - dx, y - dy, radius * stretch, radius / stretch, direction)
         this.actors.fill({ color: 0x67d4ff, alpha: this.heat * 0.2 })
         this.rotatedEllipse(this.actors, x + dx, y + dy, radius * stretch, radius / stretch, direction)
         this.actors.fill({ color: 0xf36f44, alpha: this.heat * 0.17 })
       }
-      this.rotatedEllipse(this.actors, x, y, radius * stretch, radius / stretch, Math.atan2(ball.vy, ball.vx))
+      this.rotatedEllipse(this.actors, x, y, radius * stretch, radius / stretch, direction)
       this.actors.fill({ color: COURT_PALETTE.paper.color })
-        .stroke({ color, alpha: 0.9, width: Math.max(2, this.width * (0.003 + this.heat * 0.003)) })
-
-      if (turbo > 0) {
-        this.actors.circle(this.point(x), this.point(y), radius * (1.65 + turbo * 0.75))
-          .stroke({ color, alpha: 0.25 + turbo * 0.5, width: Math.max(2, this.width * 0.006) })
-      }
+        .stroke({ color, alpha: 0.9, width: Math.max(2, Math.min(this.width, this.height) * (0.003 + this.heat * 0.003)) })
 
       if (this.bloomFilter) {
-        this.bloomGraphics.circle(this.point(x), this.point(y), radius * (1.7 + this.heat * 1.4 + turbo * 1.8))
-          .fill({ color, alpha: 0.34 + this.heat * 0.3 + turbo * 0.22 })
+        this.bloomGraphics.circle(this.xPoint(x), this.yPoint(y), radius * (1.7 + this.heat * 1.4))
+          .fill({ color, alpha: 0.34 + this.heat * 0.3 })
       }
     }
     this.drawPowerUp(state)
@@ -802,16 +825,19 @@ export class PixiCourt {
 
   private drawPaddle(player: PlayerState, state: GameState, ahead: number): void {
     const w = this.width
+    const h = this.height
+    const unit = Math.min(w, h)
     const seat = seatIdentityForColor(player.color)
-    const length = this.point(player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH)
-    const thickness = Math.max(8, w * 0.019)
-    const offset = this.point(PADDLE_OFFSET)
+    const normalizedLength = player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
+    const thickness = Math.max(8, unit * 0.019)
     const position = Math.min(0.92, Math.max(0.08, player.position + player.velocity * ahead))
-    const along = this.point(position)
     const horizontal = player.side === 'top' || player.side === 'bottom'
+    const length = horizontal ? this.xPoint(normalizedLength) : this.yPoint(normalizedLength)
+    const along = horizontal ? this.xPoint(position) : this.yPoint(position)
+    const offset = horizontal ? this.yPoint(PADDLE_OFFSET) : this.xPoint(PADDLE_OFFSET)
 
     const x = horizontal ? along - length / 2 : (player.side === 'left' ? offset : w - offset) - thickness / 2
-    const y = horizontal ? (player.side === 'top' ? offset : w - offset) - thickness / 2 : along - length / 2
+    const y = horizontal ? (player.side === 'top' ? offset : h - offset) - thickness / 2 : along - length / 2
     const width = horizontal ? length : thickness
     const height = horizontal ? thickness : length
 
@@ -839,15 +865,62 @@ export class PixiCourt {
     if (player.guardTicks > 0) this.drawGuard(player.side, player.color)
     if (player.pulseTicks > 0) {
       const centreX = horizontal ? along : player.side === 'left' ? offset : w - offset
-      const centreY = horizontal ? (player.side === 'top' ? offset : w - offset) : along
+      const centreY = horizontal ? (player.side === 'top' ? offset : h - offset) : along
       this.overlays.circle(centreX, centreY, length * 0.78)
-        .stroke({ color: player.color, alpha: 0.6, width: Math.max(2, w * 0.006) })
+        .stroke({ color: player.color, alpha: 0.6, width: Math.max(2, unit * 0.006) })
     }
     if (state.phase === 'countdown' && !this.settings.reducedMotion) {
       // A pre-serve breath on every paddle: the court is alive before the ball is.
       const pulse = 0.5 + Math.sin(this.clock * 4 + seat.index) * 0.5
       this.overlays.roundRect(x - thickness * 0.35, y - thickness * 0.35, width + thickness * 0.7, height + thickness * 0.7, thickness)
-        .stroke({ color: player.color, alpha: 0.12 + pulse * 0.2, width: Math.max(1, w * 0.0025) })
+        .stroke({ color: player.color, alpha: 0.12 + pulse * 0.2, width: Math.max(1, unit * 0.0025) })
+    }
+  }
+
+  private drawSummonedPaddle(state: GameState, summon: SummonedPaddleState): void {
+    const owner = state.players[summon.ownerId]
+    if (!owner) return
+    const { x, y } = summonedPaddleCoordinates(state, summon)
+    const horizontal = summon.side === 'top' || summon.side === 'bottom'
+    const length = horizontal ? this.xPoint(SUMMON_PADDLE_LENGTH) : this.yPoint(SUMMON_PADDLE_LENGTH)
+    const unit = Math.min(this.width, this.height)
+    const thickness = Math.max(7, unit * 0.015)
+    const cx = this.xPoint(x)
+    const cy = this.yPoint(y)
+    const left = cx - (horizontal ? length : thickness) / 2
+    const top = cy - (horizontal ? thickness : length) / 2
+    const width = horizontal ? length : thickness
+    const height = horizontal ? thickness : length
+    const remaining = clamp01((summon.expiresAtTick - state.tick) / SUMMON_PADDLE_LIFETIME_TICKS)
+    const fade = remaining < 0.18 ? remaining / 0.18 : 1
+
+    this.actors.roundRect(left, top, width, height, thickness / 2)
+      .fill({ color: owner.color, alpha: 0.94 * fade })
+      .stroke({ color: COURT_PALETTE.paper.color, alpha: 0.65 * fade, width: Math.max(1, unit * 0.0025) })
+
+    // Two bright eyes and tiny side nubs turn a small rectangle into a helper
+    // at game speed. They face the middle of the court on every defended side.
+    const inwardX = summon.side === 'left' ? 1 : summon.side === 'right' ? -1 : 0
+    const inwardY = summon.side === 'top' ? 1 : summon.side === 'bottom' ? -1 : 0
+    const tangentX = -inwardY
+    const tangentY = inwardX
+    const eyeForward = thickness * 0.12
+    for (const offset of [-0.2, 0.2]) {
+      const eyeX = cx + inwardX * eyeForward + tangentX * length * offset
+      const eyeY = cy + inwardY * eyeForward + tangentY * length * offset
+      this.actors.circle(eyeX, eyeY, Math.max(1.7, thickness * 0.15)).fill({ color: COURT_PALETTE.paper.color, alpha: fade })
+      this.actors.circle(eyeX + inwardX, eyeY + inwardY, Math.max(0.8, thickness * 0.065)).fill({ color: COURT_PALETTE.ink.color, alpha: fade })
+    }
+    for (const offset of [-1, 1]) {
+      this.actors.circle(
+        cx + tangentX * (length * 0.58) * offset,
+        cy + tangentY * (length * 0.58) * offset,
+        thickness * 0.12,
+      ).fill({ color: owner.color, alpha: 0.72 * fade })
+    }
+    if (this.bloomFilter) {
+      this.bloomGraphics.roundRect(left, top, width, height, thickness / 2)
+        .fill({ color: owner.color, alpha: (0.22 + remaining * 0.12) * fade })
     }
   }
 
@@ -988,17 +1061,19 @@ export class PixiCourt {
 
   private drawGuard(side: Side, color: number): void {
     const w = this.width
-    const gap = w * 0.012
-    if (side === 'left') this.overlays.moveTo(gap, w * 0.08).lineTo(gap, w * 0.92)
-    else if (side === 'right') this.overlays.moveTo(w - gap, w * 0.08).lineTo(w - gap, w * 0.92)
+    const h = this.height
+    const unit = Math.min(w, h)
+    const gap = unit * 0.012
+    if (side === 'left') this.overlays.moveTo(gap, h * 0.08).lineTo(gap, h * 0.92)
+    else if (side === 'right') this.overlays.moveTo(w - gap, h * 0.08).lineTo(w - gap, h * 0.92)
     else if (side === 'top') this.overlays.moveTo(w * 0.08, gap).lineTo(w * 0.92, gap)
-    else this.overlays.moveTo(w * 0.08, w - gap).lineTo(w * 0.92, w - gap)
-    this.overlays.stroke({ color, alpha: 0.7, width: Math.max(3, w * 0.008), cap: 'round' })
+    else this.overlays.moveTo(w * 0.08, h - gap).lineTo(w * 0.92, h - gap)
+    this.overlays.stroke({ color, alpha: 0.7, width: Math.max(3, unit * 0.008), cap: 'round' })
     if (this.bloomFilter) {
       this.bloomGraphics.circle(
         side === 'left' ? gap : side === 'right' ? w - gap : w / 2,
-        side === 'top' ? gap : side === 'bottom' ? w - gap : w / 2,
-        w * 0.03,
+        side === 'top' ? gap : side === 'bottom' ? h - gap : h / 2,
+        unit * 0.03,
       ).fill({ color, alpha: 0.3 })
     }
   }
@@ -1006,9 +1081,9 @@ export class PixiCourt {
   private drawPowerUp(state: GameState): void {
     if (!state.powerUp) return
     const identity = POWER_UP_IDENTITIES[state.powerUp.id]
-    const w = this.width
-    const cx = this.point(state.powerUp.x)
-    const cy = this.point(state.powerUp.y)
+    const unit = Math.min(this.width, this.height)
+    const cx = this.xPoint(state.powerUp.x)
+    const cy = this.yPoint(state.powerUp.y)
     const radius = this.point(POWER_UP_RADIUS)
     const pulse = this.settings.reducedMotion ? 1 : 1 + Math.sin(this.clock * 5) * 0.075
     const velocity = Math.hypot(state.powerUp.vx, state.powerUp.vy)
@@ -1029,9 +1104,9 @@ export class PixiCourt {
 
     this.actors.circle(cx, cy, radius * pulse).fill({ color: COURT_PALETTE.ink.color, alpha: 0.85 })
     this.actors.circle(cx, cy, radius * pulse)
-      .stroke({ color: identity.color, alpha: 0.95, width: Math.max(2, w * 0.005) })
+      .stroke({ color: identity.color, alpha: 0.95, width: Math.max(2, unit * 0.005) })
     this.actors.circle(cx, cy, radius * pulse * 1.2)
-      .stroke({ color: identity.color, alpha: 0.28, width: Math.max(1, w * 0.0025) })
+      .stroke({ color: identity.color, alpha: 0.28, width: Math.max(1, unit * 0.0025) })
     if (!this.settings.reducedMotion) {
       const orbit = this.clock * 1.9
       for (let index = 0; index < 3; index += 1) {
@@ -1095,12 +1170,14 @@ export class PixiCourt {
 
   private drawOverlays(state: GameState, deltaSeconds: number): void {
     const w = this.width
+    const h = this.height
+    const unit = Math.min(w, h)
     for (const wave of this.shockwaves) {
       wave.life -= deltaSeconds * 2.6
       if (wave.life <= 0) continue
       const progress = 1 - wave.life
-      this.overlays.circle(this.point(wave.x), this.point(wave.y), this.point(wave.reach * progress))
-        .stroke({ color: wave.color, alpha: wave.life * 0.55, width: Math.max(1, w * 0.006 * wave.life) })
+      this.overlays.circle(this.xPoint(wave.x), this.yPoint(wave.y), this.point(wave.reach * progress))
+        .stroke({ color: wave.color, alpha: wave.life * 0.55, width: Math.max(1, unit * 0.006 * wave.life) })
     }
     this.shockwaves = this.shockwaves.filter((wave) => wave.life > 0)
 
@@ -1108,12 +1185,12 @@ export class PixiCourt {
       this.goalFlash.life -= deltaSeconds * 1.45
       const life = Math.max(0, this.goalFlash.life)
       if (life > 0) {
-        const band = w * (0.12 + (1 - Math.min(1, life)) * 0.1)
-        this.overlays.rect(0, 0, w, w).fill({ color: this.goalFlash.color, alpha: life * life * 0.11 })
-        if (this.goalFlash.side === 'left') this.overlays.rect(0, 0, band, w)
-        else if (this.goalFlash.side === 'right') this.overlays.rect(w - band, 0, band, w)
+        const band = unit * (0.12 + (1 - Math.min(1, life)) * 0.1)
+        this.overlays.rect(0, 0, w, h).fill({ color: this.goalFlash.color, alpha: life * life * 0.11 })
+        if (this.goalFlash.side === 'left') this.overlays.rect(0, 0, band, h)
+        else if (this.goalFlash.side === 'right') this.overlays.rect(w - band, 0, band, h)
         else if (this.goalFlash.side === 'top') this.overlays.rect(0, 0, w, band)
-        else this.overlays.rect(0, w - band, w, band)
+        else this.overlays.rect(0, h - band, w, band)
         this.overlays.fill({ color: this.goalFlash.color, alpha: life * 0.26 })
       } else {
         this.goalFlash = null
@@ -1123,10 +1200,10 @@ export class PixiCourt {
     for (const slice of this.impactSlices) {
       slice.life -= deltaSeconds * 4.2
       if (slice.life <= 0) continue
-      const cx = this.point(slice.x)
-      const cy = this.point(slice.y)
+      const cx = this.xPoint(slice.x)
+      const cy = this.yPoint(slice.y)
       const angle = slice.angle + Math.PI / 2
-      const span = w * (0.03 + 0.09 * slice.life)
+      const span = unit * (0.03 + 0.09 * slice.life)
       const dx = Math.cos(angle) * span
       const dy = Math.sin(angle) * span
       // One line, in the striker's own colour. It used to be three: a cyan copy
@@ -1134,56 +1211,32 @@ export class PixiCourt {
       // therefore meaningless in a duel where neither seat is playing. Together
       // with the channel split they read as the screen tearing, not as contact.
       this.overlays.moveTo(cx - dx, cy - dy).lineTo(cx + dx, cy + dy)
-        .stroke({ color: slice.color, alpha: slice.life * 0.9, width: Math.max(2, w * 0.007), cap: 'round' })
+        .stroke({ color: slice.color, alpha: slice.life * 0.9, width: Math.max(2, unit * 0.007), cap: 'round' })
     }
     this.impactSlices = this.impactSlices.filter((slice) => slice.life > 0)
-
-    // Boost reads at the ball itself for every client: a compact comet wedge
-    // and expanding ring, never a mysterious court-spanning line.
-    for (const burst of this.ballBoostBursts) {
-      burst.life -= deltaSeconds * 3
-      if (burst.life <= 0) continue
-      const progress = 1 - burst.life
-      const cx = this.point(burst.x)
-      const cy = this.point(burst.y)
-      const forwardX = Math.cos(burst.angle)
-      const forwardY = Math.sin(burst.angle)
-      const sideX = -forwardY
-      const sideY = forwardX
-      const length = w * (0.045 + burst.life * 0.07)
-      const halfWidth = w * 0.024 * burst.life
-      this.overlays.poly([
-        cx + forwardX * w * 0.018, cy + forwardY * w * 0.018,
-        cx - forwardX * length + sideX * halfWidth, cy - forwardY * length + sideY * halfWidth,
-        cx - forwardX * length - sideX * halfWidth, cy - forwardY * length - sideY * halfWidth,
-      ]).fill({ color: burst.color, alpha: burst.life * 0.38 })
-      this.overlays.circle(cx, cy, w * (0.022 + progress * 0.065))
-        .stroke({ color: burst.color, alpha: burst.life * 0.72, width: Math.max(2, w * 0.006) })
-    }
-    this.ballBoostBursts = this.ballBoostBursts.filter((burst) => burst.life > 0)
 
     for (const burst of this.abilityBursts) {
       burst.life -= deltaSeconds * 2.5
       if (burst.life <= 0) continue
       const progress = 1 - burst.life
-      const cx = this.point(burst.x)
-      const cy = this.point(burst.y)
-      const radius = w * (0.03 + progress * 0.12)
+      const cx = this.xPoint(burst.x)
+      const cy = this.yPoint(burst.y)
+      const radius = unit * (0.03 + progress * 0.12)
       if (burst.ability === 'pulse') {
         this.overlays.circle(cx, cy, radius)
-          .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, w * 0.007) })
+          .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, unit * 0.007) })
       } else if (burst.ability === 'guard') {
         const points: number[] = []
         for (let index = 0; index < 6; index += 1) {
           const angle = -Math.PI / 2 + index * Math.PI / 3
           points.push(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius)
         }
-        this.overlays.poly(points).stroke({ color: burst.color, alpha: burst.life * 0.82, width: Math.max(2, w * 0.007), join: 'round' })
+        this.overlays.poly(points).stroke({ color: burst.color, alpha: burst.life * 0.82, width: Math.max(2, unit * 0.007), join: 'round' })
       } else if (burst.ability === 'bend') {
         const spin = this.clock * 5
         this.overlays.moveTo(cx + Math.cos(spin) * radius, cy + Math.sin(spin) * radius)
           .arc(cx, cy, radius, spin, spin + 2.2)
-          .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, w * 0.007), cap: 'round' })
+          .stroke({ color: burst.color, alpha: burst.life * 0.78, width: Math.max(2, unit * 0.007), cap: 'round' })
       }
     }
     this.abilityBursts = this.abilityBursts.filter((burst) => burst.life > 0)
@@ -1195,8 +1248,8 @@ export class PixiCourt {
     if (state.serveTicks > 0 && state.phase === 'playing') {
       if (!this.settings.reducedMotion) {
         const pulse = (this.clock * 1.6) % 1
-        this.overlays.circle(w / 2, w / 2, this.point(0.03 + pulse * 0.09))
-          .stroke({ color: COURT_PALETTE.paper.color, alpha: (1 - pulse) * 0.5, width: Math.max(1, w * 0.004) })
+        this.overlays.circle(w / 2, h / 2, this.point(0.03 + pulse * 0.09))
+          .stroke({ color: COURT_PALETTE.paper.color, alpha: (1 - pulse) * 0.5, width: Math.max(1, unit * 0.004) })
       }
       const server = state.servingPlayerId ? state.players[state.servingPlayerId] : undefined
       if (server) this.drawServeAim(server)
@@ -1206,35 +1259,37 @@ export class PixiCourt {
   /** Three compact chevrons read as direction without becoming another trail. */
   private drawServeAim(server: PlayerState): void {
     const velocity = serveVelocityForPlayer(server)
-    const speed = Math.hypot(velocity.vx, velocity.vy) || 1
-    const forwardX = velocity.vx / speed
-    const forwardY = velocity.vy / speed
+    const physicalX = velocity.vx * this.width
+    const physicalY = velocity.vy * this.height
+    const speed = Math.hypot(physicalX, physicalY) || 1
+    const forwardX = physicalX / speed
+    const forwardY = physicalY / speed
     const sideX = -forwardY
     const sideY = forwardX
-    const centre = this.width / 2
+    const centreX = this.width / 2
+    const centreY = this.height / 2
+    const unit = Math.min(this.width, this.height)
     for (let index = 0; index < 3; index += 1) {
-      const distance = this.width * (0.052 + index * 0.033)
-      const wing = this.width * (0.011 + index * 0.0015)
-      const depth = this.width * 0.018
-      const tipX = centre + forwardX * distance
-      const tipY = centre + forwardY * distance
+      const distance = unit * (0.052 + index * 0.033)
+      const wing = unit * (0.011 + index * 0.0015)
+      const depth = unit * 0.018
+      const tipX = centreX + forwardX * distance
+      const tipY = centreY + forwardY * distance
       const backX = tipX - forwardX * depth
       const backY = tipY - forwardY * depth
       this.overlays
         .moveTo(backX + sideX * wing, backY + sideY * wing)
         .lineTo(tipX, tipY)
         .lineTo(backX - sideX * wing, backY - sideY * wing)
-        .stroke({ color: server.color, alpha: 0.48 + index * 0.18, width: Math.max(2, this.width * 0.005), cap: 'round', join: 'round' })
+        .stroke({ color: server.color, alpha: 0.48 + index * 0.18, width: Math.max(2, unit * 0.005), cap: 'round', join: 'round' })
     }
   }
 
   private drawTrails(state: GameState, deltaSeconds: number, ahead: number): void {
     for (const ball of state.balls) {
-      const speed = Math.hypot(ball.vx, ball.vy)
-      const turbo = clamp01((speed - BALL_SPEED_CAP) / (BOOST_BALL_SPEED_CAP - BALL_SPEED_CAP))
       const maximum = this.settings.reducedMotion
         ? 4
-        : Math.round(this.density.trail * (0.7 + this.heat * 0.5 + turbo * 0.65))
+        : Math.round(this.density.trail * (0.7 + this.heat * 0.5))
       const points = this.trails.get(ball.id) ?? []
       points.push({ x: ball.x + ball.vx * ahead, y: ball.y + ball.vy * ahead, life: 1 })
       while (points.length > maximum) points.shift()
@@ -1264,15 +1319,15 @@ export class PixiCourt {
         const to = points[index]!
         const fromWeight = index / points.length
         const toWeight = (index + 1) / points.length
-        const dx = to.x - from.x
-        const dy = to.y - from.y
+        const dx = (to.x - from.x) * this.width
+        const dy = (to.y - from.y) * this.height
         const span = Math.hypot(dx, dy) || 1
         const nx = (-dy / span) * head
         const ny = (dx / span) * head
-        const fx = this.point(from.x)
-        const fy = this.point(from.y)
-        const tx = this.point(to.x)
-        const ty = this.point(to.y)
+        const fx = this.xPoint(from.x)
+        const fy = this.yPoint(from.y)
+        const tx = this.xPoint(to.x)
+        const ty = this.yPoint(to.y)
         this.trail.poly([
           fx + nx * fromWeight, fy + ny * fromWeight,
           tx + nx * toWeight, ty + ny * toWeight,
@@ -1335,7 +1390,7 @@ export class PixiCourt {
       particle.life -= deltaSeconds * particle.decay
       if (particle.life <= 0) continue
       this.particlesLayer
-        .circle(this.point(particle.x), this.point(particle.y), particle.size * Math.max(0.2, particle.life))
+        .circle(this.xPoint(particle.x), this.yPoint(particle.y), particle.size * Math.max(0.2, particle.life))
         .fill({ color: particle.color, alpha: Math.max(0, particle.life) * 0.85 })
     }
     this.particles = this.particles.filter((particle) => particle.life > 0)
@@ -1347,8 +1402,8 @@ export class PixiCourt {
    * indistinguishable from a curve at the sizes a ball is ever drawn.
    */
   private rotatedEllipse(graphics: Graphics, x: number, y: number, rx: number, ry: number, rotation: number): void {
-    const cx = this.point(x)
-    const cy = this.point(y)
+    const cx = this.xPoint(x)
+    const cy = this.yPoint(y)
     const cos = Math.cos(rotation)
     const sin = Math.sin(rotation)
     const segments = 20
