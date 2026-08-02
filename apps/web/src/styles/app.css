@@ -795,6 +795,7 @@ h1, h2, h3 { font-family: var(--pg-font-display); letter-spacing: -.04em; }
 .pg-ability-button.is-ready .pg-ability-button__state { color: rgb(18 35 27 / 72%); }
 .pg-ability-button.is-ready .pg-ability-button__eyebrow { color: rgb(18 35 27 / 72%); }
 .pg-ability-button.is-ready::before { display: none; }
+.pg-ability-button:disabled { cursor: not-allowed; }
 .pg-ability-button:active { filter: brightness(.9); }
 
 /* ------------------------------------------------------------------- lobby */

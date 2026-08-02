@@ -88,7 +88,7 @@ const RALLY_STEPS = [
 ] as const
 
 const ABILITY_MOMENT: Record<string, string> = {
-  dash: 'boosted',
+  dash: 'turbocharged the ball',
   bend: 'curve shot armed',
   guard: 'shield raised',
   pulse: 'parry window open',
@@ -196,17 +196,11 @@ export function GameCourt(props: Props) {
   const usePlayerAbility = useCallback((id: string) => {
     const current = stateRef.current
     const player = current.players[id]
-    if (player?.ability === 'dash' && player.cooldownTicks <= 0 && current.balls.length > 0) {
-      const along = (ball: GameState['balls'][number]) => player.side === 'left' || player.side === 'right' ? ball.y : ball.x
-      const ball = [...current.balls].sort((a, b) => Math.abs(along(a) - player.position) - Math.abs(along(b) - player.position))[0]!
-      const difference = along(ball) - player.position
-      const direction = Math.abs(difference) > 0.015 ? Math.sign(difference) : player.position < 0.5 ? 1 : -1
-      // The target moves with the dash. Without this, the ordinary movement
-      // controller immediately pulled the paddle back to where it started.
-      applyTarget(id, player.position + direction * 0.35)
-    }
+    const ballIsLive = current.balls.some((ball) => Math.hypot(ball.vx, ball.vy) > 0.000001)
+    if (!player || current.phase !== 'playing' || current.serveTicks > 0 || player.cooldownTicks > 0) return
+    if (player.ability === 'dash' && !ballIsLive) return
     onAbilityRef.current(id)
-  }, [applyTarget])
+  }, [])
 
   useEffect(() => props.subscribe(setState), [props.subscribe])
 
@@ -420,12 +414,22 @@ export function GameCourt(props: Props) {
         : 'Your serve · move to aim'
       : `${servingPlayer.name} serves`
     : null
-  const abilityStatus = (player: PlayerState) => ({
-    ready: player.cooldownTicks <= 0,
-    // Fills toward ready against the skill's real shared cooldown.
-    progress: Math.min(1, Math.max(0, 1 - player.cooldownTicks / ABILITY_COOLDOWNS[player.ability])),
-    seconds: Math.ceil(player.cooldownTicks / TICK_RATE),
-  })
+  const ballIsLive = state.phase === 'playing'
+    && state.serveTicks <= 0
+    && state.balls.some((ball) => Math.hypot(ball.vx, ball.vy) > 0.000001)
+  const abilityStatus = (player: PlayerState) => {
+    const cooled = player.cooldownTicks <= 0
+    const available = state.phase === 'playing'
+      && state.serveTicks <= 0
+      && (player.ability !== 'dash' || ballIsLive)
+    return {
+      ready: cooled && available,
+      waiting: cooled && !available,
+      // Fills toward ready against the skill's real shared cooldown.
+      progress: Math.min(1, Math.max(0, 1 - player.cooldownTicks / ABILITY_COOLDOWNS[player.ability])),
+      seconds: Math.ceil(player.cooldownTicks / TICK_RATE),
+    }
+  }
 
   return (
     <section className="pg-game-layout" aria-label="Pong match">
@@ -573,9 +577,10 @@ export function GameCourt(props: Props) {
                   ['--pg-ability-progress' as string]: `${Math.round(status.progress * 100)}%`,
                   ['--pg-seat-color' as string]: seatIdentityForColor(player.color).hex,
                 }}
-                aria-label={`${player.name}, ${position}: ${copy.action} ${status.ready ? 'Ready now' : `Ready in ${status.seconds} seconds`}`}
+                aria-label={`${player.name}, ${position}: ${copy.action} ${status.ready ? 'Ready now' : status.waiting ? 'Wait for the ball to launch' : `Ready in ${status.seconds} seconds`}`}
                 title={copy.action}
                 type="button"
+                disabled={!status.ready}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => { event.stopPropagation(); void audio.unlock(); usePlayerAbility(player.id) }}
               >
@@ -584,7 +589,7 @@ export function GameCourt(props: Props) {
                   <span className="pg-ability-button__eyebrow">{localPlayers.length > 1 ? `${player.name} · ${position}` : 'Skill'}</span>
                   <span className="pg-ability-button__name">{copy.label}</span>
                 </span>
-                <span className="pg-ability-button__state">{status.ready ? 'READY' : `${status.seconds}s`}</span>
+                <span className="pg-ability-button__state">{status.ready ? 'READY' : status.waiting ? 'WAIT' : `${status.seconds}s`}</span>
               </button>
             )
           })}

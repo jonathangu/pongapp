@@ -71,6 +71,8 @@ export interface PowerUpState {
   id: PowerUpId
   x: number
   y: number
+  vx: number
+  vy: number
   ageTicks: number
 }
 
