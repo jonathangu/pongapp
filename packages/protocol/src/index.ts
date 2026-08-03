@@ -1,27 +1,15 @@
-import type { AbilityId, AiDifficulty, GameMode, GameState, ItemIntensity, MatchConfig, MatchMutator } from '@pongapp/game-core'
+import type { GameState, PalType } from '@pongapp/game-core'
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 1 as const
+export const PROTOCOL_VERSION = 2 as const
 
-const abilitySchema = z.enum(['dash', 'bend', 'guard', 'pulse'])
-const modeSchema = z.enum(['duel', 'arena', 'crosscourt'])
-const itemIntensitySchema = z.enum(['off', 'standard', 'wild'])
-const aiDifficultySchema = z.enum(['rookie', 'rally', 'pro', 'ace'])
-const matchMutatorSchema = z.enum(['none', 'bigBall', 'noWalls', 'doublePoints', 'mirroredControls'])
+const palTypeSchema = z.enum(['guard', 'striker', 'captain'])
 
 export const createRoomRequestSchema = z.object({
-  mode: modeSchema,
-  itemIntensity: itemIntensitySchema,
-  mutator: matchMutatorSchema.default('none'),
-  aiDifficulty: aiDifficultySchema,
-  aiSlots: z.number().int().min(0).max(3),
   hostName: z.string().trim().min(2).max(16),
-  hostAbility: abilitySchema,
-})
+}).strict()
 
-// Callers may omit fields with schema defaults; parsed/stored room config is
-// normalized by the worker before the match is built.
-export type CreateRoomRequest = z.input<typeof createRoomRequestSchema>
+export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({
@@ -29,17 +17,15 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     version: z.literal(PROTOCOL_VERSION),
     guestId: z.string().min(8).max(80),
     displayName: z.string().trim().min(2).max(16),
-    ability: abilitySchema,
     role: z.enum(['player', 'spectator']).default('player'),
     reconnectToken: z.string().min(16).max(200).optional(),
     accessToken: z.string().min(20).max(4096).optional(),
   }),
-  z.object({ type: z.literal('ready'), ready: z.boolean() }),
   z.object({
     type: z.literal('input'),
     seq: z.number().int().nonnegative(),
     target: z.number().min(0).max(1),
-    abilityPressed: z.boolean(),
+    summon: palTypeSchema.nullable(),
   }),
   z.object({ type: z.literal('emote'), emote: z.enum(['gg', 'wow', 'nice', 'oops']) }),
   z.object({ type: z.literal('rematch') }),
@@ -52,21 +38,14 @@ export interface RoomParticipant {
   id: string
   profileId: string | null
   displayName: string
-  ability: AbilityId
   slot: number | null
   isHost: boolean
   isAi: boolean
-  isReady: boolean
   connected: boolean
 }
 
 export interface RoomLobby {
   roomCode: string
-  mode: GameMode
-  itemIntensity: ItemIntensity
-  mutator: MatchMutator
-  aiDifficulty: AiDifficulty
-  aiSlots: number
   participants: RoomParticipant[]
   phase: 'lobby' | 'countdown' | 'playing' | 'finished'
 }
@@ -91,7 +70,6 @@ export type ServerMessage =
 export interface StoredRoomConfig extends CreateRoomRequest {
   roomCode: string
   createdAt: number
-  matchConfig?: MatchConfig
 }
 
 export function parseClientMessage(value: unknown): ClientMessage | null {
@@ -110,3 +88,5 @@ export function parseWireMessage(value: string): ClientMessage | null {
 export function encodeServerMessage(message: ServerMessage): string {
   return JSON.stringify(message)
 }
+
+export type { PalType }

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import WebSocket from 'ws'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ServerMessage } from '@pongapp/protocol'
+import { PROTOCOL_VERSION } from '@pongapp/protocol'
 import { createRoomServer, type RoomServer } from '../src/server'
 
 const openServers: RoomServer[] = []
@@ -35,10 +36,9 @@ async function connect(baseUrl: string, roomCode: string, index: number): Promis
   const welcome = waitFor(socket, (message) => message.type === 'welcome')
   socket.send(JSON.stringify({
     type: 'hello',
-    version: 1,
+    version: PROTOCOL_VERSION,
     guestId: `room-test-player-${index}`,
     displayName: `Player ${index}`,
-    ability: index === 1 ? 'dash' : 'bend',
     role: 'player',
   }))
   expect((await welcome).type).toBe('welcome')
@@ -55,20 +55,12 @@ describe('Fly room server', () => {
     const baseUrl = `http://127.0.0.1:${port}`
 
     const health = await fetch(`${baseUrl}/api/health`).then((response) => response.json())
-    expect(health).toMatchObject({ status: 'ok', service: 'pongapp-room', protocol: 1 })
+    expect(health).toMatchObject({ status: 'ok', service: 'pongapp-room', protocol: 2 })
 
     const createResponse = await fetch(`${baseUrl}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'duel',
-        itemIntensity: 'wild',
-        mutator: 'none',
-        aiDifficulty: 'pro',
-        aiSlots: 0,
-        hostName: 'Player 1',
-        hostAbility: 'dash',
-      }),
+      body: JSON.stringify({ hostName: 'Player 1' }),
     })
     expect(createResponse.status).toBe(201)
     const { roomCode } = await createResponse.json() as { roomCode: string }
@@ -76,29 +68,28 @@ describe('Fly room server', () => {
     const host = await connect(baseUrl, roomCode, 1)
     const guest = await connect(baseUrl, roomCode, 2)
     const playing = waitFor(host, (message) => message.type === 'snapshot' && message.state.phase === 'playing')
-    host.send(JSON.stringify({ type: 'ready', ready: true }))
-    guest.send(JSON.stringify({ type: 'ready', ready: true }))
     expect((await playing).type).toBe('snapshot')
 
     const acknowledged = waitFor(host, (message) => message.type === 'snapshot' && message.acknowledgedSeq === 1)
-    host.send(JSON.stringify({ type: 'input', seq: 1, target: 0.8, abilityPressed: false }))
+    host.send(JSON.stringify({ type: 'input', seq: 1, target: 0.8, summon: null }))
     expect((await acknowledged).type).toBe('snapshot')
 
     await waitFor(host, (message) => message.type === 'snapshot' && message.state.phase === 'playing' && message.state.serveTicks === 0)
     const summoned = waitFor(host, (message) => message.type === 'snapshot'
       && message.acknowledgedSeq === 3
-      && message.state.summonedPaddles.length === 3)
-    // The continuous steering packet must not erase the skill edge before the
+      && message.state.pals.some((pal) => pal.type === 'guard'))
+    // A continuous steering packet must not erase a summon edge before the
     // authoritative tick consumes it.
-    host.send(JSON.stringify({ type: 'input', seq: 2, target: 0.8, abilityPressed: true }))
-    host.send(JSON.stringify({ type: 'input', seq: 3, target: 0.8, abilityPressed: false }))
+    host.send(JSON.stringify({ type: 'input', seq: 2, target: 0.8, summon: 'guard' }))
+    host.send(JSON.stringify({ type: 'input', seq: 3, target: 0.8, summon: null }))
     expect((await summoned).type).toBe('snapshot')
 
     host.close()
     guest.close()
     await roomServer.close()
     openServers.splice(openServers.indexOf(roomServer), 1)
-    const database = JSON.parse(await readFile(dataPath, 'utf8')) as { rooms: Record<string, unknown> }
+    const database = JSON.parse(await readFile(dataPath, 'utf8')) as { version: number; rooms: Record<string, unknown> }
+    expect(database.version).toBe(2)
     expect(database.rooms[roomCode]).toBeDefined()
   })
 

@@ -1,47 +1,41 @@
 import {
-  ABILITY_COOLDOWNS,
   AI_PROFILE,
   BALL_RADIUS,
   BALL_SPEED_CAP,
   BALL_SPEED_RAMP,
   BALL_START_SPEED,
   BASE_PADDLE_LENGTH,
-  BIG_BALL_RADIUS,
-  GROWN_PADDLE_LENGTH,
   MATCH_COUNTDOWN_TICKS,
   PADDLE_OFFSET,
   PADDLE_SPEED,
+  PAL_ACTIVE_LIMIT,
+  PAL_ARM_TICKS,
+  PAL_COST,
+  PAL_ENERGY_MAX,
+  PAL_ENERGY_REGEN_TICKS,
+  PAL_PROFILE,
+  PAL_START_ENERGY,
   PERFECT_RETURN_SPEED_BOOST,
-  POWER_UP_DRIFT_SPEED,
-  POWER_UP_LIFETIME_TICKS,
-  POWER_UP_RADIUS,
   SERVE_DELAY_TICKS,
-  SUMMON_PADDLE_COUNT,
-  SUMMON_PADDLE_LENGTH,
-  SUMMON_PADDLE_LIFETIME_TICKS,
   TICK_RATE,
   TICK_SECONDS,
-  nextPowerUpDelay,
 } from './constants'
 import { nextRandom } from './rng'
 import type {
+  ActivePalType,
   BallState,
-  GameInput,
+  EnergyReason,
   GameState,
   InputMap,
   MatchConfig,
+  PalState,
+  PalType,
   PlayerState,
-  PowerUpId,
   Side,
-  SummonedPaddleState,
 } from './types'
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value))
-
-function lengthFor(player: PlayerState): number {
-  return player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
-}
 
 function randomFrom(state: GameState): number {
   const result = nextRandom(state.rngState)
@@ -49,283 +43,219 @@ function randomFrom(state: GameState): number {
   return result.value
 }
 
-function mutatorFor(state: GameState) {
-  return state.config.mutator ?? 'none'
-}
-
-function radiusFor(state: GameState): number {
-  return mutatorFor(state) === 'bigBall' ? BIG_BALL_RADIUS : BALL_RADIUS
-}
-
-function freshBall(state: GameState, id: string, transientTicks: number | null = null): BallState {
-  const angleSeed = randomFrom(state)
-  let angle = angleSeed * Math.PI * 2
-  if (Math.abs(Math.cos(angle)) < 0.28) angle += 0.38
-  if (Math.abs(Math.sin(angle)) < 0.28) angle += 0.38
+function freshBall(state: GameState, id: string): BallState {
+  let angle = randomFrom(state) * Math.PI * 2
+  if (Math.abs(Math.sin(angle)) < 0.42) angle += 0.52
   return {
     id,
     x: 0.5,
     y: 0.5,
     vx: Math.cos(angle) * BALL_START_SPEED,
     vy: Math.sin(angle) * BALL_START_SPEED,
-    radius: radiusFor(state),
+    radius: BALL_RADIUS,
     spin: 0,
     lastToucherId: null,
-    warpCooldownTicks: 0,
-    transientTicks,
   }
 }
 
-function stagedBall(state: GameState, id: string, transientTicks: number | null): BallState {
-  return {
-    id,
-    x: 0.5,
-    y: 0.5,
-    vx: 0,
-    vy: 0,
-    radius: radiusFor(state),
-    spin: 0,
-    lastToucherId: null,
-    warpCooldownTicks: 0,
-    transientTicks,
-  }
+function stagedBall(id: string): BallState {
+  return { id, x: 0.5, y: 0.5, vx: 0, vy: 0, radius: BALL_RADIUS, spin: 0, lastToucherId: null }
 }
 
-/**
- * The conceding player's paddle position is the serve control. Keeping this in
- * game-core lets the renderer draw the exact launch direction the authoritative
- * simulation will use instead of maintaining a lookalike formula.
- */
 export function serveVelocityForPlayer(player: PlayerState): { vx: number; vy: number } {
   const tangent = clamp((player.position - 0.5) * 0.72, -BALL_START_SPEED * 0.62, BALL_START_SPEED * 0.62)
   const normal = Math.sqrt(Math.max(0, BALL_START_SPEED ** 2 - tangent ** 2))
-  if (player.side === 'left') return { vx: normal, vy: tangent }
-  if (player.side === 'right') return { vx: -normal, vy: tangent }
-  if (player.side === 'top') return { vx: tangent, vy: normal }
-  return { vx: tangent, vy: -normal }
-}
-
-/** Fill fields absent from rooms persisted by an older ruleset-v1 build. */
-export function normalizeGameState(state: GameState): GameState {
-  state.config.mutator ??= 'none'
-  state.servingPlayerId ??= null
-  state.rallyHits ??= 0
-  state.longestRallyHits ??= 0
-  state.freezeTicks ??= 0
-  state.summonedPaddles ??= []
-  if (state.powerUp) {
-    state.powerUp.vx ??= 0
-    state.powerUp.vy ??= 0
-  }
-  return state
+  return player.side === 'top' ? { vx: tangent, vy: normal } : { vx: tangent, vy: -normal }
 }
 
 export function createGame(config: MatchConfig): GameState {
-  const players = Object.fromEntries(
-    config.players.map((definition) => [
-      definition.id,
-      {
-        ...definition,
-        position: 0.5,
-        velocity: 0,
-        cooldownTicks: 0,
-        growTicks: 0,
-        bendTicks: 0,
-        guardTicks: 0,
-        pulseTicks: 0,
-        overdriveHits: 0,
-        returns: 0,
-        perfectReturns: 0,
-        abilityUses: 0,
-      } satisfies PlayerState,
-    ]),
-  )
-  const scores = Object.fromEntries([...new Set(config.players.map((player) => player.team))].map((team) => [team, 0]))
+  const players = Object.fromEntries(config.players.map((definition) => [
+    definition.id,
+    {
+      ...definition,
+      position: 0.5,
+      velocity: 0,
+      returns: 0,
+      perfectReturns: 0,
+      palEnergy: PAL_START_ENERGY,
+      palEnergyProgressTicks: 0,
+      palsSummoned: 0,
+      palHits: 0,
+    } satisfies PlayerState,
+  ]))
+  const scores = Object.fromEntries(config.players.map((player) => [player.team, 0]))
   const state: GameState = {
-    rulesetVersion: 1,
+    rulesetVersion: 2,
     config,
     phase: 'countdown',
     tick: 0,
     countdownTicks: MATCH_COUNTDOWN_TICKS,
     remainingTicks: config.timeLimitTicks,
     overtime: false,
-    serveTicks: SERVE_DELAY_TICKS,
+    serveTicks: 0,
     servingPlayerId: null,
     rallyHits: 0,
     longestRallyHits: 0,
     freezeTicks: 0,
     players,
     balls: [],
-    summonedPaddles: [],
+    pals: [],
     scores,
-    powerUp: null,
-    powerUpSpawnTicks: 0,
-    worldEffects: { warpTicks: 0, gravityTicks: 0 },
     winnerTeam: null,
     rngState: config.seed || 1,
     events: [],
   }
   state.balls = [freshBall(state, 'ball-1')]
-  state.powerUpSpawnTicks = nextPowerUpDelay(config.itemIntensity, randomFrom(state), true)
   return state
 }
 
-function decrementPlayerTimers(player: PlayerState): void {
-  player.cooldownTicks = Math.max(0, player.cooldownTicks - 1)
-  player.growTicks = Math.max(0, player.growTicks - 1)
-  player.bendTicks = Math.max(0, player.bendTicks - 1)
-  player.guardTicks = Math.max(0, player.guardTicks - 1)
-  player.pulseTicks = Math.max(0, player.pulseTicks - 1)
+function addEnergy(state: GameState, player: PlayerState, amount: number, reason: EnergyReason): void {
+  const next = Math.min(PAL_ENERGY_MAX, player.palEnergy + amount)
+  if (next === player.palEnergy) return
+  player.palEnergy = next
+  state.events.push({ type: 'energyChanged', playerId: player.id, energy: next, reason })
 }
 
-function summonPaddlePals(state: GameState, player: PlayerState): void {
-  const offsets = [-0.16, 0, 0.16]
-  const depths = [0.19, 0.27, 0.35]
-  state.summonedPaddles = state.summonedPaddles.filter((summon) => summon.ownerId !== player.id)
-  for (let index = 0; index < SUMMON_PADDLE_COUNT; index += 1) {
-    state.summonedPaddles.push({
-      id: `summon-${player.id}-${state.tick}-${index}`,
-      ownerId: player.id,
-      side: player.side,
-      position: clamp(player.position + (offsets[index] ?? 0), 0.12, 0.88),
-      depth: depths[index] ?? 0.27,
-      phase: index * Math.PI * 2 / SUMMON_PADDLE_COUNT,
-      expiresAtTick: state.tick + SUMMON_PADDLE_LIFETIME_TICKS,
-    })
+function updateEnergy(state: GameState): void {
+  if (state.serveTicks > 0) return
+  for (const player of Object.values(state.players)) {
+    if (player.palEnergy >= PAL_ENERGY_MAX) {
+      player.palEnergyProgressTicks = 0
+      continue
+    }
+    player.palEnergyProgressTicks += 1
+    if (player.palEnergyProgressTicks < PAL_ENERGY_REGEN_TICKS) continue
+    player.palEnergyProgressTicks -= PAL_ENERGY_REGEN_TICKS
+    addEnergy(state, player, 1, 'regen')
   }
 }
 
-function activateAbility(state: GameState, player: PlayerState, input: GameInput): void {
-  if (!input.abilityPressed || player.cooldownTicks > 0 || state.phase !== 'playing' || state.serveTicks > 0) return
-  const fromPosition = player.position
-  player.cooldownTicks = ABILITY_COOLDOWNS[player.ability]
-  player.abilityUses += 1
-  if (player.ability === 'dash') {
-    summonPaddlePals(state, player)
-  } else if (player.ability === 'bend') {
-    player.bendTicks = 3 * TICK_RATE
-  } else if (player.ability === 'guard') {
-    player.guardTicks = 2 * TICK_RATE
-  } else {
-    player.pulseTicks = Math.round(0.2 * TICK_RATE)
+function activePalsFor(state: GameState, playerId: string): PalState[] {
+  return state.pals.filter((pal) => pal.ownerId === playerId)
+}
+
+export function canSummonPal(state: GameState, player: PlayerState, type: PalType): boolean {
+  if (state.phase !== 'playing' || player.palEnergy < PAL_COST[type]) return false
+  const active = activePalsFor(state, player.id)
+  if (type === 'captain') return active.length <= 2 && !active.some((pal) => pal.type === 'captain')
+  const reservedForHatchling = active.some((pal) => pal.type === 'captain') ? 1 : 0
+  return active.length < PAL_ACTIVE_LIMIT - reservedForHatchling
+}
+
+function makePal(
+  state: GameState,
+  player: PlayerState,
+  type: ActivePalType,
+  anchor: number,
+  depth = PAL_PROFILE[type].depth,
+  parentId: string | null = null,
+): PalState {
+  const serial = player.palsSummoned + state.pals.length
+  const profile = PAL_PROFILE[type]
+  return {
+    id: `pal-${player.id}-${state.tick}-${serial}-${type}`,
+    ownerId: player.id,
+    side: player.side,
+    type,
+    anchor: clamp(anchor, 0.1, 0.9),
+    position: clamp(anchor, 0.1, 0.9),
+    depth,
+    phase: ((state.tick + serial * 37) % 360) * Math.PI / 180,
+    spawnedAtTick: state.tick,
+    armedAtTick: state.tick + PAL_ARM_TICKS,
+    expiresAtTick: state.tick + profile.lifetimeTicks,
+    parentId,
   }
-  state.events.push({
-    type: 'ability',
-    playerId: player.id,
-    ability: player.ability,
-    fromPosition,
-    toPosition: player.position,
-  })
+}
+
+function summonPal(state: GameState, player: PlayerState, type: PalType): void {
+  if (!canSummonPal(state, player, type)) return
+  player.palEnergy -= PAL_COST[type]
+  player.palEnergyProgressTicks = 0
+  player.palsSummoned += 1
+  const pal = makePal(state, player, type, player.position)
+  state.pals.push(pal)
+  state.events.push({ type: 'energyChanged', playerId: player.id, energy: player.palEnergy, reason: 'spent' })
+  state.events.push({ type: 'palSummoned', playerId: player.id, pal: { ...pal } })
 }
 
 function updatePlayers(state: GameState, inputs: InputMap): void {
   for (const player of Object.values(state.players)) {
-    decrementPlayerTimers(player)
-    const received = inputs[player.id] ?? { target: player.position, abilityPressed: false }
-    const input = mutatorFor(state) === 'mirroredControls' && !player.isAi
-      ? { ...received, target: 1 - received.target }
-      : received
-    activateAbility(state, player, input)
+    const input = inputs[player.id] ?? { target: player.position, summon: null }
     const previous = player.position
     const profile = player.isAi ? AI_PROFILE[player.aiDifficulty ?? 'rally'] : null
     const maximumMove = PADDLE_SPEED * (profile?.speed ?? 1) * TICK_SECONDS
     const delta = clamp(input.target - player.position, -maximumMove, maximumMove)
     player.position = clamp(player.position + delta, 0.08, 0.92)
     player.velocity = (player.position - previous) / TICK_SECONDS
+    if (input.summon) summonPal(state, player, input.summon)
   }
 }
 
-function coordinateForSide(ball: BallState, side: Side): number {
-  return side === 'left' || side === 'right' ? ball.y : ball.x
+export function palCoordinates(pal: PalState): { x: number; y: number } {
+  return { x: pal.position, y: pal.side === 'top' ? pal.depth : 1 - pal.depth }
 }
 
-function playerAtSide(state: GameState, side: Side): PlayerState | undefined {
-  return Object.values(state.players).find((player) => player.side === side)
+function moveToward(current: number, target: number, maximum: number): number {
+  return current + clamp(target - current, -maximum, maximum)
 }
 
-function approaching(ball: BallState, side: Side): boolean {
-  if (side === 'left') return ball.vx < 0
-  if (side === 'right') return ball.vx > 0
-  if (side === 'top') return ball.vy < 0
-  return ball.vy > 0
-}
-
-function touchesPaddle(ball: BallState, player: PlayerState): boolean {
-  const coordinate = coordinateForSide(ball, player.side)
-  return Math.abs(coordinate - player.position) <= lengthFor(player) / 2 + ball.radius
-}
-
-function atPaddleLine(ball: BallState, side: Side): boolean {
-  if (side === 'left') return ball.x - ball.radius <= PADDLE_OFFSET
-  if (side === 'right') return ball.x + ball.radius >= 1 - PADDLE_OFFSET
-  if (side === 'top') return ball.y - ball.radius <= PADDLE_OFFSET
-  return ball.y + ball.radius >= 1 - PADDLE_OFFSET
-}
-
-function crossedGoal(ball: BallState, side: Side): boolean {
-  if (side === 'left') return ball.x + ball.radius < 0
-  if (side === 'right') return ball.x - ball.radius > 1
-  if (side === 'top') return ball.y + ball.radius < 0
-  return ball.y - ball.radius > 1
-}
-
-function bounceFromSide(ball: BallState, side: Side): void {
-  if (side === 'left') {
-    ball.x = PADDLE_OFFSET + ball.radius
-    ball.vx = Math.abs(ball.vx)
-  } else if (side === 'right') {
-    ball.x = 1 - PADDLE_OFFSET - ball.radius
-    ball.vx = -Math.abs(ball.vx)
-  } else if (side === 'top') {
-    ball.y = PADDLE_OFFSET + ball.radius
-    ball.vy = Math.abs(ball.vy)
-  } else {
-    ball.y = 1 - PADDLE_OFFSET - ball.radius
-    ball.vy = -Math.abs(ball.vy)
+function updatePals(state: GameState): void {
+  const retained: PalState[] = []
+  for (const pal of state.pals) {
+    const owner = state.players[pal.ownerId]
+    if (!owner) continue
+    if (pal.expiresAtTick <= state.tick) {
+      state.events.push({ type: 'palExpired', playerId: owner.id, palId: pal.id, palType: pal.type, reason: 'timeout' })
+      continue
+    }
+    if (pal.armedAtTick === state.tick) {
+      const point = palCoordinates(pal)
+      state.events.push({ type: 'palArmed', playerId: owner.id, palId: pal.id, palType: pal.type, ...point })
+    }
+    const age = state.tick - pal.spawnedAtTick
+    let target = pal.anchor
+    if (pal.type === 'guard') target += Math.sin(age * 0.04 + pal.phase) * 0.035
+    else if (pal.type === 'striker') target += Math.sin(age * 0.09 + pal.phase) * 0.16
+    else if (pal.type === 'hatchling') target += Math.sin(age * 0.055 + pal.phase) * 0.055
+    else {
+      const threat = state.balls.find((ball) => pal.side === 'top' ? ball.vy < 0 : ball.vy > 0)
+      target = threat?.x ?? pal.anchor
+    }
+    pal.position = clamp(moveToward(pal.position, target, PAL_PROFILE[pal.type].moveSpeed * TICK_SECONDS), 0.07, 0.93)
+    retained.push(pal)
   }
+  state.pals = retained
 }
 
-function bounceFromWall(ball: BallState, side: Side): void {
-  if (side === 'left') {
-    ball.x = ball.radius
-    ball.vx = Math.abs(ball.vx)
-  } else if (side === 'right') {
-    ball.x = 1 - ball.radius
-    ball.vx = -Math.abs(ball.vx)
-  } else if (side === 'top') {
-    ball.y = ball.radius
+function bounceFromSide(ball: BallState, side: Side, depth = PADDLE_OFFSET): void {
+  if (side === 'top') {
+    ball.y = depth + ball.radius
     ball.vy = Math.abs(ball.vy)
   } else {
-    ball.y = 1 - ball.radius
+    ball.y = 1 - depth - ball.radius
     ball.vy = -Math.abs(ball.vy)
   }
 }
 
 function rampBall(ball: BallState, multiplier = BALL_SPEED_RAMP): void {
   const speed = Math.hypot(ball.vx, ball.vy)
-  const nextSpeed = Math.min(BALL_SPEED_CAP, speed * multiplier)
   if (speed <= 0) return
-  ball.vx = (ball.vx / speed) * nextSpeed
-  ball.vy = (ball.vy / speed) * nextSpeed
-}
-
-export function rallyMultiplierForHits(hits: number): number {
-  return 1 + Math.min(2, Math.floor(Math.max(0, hits) / 8))
+  const nextSpeed = Math.min(BALL_SPEED_CAP, speed * multiplier)
+  ball.vx = ball.vx / speed * nextSpeed
+  ball.vy = ball.vy / speed * nextSpeed
 }
 
 function registerRallyHit(state: GameState): void {
-  const previous = state.rallyHits
   state.rallyHits += 1
   state.longestRallyHits = Math.max(state.longestRallyHits, state.rallyHits)
-  const multiplier = rallyMultiplierForHits(state.rallyHits)
-  if (multiplier > rallyMultiplierForHits(previous)) {
-    state.events.push({ type: 'rallyHot', hits: state.rallyHits, multiplier })
-  }
+  if (state.rallyHits === 8) state.events.push({ type: 'rallyHot', hits: state.rallyHits, level: 'hot' })
+  if (state.rallyHits === 16) state.events.push({ type: 'rallyHot', hits: state.rallyHits, level: 'blazing' })
 }
 
 function applyPaddleContact(state: GameState, ball: BallState, player: PlayerState): void {
   bounceFromSide(ball, player.side)
-  const relative = clamp((coordinateForSide(ball, player.side) - player.position) / (lengthFor(player) / 2), -1, 1)
+  const relative = clamp((ball.x - player.position) / (BASE_PADDLE_LENGTH / 2), -1, 1)
   const perfect = Math.abs(relative) < 0.22
   const motion = player.velocity
   const shot = perfect
@@ -333,119 +263,79 @@ function applyPaddleContact(state: GameState, ball: BallState, player: PlayerSta
     : Math.abs(motion) >= 0.72
       ? relative * motion > 0.18 ? 'drive' : 'cut'
       : Math.abs(motion) < 0.18 && Math.abs(relative) > 0.58 ? 'drop' : 'return'
-  const tangent = relative * 0.34 + player.velocity * 0.045
-  if (player.side === 'left' || player.side === 'right') ball.vy += tangent
-  else ball.vx += tangent
-  if (player.bendTicks > 0) {
-    ball.spin += clamp(player.velocity * 0.028 + relative * 0.09, -0.22, 0.22)
-    player.bendTicks = 0
-  }
-  // Paddle motion now creates readable shot choices. Chase the contact point
-  // for a faster Drive, sweep away for extra Cut, or hold an edge for a Drop.
+  ball.vx += relative * 0.34 + player.velocity * 0.045
   if (shot === 'cut') ball.spin += clamp(motion * 0.08, -0.14, 0.14)
-  let speedMultiplier = BALL_SPEED_RAMP
-  if (player.overdriveHits > 0) {
-    speedMultiplier = 1.25
-    player.overdriveHits -= 1
-  }
-  if (shot === 'drive') speedMultiplier *= 1.08
-  else if (shot === 'drop') speedMultiplier *= 0.88
-  if (perfect) speedMultiplier *= PERFECT_RETURN_SPEED_BOOST
-  rampBall(ball, speedMultiplier)
+  let multiplier = BALL_SPEED_RAMP
+  if (shot === 'drive') multiplier *= 1.08
+  else if (shot === 'drop') multiplier *= 0.88
+  if (perfect) multiplier *= PERFECT_RETURN_SPEED_BOOST
+  rampBall(ball, multiplier)
   ball.lastToucherId = player.id
   player.returns += 1
   if (perfect) {
     player.perfectReturns += 1
-    player.cooldownTicks = Math.max(0, player.cooldownTicks - Math.round(0.5 * TICK_RATE))
+    addEnergy(state, player, 1, 'perfect')
   }
   state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect, speed: Math.hypot(ball.vx, ball.vy), shot })
   registerRallyHit(state)
 }
 
-function applyPulse(state: GameState, ball: BallState): boolean {
-  for (const player of Object.values(state.players)) {
-    if (player.pulseTicks <= 0) continue
-    const nearSide = atPaddleLine(ball, player.side)
-    const distance = Math.abs(coordinateForSide(ball, player.side) - player.position)
-    if (nearSide && distance < lengthFor(player) * 0.9) {
-      bounceFromSide(ball, player.side)
-      rampBall(ball, 1.08)
-      ball.lastToucherId = player.id
-      player.pulseTicks = 0
-      player.returns += 1
-      state.events.push({ type: 'hit', playerId: player.id, ballId: ball.id, perfect: false, speed: Math.hypot(ball.vx, ball.vy), shot: 'return' })
-      registerRallyHit(state)
-      return true
-    }
-  }
-  return false
+function previousY(state: GameState, ball: BallState): number {
+  return ball.y - ball.vy * TICK_SECONDS / state.config.courtLengthScale
 }
 
-/** The little helpers patrol a few pixels so they feel alive, and the hitbox follows. */
-export function summonedPaddlePosition(state: GameState, summon: SummonedPaddleState): number {
-  return clamp(summon.position + Math.sin(state.tick * 0.045 + summon.phase) * 0.035, 0.08, 0.92)
+function crossedPal(state: GameState, ball: BallState, pal: PalState): boolean {
+  const line = pal.side === 'top' ? pal.depth : 1 - pal.depth
+  const previous = previousY(state, ball)
+  if (pal.side === 'top') return ball.vy < 0 && ball.y - ball.radius <= line && previous - ball.radius > line
+  return ball.vy > 0 && ball.y + ball.radius >= line && previous + ball.radius < line
 }
 
-export function summonedPaddleCoordinates(state: GameState, summon: SummonedPaddleState): { x: number; y: number } {
-  const position = summonedPaddlePosition(state, summon)
-  if (summon.side === 'left') return { x: summon.depth, y: position }
-  if (summon.side === 'right') return { x: 1 - summon.depth, y: position }
-  if (summon.side === 'top') return { x: position, y: summon.depth }
-  return { x: position, y: 1 - summon.depth }
-}
-
-function crossedSummonedPaddle(ball: BallState, summon: SummonedPaddleState): boolean {
-  const previousX = ball.x - ball.vx * TICK_SECONDS
-  const previousY = ball.y - ball.vy * TICK_SECONDS
-  if (summon.side === 'left') {
-    return ball.vx < 0 && ball.x - ball.radius <= summon.depth && previousX - ball.radius > summon.depth
-  }
-  if (summon.side === 'right') {
-    const line = 1 - summon.depth
-    return ball.vx > 0 && ball.x + ball.radius >= line && previousX + ball.radius < line
-  }
-  if (summon.side === 'top') {
-    return ball.vy < 0 && ball.y - ball.radius <= summon.depth && previousY - ball.radius > summon.depth
-  }
-  const line = 1 - summon.depth
-  return ball.vy > 0 && ball.y + ball.radius >= line && previousY + ball.radius < line
-}
-
-function bounceFromSummonedPaddle(ball: BallState, summon: SummonedPaddleState): void {
-  if (summon.side === 'left') {
-    ball.x = summon.depth + ball.radius
-    ball.vx = Math.abs(ball.vx)
-  } else if (summon.side === 'right') {
-    ball.x = 1 - summon.depth - ball.radius
-    ball.vx = -Math.abs(ball.vx)
-  } else if (summon.side === 'top') {
-    ball.y = summon.depth + ball.radius
-    ball.vy = Math.abs(ball.vy)
-  } else {
-    ball.y = 1 - summon.depth - ball.radius
-    ball.vy = -Math.abs(ball.vy)
+function spawnCaptainHatchlings(state: GameState, captain: PalState, owner: PlayerState): void {
+  const available = Math.max(0, PAL_ACTIVE_LIMIT - activePalsFor(state, owner.id).length)
+  const depths = [0.22, 0.34]
+  const offsets = [-0.07, 0.07]
+  for (let index = 0; index < Math.min(2, available); index += 1) {
+    const hatchling = makePal(
+      state,
+      owner,
+      'hatchling',
+      captain.position + (offsets[index] ?? 0),
+      depths[index] ?? PAL_PROFILE.hatchling.depth,
+      captain.id,
+    )
+    state.pals.push(hatchling)
+    state.events.push({ type: 'palSummoned', playerId: owner.id, pal: { ...hatchling } })
   }
 }
 
-function applySummonedPaddle(state: GameState, ball: BallState): boolean {
-  for (const summon of state.summonedPaddles) {
-    if (!crossedSummonedPaddle(ball, summon)) continue
-    const owner = state.players[summon.ownerId]
+function applyPalContact(state: GameState, ball: BallState): boolean {
+  for (const pal of state.pals) {
+    if (pal.armedAtTick > state.tick || !crossedPal(state, ball, pal)) continue
+    if (Math.abs(ball.x - pal.position) > PAL_PROFILE[pal.type].length / 2 + ball.radius) continue
+    const owner = state.players[pal.ownerId]
     if (!owner) continue
-    const position = summonedPaddlePosition(state, summon)
-    const coordinate = coordinateForSide(ball, summon.side)
-    if (Math.abs(coordinate - position) > SUMMON_PADDLE_LENGTH / 2 + ball.radius) continue
-    bounceFromSummonedPaddle(ball, summon)
-    const relative = clamp((coordinate - position) / (SUMMON_PADDLE_LENGTH / 2), -1, 1)
-    if (summon.side === 'left' || summon.side === 'right') ball.vy += relative * 0.2
-    else ball.vx += relative * 0.2
-    rampBall(ball, 1.06)
+    bounceFromSide(ball, pal.side, pal.depth)
+    const relative = clamp((ball.x - pal.position) / (PAL_PROFILE[pal.type].length / 2), -1, 1)
+    if (pal.type === 'striker') {
+      const direction = relative === 0 ? (ball.x < 0.5 ? 1 : -1) : Math.sign(relative)
+      ball.vx += relative * 0.34 + direction * 0.22
+      ball.spin += direction * 0.16
+      rampBall(ball, 1.12)
+    } else if (pal.type === 'captain') {
+      ball.vx += relative * 0.2
+      rampBall(ball, 1.05)
+    } else {
+      ball.vx += relative * 0.18
+      rampBall(ball)
+    }
     ball.lastToucherId = owner.id
-    owner.returns += 1
-    const { x, y } = summonedPaddleCoordinates(state, summon)
-    state.events.push({ type: 'summonHit', playerId: owner.id, summonId: summon.id, ballId: ball.id, x, y })
+    owner.palHits += 1
+    const point = palCoordinates(pal)
+    state.events.push({ type: 'palHit', playerId: owner.id, palId: pal.id, palType: pal.type, ballId: ball.id, ...point })
     registerRallyHit(state)
-    state.summonedPaddles = state.summonedPaddles.filter((candidate) => candidate.id !== summon.id)
+    state.pals = state.pals.filter((candidate) => candidate.id !== pal.id)
+    if (pal.type === 'captain') spawnCaptainHatchlings(state, pal, owner)
     return true
   }
   return false
@@ -455,292 +345,167 @@ function fallbackScorer(state: GameState, defender: PlayerState): PlayerState | 
   return Object.values(state.players).find((candidate) => candidate.team !== defender.team)
 }
 
+function finishMatch(state: GameState, winnerTeam: string): void {
+  state.phase = 'finished'
+  state.winnerTeam = winnerTeam
+  state.events.push({ type: 'matchEnd', winnerTeam })
+}
+
+function tiedForLead(state: GameState): boolean {
+  const scores = Object.values(state.scores)
+  return scores.length === 2 && scores[0] === scores[1]
+}
+
+function checkWinner(state: GameState): void {
+  const ordered = Object.entries(state.scores).sort((a, b) => b[1] - a[1])
+  const leader = ordered[0]
+  if (!leader) return
+  if (leader[1] >= state.config.scoreToWin || (state.overtime && !tiedForLead(state))) {
+    finishMatch(state, leader[0])
+    return
+  }
+  if (state.remainingTicks > 0) return
+  if (!tiedForLead(state)) {
+    finishMatch(state, leader[0])
+    return
+  }
+  if (state.overtime) return
+  state.overtime = true
+  for (const player of Object.values(state.players)) {
+    player.palEnergy = PAL_ENERGY_MAX
+    player.palEnergyProgressTicks = 0
+    state.events.push({ type: 'energyChanged', playerId: player.id, energy: PAL_ENERGY_MAX, reason: 'overtime' })
+  }
+}
+
+function clearPalsForGoal(state: GameState): void {
+  for (const pal of state.pals) {
+    state.events.push({ type: 'palExpired', playerId: pal.ownerId, palId: pal.id, palType: pal.type, reason: 'goal' })
+  }
+  state.pals = []
+}
+
 function scoreGoal(state: GameState, ball: BallState, defender: PlayerState): void {
   const lastToucher = ball.lastToucherId ? state.players[ball.lastToucherId] : undefined
   const scorer = lastToucher && lastToucher.team !== defender.team ? lastToucher : fallbackScorer(state, defender)
   if (!scorer) return
   const rallyHits = state.rallyHits
-  const basePoints = rallyMultiplierForHits(rallyHits)
-  const points = basePoints * (mutatorFor(state) === 'doublePoints' ? 2 : 1)
-  state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + points
-  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points, rallyHits })
-  // A goal ends the point, including Multiball. Previously only the scoring
-  // ball reset; the other ball waited through the serve pause and then resumed
-  // halfway across the court, turning the next point into an unexplained trap.
-  const primaryBall = state.balls[0] ?? ball
-  Object.assign(primaryBall, stagedBall(state, primaryBall.id, null))
-  for (const extra of state.balls.slice(1)) extra.transientTicks = 0
+  state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + 1
+  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points: 1, rallyHits })
+  addEnergy(state, defender, 1, 'comeback')
+  clearPalsForGoal(state)
+  state.balls = [stagedBall(ball.id)]
   state.serveTicks = SERVE_DELAY_TICKS
   state.servingPlayerId = defender.id
   state.rallyHits = 0
   checkWinner(state)
 }
 
-function tiedForLead(scores: Record<string, number>): boolean {
-  const ordered = Object.values(scores).sort((a, b) => b - a)
-  return ordered.length > 1 && ordered[0] === ordered[1]
-}
-
-function checkWinner(state: GameState): void {
-  const ordered = Object.entries(state.scores).sort((a, b) => b[1] - a[1])
-  const leader = ordered[0]
-  const runnerUp = ordered[1]
-  if (!leader) return
-  const reachedTarget = leader[1] >= state.config.scoreToWin && (!runnerUp || leader[1] > runnerUp[1])
-  const timeExpired = state.remainingTicks <= 0 && !tiedForLead(state.scores)
-  if (!reachedTarget && !timeExpired) {
-    if (state.remainingTicks <= 0) state.overtime = true
-    return
-  }
-  state.phase = 'finished'
-  state.winnerTeam = leader[0]
-  state.events.push({ type: 'matchEnd', winnerTeam: leader[0] })
-}
-
-function processSide(state: GameState, ball: BallState, side: Side): void {
-  if (!approaching(ball, side)) return
-  const player = playerAtSide(state, side)
-  if (!player) {
-    if (mutatorFor(state) === 'noWalls') {
-      if (side === 'left' && ball.x + ball.radius < 0) ball.x = 1 + ball.radius
-      else if (side === 'right' && ball.x - ball.radius > 1) ball.x = -ball.radius
-      else if (side === 'top' && ball.y + ball.radius < 0) ball.y = 1 + ball.radius
-      else if (side === 'bottom' && ball.y - ball.radius > 1) ball.y = -ball.radius
-      return
-    }
-    if (side === 'left' && ball.x - ball.radius <= 0) bounceFromWall(ball, side)
-    if (side === 'right' && ball.x + ball.radius >= 1) bounceFromWall(ball, side)
-    if (side === 'top' && ball.y - ball.radius <= 0) bounceFromWall(ball, side)
-    if (side === 'bottom' && ball.y + ball.radius >= 1) bounceFromWall(ball, side)
-    return
-  }
-  if (atPaddleLine(ball, side) && touchesPaddle(ball, player)) {
+function processGoalSide(state: GameState, ball: BallState, player: PlayerState): void {
+  const atPaddle = player.side === 'top'
+    ? ball.y - ball.radius <= PADDLE_OFFSET
+    : ball.y + ball.radius >= 1 - PADDLE_OFFSET
+  if (atPaddle && Math.abs(ball.x - player.position) <= BASE_PADDLE_LENGTH / 2 + ball.radius) {
     applyPaddleContact(state, ball, player)
     return
   }
-  if (!crossedGoal(ball, side)) return
-  if (player.guardTicks > 0) {
-    player.guardTicks = 0
-    bounceFromSide(ball, side)
-    rampBall(ball, 1.02)
-    state.events.push({ type: 'shield', playerId: player.id, ballId: ball.id })
-    registerRallyHit(state)
-    return
-  }
-  scoreGoal(state, ball, player)
-}
-
-function updateWorldEffects(state: GameState, ball: BallState): void {
-  if (state.worldEffects.gravityTicks > 0) {
-    const dx = 0.5 - ball.x
-    const dy = 0.5 - ball.y
-    const distance = Math.max(0.08, Math.hypot(dx, dy))
-    ball.vx += (dx / distance) * 0.14 * TICK_SECONDS
-    ball.vy += (dy / distance) * 0.14 * TICK_SECONDS
-  }
-  if (state.worldEffects.warpTicks > 0 && ball.warpCooldownTicks <= 0) {
-    const leftGate = Math.hypot(ball.x - 0.32, ball.y - 0.5) < 0.035
-    const rightGate = Math.hypot(ball.x - 0.68, ball.y - 0.5) < 0.035
-    if (leftGate || rightGate) {
-      ball.x = leftGate ? 0.68 : 0.32
-      ball.y = 1 - ball.y
-      ball.warpCooldownTicks = Math.round(0.5 * TICK_RATE)
-      state.events.push({ type: 'warp', ballId: ball.id })
-    }
-  }
-}
-
-function applyPowerUp(state: GameState, id: PowerUpId, player: PlayerState | undefined): void {
-  if (id === 'grow' && player) player.growTicks = 8 * TICK_RATE
-  else if (id === 'overdrive' && player) player.overdriveHits += 3
-  else if (id === 'multiball') {
-    state.balls.push(freshBall(state, `ball-${state.tick}-a`, 9 * TICK_RATE))
-    state.balls.push(freshBall(state, `ball-${state.tick}-b`, 9 * TICK_RATE))
-  } else if (id === 'warp') state.worldEffects.warpTicks = 10 * TICK_RATE
-  else if (id === 'gravity') state.worldEffects.gravityTicks = 10 * TICK_RATE
-  state.events.push({ type: 'powerUp', playerId: player?.id ?? null, powerUp: id })
-}
-
-const POWER_UP_WEIGHTS: Record<'standard' | 'wild', Array<{ id: PowerUpId; weight: number }>> = {
-  standard: [
-    { id: 'grow', weight: 34 },
-    { id: 'overdrive', weight: 30 },
-    { id: 'multiball', weight: 15 },
-    { id: 'warp', weight: 11 },
-    { id: 'gravity', weight: 10 },
-  ],
-  wild: [
-    { id: 'grow', weight: 10 },
-    { id: 'overdrive', weight: 15 },
-    { id: 'multiball', weight: 30 },
-    { id: 'warp', weight: 25 },
-    { id: 'gravity', weight: 20 },
-  ],
-}
-
-export function powerUpForRoll(intensity: 'standard' | 'wild', roll: number): PowerUpId {
-  const table = POWER_UP_WEIGHTS[intensity]
-  let cursor = Math.min(0.999_999, Math.max(0, roll)) * table.reduce((total, item) => total + item.weight, 0)
-  for (const item of table) {
-    cursor -= item.weight
-    if (cursor < 0) return item.id
-  }
-  return table.at(-1)?.id ?? 'grow'
-}
-
-function playerCourtPosition(player: PlayerState): { x: number; y: number } {
-  if (player.side === 'left') return { x: PADDLE_OFFSET, y: player.position }
-  if (player.side === 'right') return { x: 1 - PADDLE_OFFSET, y: player.position }
-  if (player.side === 'top') return { x: player.position, y: PADDLE_OFFSET }
-  return { x: player.position, y: 1 - PADDLE_OFFSET }
-}
-
-function nearestPlayer(state: GameState, x: number, y: number): PlayerState | undefined {
-  return Object.values(state.players).sort((first, second) => {
-    const a = playerCourtPosition(first)
-    const b = playerCourtPosition(second)
-    return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)
-  })[0]
-}
-
-function updatePowerUp(state: GameState): void {
-  if (!state.powerUp) {
-    state.powerUpSpawnTicks -= 1
-    if (state.powerUpSpawnTicks > 0 || state.config.itemIntensity === 'off') return
-    const intensity = state.config.itemIntensity === 'wild' ? 'wild' : 'standard'
-    const id = powerUpForRoll(intensity, randomFrom(state))
-    const angle = randomFrom(state) * Math.PI * 2
-    const drift = POWER_UP_DRIFT_SPEED * (intensity === 'wild' ? 1.25 : 1)
-    state.powerUp = {
-      id,
-      x: 0.28 + randomFrom(state) * 0.44,
-      y: 0.28 + randomFrom(state) * 0.44,
-      vx: Math.cos(angle) * drift,
-      vy: Math.sin(angle) * drift,
-      ageTicks: 0,
-    }
-    state.events.push({ type: 'powerUpSpawn', powerUp: { ...state.powerUp } })
-    return
-  }
-  state.powerUp.ageTicks += 1
-  state.powerUp.x += state.powerUp.vx * TICK_SECONDS
-  state.powerUp.y += state.powerUp.vy * TICK_SECONDS
-  const driftMinimum = 0.2
-  const driftMaximum = 0.8
-  if (state.powerUp.x <= driftMinimum || state.powerUp.x >= driftMaximum) {
-    state.powerUp.x = clamp(state.powerUp.x, driftMinimum, driftMaximum)
-    state.powerUp.vx *= -1
-  }
-  if (state.powerUp.y <= driftMinimum || state.powerUp.y >= driftMaximum) {
-    state.powerUp.y = clamp(state.powerUp.y, driftMinimum, driftMaximum)
-    state.powerUp.vy *= -1
-  }
-  if (state.powerUp.ageTicks >= POWER_UP_LIFETIME_TICKS) {
-    state.powerUp = null
-    state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
-    return
-  }
-  // The staged serve ball is not a shot and cannot collect an orb while parked
-  // at centre. The orb still ages, so the pause does not extend its lifetime.
-  if (state.serveTicks > 0) return
-  for (const ball of state.balls) {
-    if (Math.hypot(ball.x - state.powerUp.x, ball.y - state.powerUp.y) > ball.radius + POWER_UP_RADIUS) continue
-    const player = (ball.lastToucherId ? state.players[ball.lastToucherId] : undefined)
-      ?? nearestPlayer(state, state.powerUp.x, state.powerUp.y)
-    applyPowerUp(state, state.powerUp.id, player)
-    state.powerUp = null
-    state.powerUpSpawnTicks = nextPowerUpDelay(state.config.itemIntensity, randomFrom(state))
-    break
-  }
+  const crossedGoal = player.side === 'top'
+    ? ball.y + ball.radius < 0
+    : ball.y - ball.radius > 1
+  if (crossedGoal) scoreGoal(state, ball, player)
 }
 
 function updateBall(state: GameState, ball: BallState): void {
-  ball.warpCooldownTicks = Math.max(0, ball.warpCooldownTicks - 1)
-  if (ball.transientTicks !== null) ball.transientTicks -= 1
-  updateWorldEffects(state, ball)
-  if (ball.spin !== 0) {
-    const speed = Math.hypot(ball.vx, ball.vy)
-    const angle = Math.atan2(ball.vy, ball.vx) + ball.spin * TICK_SECONDS
-    ball.vx = Math.cos(angle) * speed
-    ball.vy = Math.sin(angle) * speed
-    ball.spin *= 0.991
+  if (Math.abs(ball.spin) > 0.0001) {
+    const vx = ball.vx
+    ball.vx += -ball.vy * ball.spin * TICK_SECONDS * 0.2
+    ball.vy += vx * ball.spin * TICK_SECONDS * 0.2
+    ball.spin *= 0.992
   }
   ball.x += ball.vx * TICK_SECONDS
-  ball.y += ball.vy * TICK_SECONDS
-  if (applySummonedPaddle(state, ball)) return
-  if (applyPulse(state, ball)) return
-  processSide(state, ball, 'left')
-  processSide(state, ball, 'right')
-  processSide(state, ball, 'top')
-  processSide(state, ball, 'bottom')
+  ball.y += ball.vy * TICK_SECONDS / state.config.courtLengthScale
+
+  if (ball.x - ball.radius <= 0 && ball.vx < 0) {
+    ball.x = ball.radius
+    ball.vx = Math.abs(ball.vx)
+  } else if (ball.x + ball.radius >= 1 && ball.vx > 0) {
+    ball.x = 1 - ball.radius
+    ball.vx = -Math.abs(ball.vx)
+  }
+
+  if (applyPalContact(state, ball)) return
+  const top = Object.values(state.players).find((player) => player.side === 'top')
+  const bottom = Object.values(state.players).find((player) => player.side === 'bottom')
+  if (ball.vy < 0 && top) processGoalSide(state, ball, top)
+  else if (ball.vy > 0 && bottom) processGoalSide(state, ball, bottom)
 }
 
-function emitCountdown(state: GameState): void {
-  const before = Math.ceil((state.countdownTicks + 1) / TICK_RATE)
-  const after = Math.ceil(state.countdownTicks / TICK_RATE)
-  if (after !== before && after > 0) state.events.push({ type: 'countdown', value: after })
+function launchServe(state: GameState): void {
+  const player = state.servingPlayerId ? state.players[state.servingPlayerId] : undefined
+  if (!player) {
+    state.balls = [freshBall(state, state.balls[0]?.id ?? 'ball-1')]
+    return
+  }
+  const velocity = serveVelocityForPlayer(player)
+  state.balls = [{ ...stagedBall(state.balls[0]?.id ?? 'ball-1'), ...velocity }]
+}
+
+function applyHitstop(state: GameState): void {
+  let freeze = 0
+  for (const event of state.events) {
+    if (event.type === 'score') freeze = Math.max(freeze, 8)
+    else if (event.type === 'hit' && event.perfect) freeze = Math.max(freeze, 4)
+    else if (event.type === 'palHit') freeze = Math.max(freeze, event.palType === 'captain' ? 5 : 3)
+  }
+  state.freezeTicks = Math.max(state.freezeTicks, freeze)
 }
 
 export function stepGame(state: GameState, inputs: InputMap = {}): GameState {
-  normalizeGameState(state)
   state.events = []
   if (state.phase === 'finished') return state
   state.tick += 1
+
   if (state.phase === 'countdown') {
-    updatePlayers(state, inputs)
-    state.countdownTicks -= 1
-    emitCountdown(state)
-    if (state.countdownTicks <= 0) {
+    const previous = Math.ceil(state.countdownTicks / TICK_RATE)
+    state.countdownTicks = Math.max(0, state.countdownTicks - 1)
+    const next = Math.ceil(state.countdownTicks / TICK_RATE)
+    if (next > 0 && next !== previous) state.events.push({ type: 'countdown', value: next })
+    if (state.countdownTicks === 0) {
       state.phase = 'playing'
       state.events.push({ type: 'matchStart' })
     }
     return state
   }
+
   if (state.freezeTicks > 0) {
     state.freezeTicks -= 1
     return state
   }
+
   updatePlayers(state, inputs)
-  state.summonedPaddles = state.summonedPaddles.filter((summon) => summon.expiresAtTick > state.tick && Boolean(state.players[summon.ownerId]))
+  updatePals(state)
+  updateEnergy(state)
   if (!state.overtime) state.remainingTicks = Math.max(0, state.remainingTicks - 1)
+  checkWinner(state)
+  if (state.winnerTeam !== null) {
+    applyHitstop(state)
+    return state
+  }
+
   if (state.serveTicks > 0) {
     state.serveTicks -= 1
-    if (state.serveTicks === 0 && state.servingPlayerId) {
-      const server = state.players[state.servingPlayerId]
-      if (server) {
-        const velocity = serveVelocityForPlayer(server)
-        for (const ball of state.balls) {
-          if (Math.hypot(ball.vx, ball.vy) > 1e-9) continue
-          ball.vx = velocity.vx
-          ball.vy = velocity.vy
-        }
-      }
-      state.servingPlayerId = null
-    }
-  } else {
-    for (const ball of state.balls) {
-      updateBall(state, ball)
-      if (state.winnerTeam !== null || state.serveTicks > 0) break
-    }
+    if (state.serveTicks === 0) launchServe(state)
+    applyHitstop(state)
+    return state
   }
-  state.balls = state.balls.filter((ball, index) => index === 0 || ball.transientTicks === null || ball.transientTicks > 0)
-  state.worldEffects.warpTicks = Math.max(0, state.worldEffects.warpTicks - 1)
-  state.worldEffects.gravityTicks = Math.max(0, state.worldEffects.gravityTicks - 1)
-  updatePowerUp(state)
-  checkWinner(state)
-  let freezeTicks = 0
-  for (const event of state.events) {
-    if (event.type === 'score') freezeTicks = Math.max(freezeTicks, 8)
-    else if (event.type === 'shield') freezeTicks = Math.max(freezeTicks, 6)
-    else if (event.type === 'powerUp') freezeTicks = Math.max(freezeTicks, 3)
-    else if (event.type === 'summonHit') freezeTicks = Math.max(freezeTicks, 3)
-    else if (event.type === 'hit' && event.perfect) freezeTicks = Math.max(freezeTicks, 4)
-  }
-  state.freezeTicks = Math.max(state.freezeTicks, freezeTicks)
+
+  const ball = state.balls[0]
+  if (ball) updateBall(state, ball)
+  applyHitstop(state)
   return state
 }
 
-export function restartGame(state: GameState, seed = state.config.seed + 1): GameState {
+export function restartGame(state: GameState, seed = Date.now() >>> 0): GameState {
   return createGame({ ...state.config, seed })
 }
 

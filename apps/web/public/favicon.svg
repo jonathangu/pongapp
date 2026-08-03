@@ -1,7 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="PONG!">
-  <rect width="128" height="128" rx="28" fill="#dfff68"/>
-  <rect x="20" y="28" width="12" height="72" rx="6" fill="#12231b"/>
-  <rect x="96" y="28" width="12" height="72" rx="6" fill="#12231b"/>
-  <circle cx="64" cy="64" r="10" fill="#12231b"/>
-  <path d="M64 14v100" stroke="#12231b" stroke-width="3" stroke-dasharray="7 7" opacity=".35"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pal Duel">
+  <rect width="128" height="128" rx="28" fill="#0b1611"/>
+  <path d="M31 37h66l-7 53H38z" fill="#dfff68" opacity=".18"/>
+  <path d="m34 31 17 17 13-24 13 24 17-17-7 23H41z" fill="#dfff68"/>
+  <rect x="30" y="65" width="68" height="24" rx="12" fill="#dfff68"/>
+  <circle cx="51" cy="75" r="4" fill="#0b1611"/>
+  <circle cx="77" cy="75" r="4" fill="#0b1611"/>
+  <path d="M54 84q10 8 20 0" fill="none" stroke="#0b1611" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="101" cy="104" r="9" fill="#fffdf7"/>
 </svg>

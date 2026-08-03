@@ -16,6 +16,7 @@ async function verifyDeployment() {
   const pageResponse = await fetchCurrent(siteUrl.pathname)
   invariant(pageResponse.ok, `PongApp page returned ${pageResponse.status}`)
   const html = await pageResponse.text()
+  invariant(html.includes('PAL DUEL!'), 'PongApp page did not contain the Pal Duel release')
   const scriptPath = html.match(/src="(\/pongapp\/assets\/index-[^"]+\.js)"/)?.[1]
   invariant(scriptPath, 'PongApp page did not reference its production JavaScript bundle')
 
@@ -30,8 +31,10 @@ async function verifyDeployment() {
   const worker = await workerResponse.text()
   invariant(worker.includes('registration.unregister()'), 'Stale-shell retirement worker was not deployed')
 
-  const keyArtResponse = await fetchCurrent('/pongapp/arena-keyart.jpg')
-  invariant(keyArtResponse.ok, `PongApp key art returned ${keyArtResponse.status}`)
+  const healthResponse = await fetch(new URL('/api/health', roomServerUrl), { cache: 'no-store' })
+  invariant(healthResponse.ok, `Room health returned ${healthResponse.status}`)
+  const health = await healthResponse.json()
+  invariant(health.protocol === 2, `Room server protocol was ${health.protocol}, expected 2`)
   console.log(`production-smoke ok: ${siteUrl.href} -> ${scriptPath} -> ${roomServerUrl}`)
 }
 

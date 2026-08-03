@@ -1,148 +1,55 @@
-/**
- * The match screen: input, HUD and the mount point for the Pixi court.
- *
- * The rewrite fixed one input bug and two HUD omissions that a design pass kept
- * running into.
- *
- * **Keyboard was tap-only.** The old handler guarded with
- * `if (pressed.has(event.code)) return` to suppress OS key repeat, then nudged
- * the target by a fixed `0.16` on the *keydown edge only*. Holding W therefore
- * moved the paddle exactly 0.16 of the court and then stopped forever; you had
- * to machine-gun the key to cross the court. Input is now edge-triggered for
- * abilities and level-triggered for movement: held keys accumulate into a
- * desired position at `PADDLE_SPEED`, the same constant the simulation clamps
- * movement to, on a frame loop. Holding moves; tapping nudges.
- *
- * **The scoreboard said nothing but a number.** Four coloured digits in a pill
- * do not tell you which one is yours, who is winning, or how many points end
- * the match. Each seat now carries its name, its colour-independent mark and a
- * "you" flag, and the score is mirrored into an `aria-live` region so it is
- * announced rather than merely drawn — the canvas itself is unreadable to a
- * screen reader by construction.
- *
- * **Touch fought the player.** A pointer-down anywhere teleported the paddle to
- * the finger, which on a phone is under the finger and therefore invisible.
- * Pressing *on* the paddle now grabs it and drags relatively; pressing away from
- * it still jumps, which is what you want when you are late to a ball.
- */
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { GameState, PlayerState, Side } from '@pongapp/game-core'
 import {
-  ABILITY_COOLDOWNS,
-  BASE_PADDLE_LENGTH,
-  GROWN_PADDLE_LENGTH,
+  PAL_COST,
+  PAL_ENERGY_MAX,
+  PAL_IDENTITIES,
   PADDLE_SPEED,
-  POWER_UP_IDENTITIES,
-  rallyMultiplierForHits,
   TICK_RATE,
+  canSummonPal,
   secondsRemaining,
   seatIdentityForColor,
+  type GameState,
+  type PalType,
+  type PlayerState,
 } from '@pongapp/game-core'
 import { GameAudio } from './audio'
-import { ABILITY_COPY } from './abilityCopy'
-import { screenDirectionToLogical, screenFractionToLogical } from './perspective'
+import { screenFractionToLogical } from './perspective'
 import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
+
+interface NetworkStatus {
+  latencyMs: number | null
+  latencyP95Ms: number | null
+  jitterMs: number | null
+  quality: 'good' | 'fair' | 'poor'
+}
 
 interface Props {
   getState: () => GameState
   subscribe: (listener: (state: GameState) => void) => () => void
   onTarget: (playerId: string, target: number) => void
-  onAbility: (playerId: string) => void
+  onSummon: (playerId: string, type: PalType) => void
   onExit: () => void
   localPlayerIds: string[]
   settings: CourtEffectsSettings
   muted: boolean
-  extrapolate?: boolean
   title: string
   subtitle: string
   onRematch?: () => void
+  network?: NetworkStatus
 }
 
-/** The same clamp `updatePlayers` applies, so the HUD cannot promise more travel than the sim allows. */
-const MIN_POSITION = 0.08
-const MAX_POSITION = 0.92
-const clampPosition = (value: number) => Math.min(MAX_POSITION, Math.max(MIN_POSITION, value))
-
-interface TeamSummary {
-  team: string
-  label: string
-  score: number
-  color: number
-  hex: string
-  pattern: string
-  patternLabel: string
-  isLocal: boolean
+const PAL_ORDER: PalType[] = ['guard', 'striker', 'captain']
+const PAL_SHORT_EFFECT: Record<PalType, string> = {
+  guard: 'blocks one',
+  striker: 'fast curve',
+  captain: 'splits in two',
 }
+const PAL_CARD_LABEL: Record<PalType, string> = { guard: 'Guard', striker: 'Striker', captain: 'Captain' }
 
-/**
- * What each rally milestone is called on screen.
- *
- * The thresholds live in the simulation (`rallyMultiplierForHits`); only the
- * wording is presentation, so it belongs here rather than in `game-core`, which
- * has to stay framework-neutral and has no business holding UI copy.
- */
-const RALLY_STEPS = [
-  { hits: 8, multiplier: 2, label: 'Hot rally · worth 2' },
-  { hits: 16, multiplier: 3, label: 'Blazing · worth 3' },
-] as const
-
-const ABILITY_MOMENT: Record<string, string> = {
-  dash: 'summoned Paddle Pals',
-  bend: 'curve shot armed',
-  guard: 'shield raised',
-  pulse: 'parry window open',
-}
-
-const ABILITY_GLYPH: Record<string, string> = { dash: '✦', bend: '↝', guard: '◇', pulse: '◉' }
-const SHOT_LABEL: Record<string, string> = { drive: 'DRIVE', cut: 'CUT', drop: 'DROP' }
-
-/**
- * Score pills are narrow, and the default guest name is "Player One" — which
- * with a second seat called "Player Two" truncated both of them to "PLAYE…".
- * A label that is the same for every seat identifies none of them, so local
- * seats get short names that stay legible: "You" when only one seat is yours,
- * "P1"/"P2" when two people are sharing the device.
- */
-function teamSummaries(state: GameState, localIds: string[]): TeamSummary[] {
-  const byTeam = new Map<string, PlayerState[]>()
-  for (const player of Object.values(state.players)) {
-    const bucket = byTeam.get(player.team) ?? []
-    bucket.push(player)
-    byTeam.set(player.team, bucket)
-  }
-  const localOrder = Object.values(state.players)
-    .filter((player) => localIds.includes(player.id))
-    .sort((a, b) => localIds.indexOf(a.id) - localIds.indexOf(b.id))
-  return Object.entries(state.scores).map(([team, score]) => {
-    const members = byTeam.get(team) ?? []
-    const seat = seatIdentityForColor(members[0]?.color ?? 0xdfff68)
-    const localIndex = localOrder.findIndex((player) => player.team === team)
-    const shortLocal = localIndex < 0 ? null : localOrder.length > 1 ? `P${localIndex + 1}` : 'You'
-    return {
-      team,
-      label: shortLocal ?? (members.map((player) => player.name).join(' + ') || team),
-      score,
-      color: members[0]?.color ?? seat.color,
-      hex: seat.hex,
-      pattern: seat.pattern,
-      patternLabel: seat.patternLabel,
-      isLocal: members.some((player) => localIds.includes(player.id)),
-    }
-  })
-}
-
-function courtPointer(event: React.PointerEvent<HTMLDivElement>): { x: number; y: number } {
-  const rect = event.currentTarget.getBoundingClientRect()
-  return {
-    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
-  }
-}
-
-/** Convert the displayed left/right coordinate back into this wall's world axis. */
-function axisFraction(event: React.PointerEvent<HTMLDivElement>, side: Side, viewSide: Side): number {
-  return screenFractionToLogical(courtPointer(event).x, side, viewSide)
+function secondsLabel(state: GameState): string {
+  if (state.overtime) return 'FINAL VOLLEY'
+  const seconds = secondsRemaining(state)
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 function countdownValue(state: GameState): number | null {
@@ -150,446 +57,258 @@ function countdownValue(state: GameState): number | null {
   return Math.max(1, Math.ceil(state.countdownTicks / TICK_RATE))
 }
 
+function resultLabel(state: GameState, player: PlayerState | undefined): string {
+  if (!player) return 'Match complete'
+  return state.winnerTeam === player.team ? 'You win!' : 'They win!'
+}
+
+function PalGlyph({ type }: { type: PalType }) {
+  if (type === 'guard') return <span aria-hidden="true">◖━◗</span>
+  if (type === 'striker') return <span aria-hidden="true">➤</span>
+  return <span aria-hidden="true">♛</span>
+}
+
+function EnergyMeter({ player, flipped = false }: { player: PlayerState; flipped?: boolean }) {
+  return (
+    <div className={`pg-energy${flipped ? ' pg-energy--flipped' : ''}`} aria-label={`${player.palEnergy} of ${PAL_ENERGY_MAX} summon energy`}>
+      <span className="pg-energy__label">PAL POWER</span>
+      <div className="pg-energy__pips">
+        {Array.from({ length: PAL_ENERGY_MAX }, (_, index) => <i key={index} className={index < player.palEnergy ? 'is-full' : ''} />)}
+      </div>
+    </div>
+  )
+}
+
+function PalTray({ state, player, onSummon, top = false }: { state: GameState; player: PlayerState; onSummon: (type: PalType) => void; top?: boolean }) {
+  return (
+    <div className={`pg-pal-console${top ? ' pg-pal-console--top' : ''}`}>
+      <EnergyMeter player={player} flipped={top} />
+      <div className="pg-pal-tray" aria-label={`${player.name} summon cards`}>
+        {PAL_ORDER.map((type) => {
+          const identity = PAL_IDENTITIES[type]
+          const enabled = canSummonPal(state, player, type)
+          return (
+            <button
+              key={type}
+              className={`pg-pal-card pg-pal-card--${type}${enabled ? ' is-ready' : ''}`}
+              disabled={!enabled}
+              onClick={() => onSummon(type)}
+              aria-label={`Summon ${identity.label}. Costs ${PAL_COST[type]} energy. ${identity.effect}`}
+            >
+              <span className="pg-pal-card__glyph"><PalGlyph type={type} /></span>
+              <span className="pg-pal-card__copy"><strong>{PAL_CARD_LABEL[type]}</strong><small>{PAL_SHORT_EFFECT[type]}</small></span>
+              <span className="pg-pal-card__cost">{PAL_COST[type]}<i>✦</i></span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function GameCourt(props: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<PixiCourt | null>(null)
   const [state, setState] = useState(() => props.getState())
-  const stateRef = useRef(state)
-  stateRef.current = state
-  const [servePrompt, setServePrompt] = useState(false)
-  const [moment, setMoment] = useState<{ label: string; kind: 'perfect' | 'score' | 'skill' | 'power' | 'rally'; tick: number } | null>(null)
+  const [moment, setMoment] = useState<string | null>(null)
+  const [coach, setCoach] = useState<string | null>(() => {
+    try { return localStorage.getItem('pongapp.pal-tutorial.v1') ? null : 'YOU are the bottom paddle. Drag anywhere on the court.' } catch { return null }
+  })
   const momentTimer = useRef(0)
+  const coachTimer = useRef(0)
   const audio = useMemo(() => new GameAudio(), [])
-  const localPlayerKey = props.localPlayerIds.join('\u001f')
-
-  const localPlayers = useMemo(
-    () => props.localPlayerIds.map((id) => state.players[id]).filter((player): player is PlayerState => Boolean(player)),
-    [props.localPlayerIds, state.players],
-  )
+  const localPlayers = props.localPlayerIds.map((id) => state.players[id]).filter((player): player is PlayerState => Boolean(player))
   const primaryPlayer = localPlayers[0]
-  const teams = useMemo(() => teamSummaries(state, props.localPlayerIds), [state, props.localPlayerIds])
-
-  // Desired paddle position per local player. Held keys integrate into this;
-  // pointer input writes it directly. Keeping one authority stops the two input
-  // methods from fighting when a player uses both.
+  const viewSide = primaryPlayer?.side ?? 'bottom'
   const desired = useRef<Record<string, number>>({})
-  // One grab per pointer lets two people drag the top and bottom paddles at the
-  // same time on a shared touch screen.
-  const grabs = useRef(new Map<number, { id: string; offset: number }>())
-  const onTargetRef = useRef(props.onTarget)
-  const onAbilityRef = useRef(props.onAbility)
-  onTargetRef.current = props.onTarget
-  onAbilityRef.current = props.onAbility
-
-  const applyTarget = useCallback((id: string, value: number) => {
-    const next = clampPosition(value)
-    desired.current[id] = next
-    onTargetRef.current(id, next)
-  }, [])
-
-  const usePlayerAbility = useCallback((id: string) => {
-    const current = stateRef.current
-    const player = current.players[id]
-    if (!player || current.phase !== 'playing' || current.serveTicks > 0 || player.cooldownTicks > 0) return
-    onAbilityRef.current(id)
-  }, [])
-
-  useEffect(() => props.subscribe(setState), [props.subscribe])
+  const heldKeys = useRef(new Set<string>())
 
   useEffect(() => {
     audio.setMuted(props.muted)
   }, [audio, props.muted])
 
-  useEffect(() => {
-    void audio.unlock()
-    return () => {
-      window.clearTimeout(momentTimer.current)
-      void audio.destroy()
-    }
-  }, [audio])
+  useEffect(() => () => { void audio.destroy() }, [audio])
 
   useEffect(() => {
-    const mount = mountRef.current
-    if (!mount) return
-    const renderer = new PixiCourt(props.settings, localPlayerKey ? localPlayerKey.split('\u001f') : [], primaryPlayer?.side ?? 'bottom')
+    const element = mountRef.current
+    if (!element) return
+    let cancelled = false
+    const renderer = new PixiCourt(props.settings, props.localPlayerIds, viewSide)
     rendererRef.current = renderer
     let frame = 0
     let previous = performance.now()
-    let disposed = false
-    void renderer.mount(mount).then(() => {
+    void renderer.mount(element).then(() => {
+      if (cancelled) return
       const draw = (now: number) => {
-        if (disposed) return
-        renderer.render(props.getState(), Math.min(0.05, (now - previous) / 1000), props.extrapolate !== false)
+        const delta = Math.min(0.05, Math.max(0, (now - previous) / 1000))
         previous = now
+        renderer.render(props.getState(), delta)
         frame = requestAnimationFrame(draw)
       }
       frame = requestAnimationFrame(draw)
     })
     return () => {
-      disposed = true
+      cancelled = true
       cancelAnimationFrame(frame)
       renderer.destroy()
       rendererRef.current = null
     }
-  }, [localPlayerKey, primaryPlayer?.id, primaryPlayer?.side, props.extrapolate, props.getState])
+  }, [props.getState, props.localPlayerIds.join('\u001f'), viewSide])
 
-  useEffect(() => {
-    rendererRef.current?.updateSettings(props.settings)
-  }, [props.settings])
+  useEffect(() => rendererRef.current?.updateSettings(props.settings), [props.settings])
 
-  useEffect(() => {
-    rendererRef.current?.onEvents(state.events, state)
-    for (const event of state.events) audio.play(event)
-
-    const headline = [...state.events].reverse().map((event) => {
-      if (event.type === 'hit' && event.perfect) return { label: 'PERFECT', kind: 'perfect' as const }
-      if (event.type === 'hit' && event.shot && event.shot !== 'return' && props.localPlayerIds.includes(event.playerId)) {
-        return { label: SHOT_LABEL[event.shot] ?? event.shot.toUpperCase(), kind: 'perfect' as const }
+  useEffect(() => props.subscribe((next) => {
+    setState(next)
+    rendererRef.current?.onEvents(next.events, next)
+    for (const event of next.events) {
+      audio.play(event)
+      let label: string | null = null
+      if (event.type === 'palSummoned') label = `${next.players[event.playerId]?.name ?? 'Player'} calls ${PAL_IDENTITIES[event.pal.type].label}`
+      else if (event.type === 'palHit') label = `${PAL_IDENTITIES[event.palType].label} saves it!`
+      else if (event.type === 'hit' && event.perfect) label = 'PERFECT — bonus energy!'
+      else if (event.type === 'rallyHot') label = event.level === 'blazing' ? 'BLAZING RALLY' : 'HOT RALLY'
+      else if (event.type === 'score') label = `${next.players[event.scorerId]?.name ?? 'Player'} scores`
+      if (label) {
+        window.clearTimeout(momentTimer.current)
+        setMoment(label)
+        momentTimer.current = window.setTimeout(() => setMoment(null), 1200)
       }
-      if (event.type === 'score') {
-        const nextScore = state.scores[event.team] ?? 0
-        if (nextScore < state.config.scoreToWin && nextScore >= state.config.scoreToWin - 1) {
-          return { label: 'MATCH POINT', kind: 'rally' as const }
-        }
-        // Say *why* the number jumped. A score that silently adds 3 reads as a
-        // bug the first time you see it.
-        const points = event.points ?? 1
-        return { label: points > 1 ? `${points} points · ${event.rallyHits ?? 0}-hit rally` : 'Goal line broken', kind: 'score' as const }
-      }
-      if (event.type === 'rallyHot') {
-        const step = RALLY_STEPS.find((candidate) => candidate.hits === event.hits)
-        return { label: step?.label ?? `Worth ${event.multiplier}`, kind: 'rally' as const }
-      }
-      if (event.type === 'ability') {
-        const player = state.players[event.playerId]
-        const owner = props.localPlayerIds.includes(event.playerId) ? 'You' : player?.name ?? 'Opponent'
-        return { label: `${owner}: ${ABILITY_MOMENT[event.ability]}`, kind: 'skill' as const }
-      }
-      if (event.type === 'summonHit') {
-        const player = state.players[event.playerId]
-        const owner = props.localPlayerIds.includes(event.playerId) ? 'Your' : `${player?.name ?? 'Opponent'}'s`
-        return { label: `${owner} Paddle Pal saved it!`, kind: 'skill' as const }
-      }
-      if (event.type === 'powerUp') return { label: POWER_UP_IDENTITIES[event.powerUp].label, kind: 'power' as const }
-      return null
-    }).find(Boolean)
-    if (headline) {
-      setMoment({ ...headline, tick: state.tick })
-      window.clearTimeout(momentTimer.current)
-      momentTimer.current = window.setTimeout(() => setMoment(null), 780)
-    }
-  }, [audio, localPlayerKey, state.tick])
-
-  // "GO" on the frame the countdown ends. A countdown that reaches 1 and then
-  // silently vanishes leaves the player unsure whether the ball is live.
-  useEffect(() => {
-    if (state.phase !== 'playing') return
-    setServePrompt(true)
-    const timer = window.setTimeout(() => setServePrompt(false), 700)
-    return () => window.clearTimeout(timer)
-  }, [state.phase])
-
-  /**
-   * Movement loop. Level-triggered: as long as a direction key is down the
-   * desired position keeps travelling at `PADDLE_SPEED`, which is exactly the
-   * per-tick cap `updatePlayers` enforces, so the keyboard can neither out-run
-   * nor under-run the simulation.
-   */
-  useEffect(() => {
-    const ids = localPlayerKey ? localPlayerKey.split('\u001f') : []
-    if (ids.length === 0) return
-    for (const id of ids) desired.current[id] ??= state.players[id]?.position ?? 0.5
-
-    const held = new Set<string>()
-    const seatKeys: Array<Record<string, number>> = ids.length === 1
-      ? [{ KeyW: -1, KeyA: -1, KeyS: 1, KeyD: 1, ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }]
-      : [
-          { KeyW: -1, KeyA: -1, KeyS: 1, KeyD: 1 },
-          { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 },
-        ]
-    const abilityKeys = ['Space', 'Enter']
-    const viewSide = state.players[ids[0]!]?.side ?? 'bottom'
-
-    const keydown = (event: KeyboardEvent) => {
-      void audio.unlock()
-      const abilityIndex = abilityKeys.indexOf(event.code)
-      if (abilityIndex >= 0 && ids[abilityIndex]) {
-        event.preventDefault()
-        if (!event.repeat) usePlayerAbility(ids[abilityIndex]!)
-        return
-      }
-      if (seatKeys.some((map, index) => ids[index] && event.code in map)) {
-        event.preventDefault()
-        held.add(event.code)
+      if (!primaryPlayer) continue
+      if (event.type === 'matchStart' && coach) setCoach('Tap a Pal card. Each helper returns one ball, then pops!')
+      if (event.type === 'palSummoned' && event.playerId === primaryPlayer.id && coach) setCoach('Good summon. The portal flashes for 0.2 seconds before your Pal can block.')
+      if (event.type === 'palSummoned' && event.playerId !== primaryPlayer.id && coach) setCoach('Enemy Pal! Aim around it—or make it spend its one save.')
+      if (event.type === 'energyChanged' && event.playerId === primaryPlayer.id && event.energy === PAL_ENERGY_MAX && coach) setCoach('CAPTAIN READY — one hit, then two Hatchlings!')
+      if (event.type === 'palHit' && event.playerId === primaryPlayer.id && coach) {
+        setCoach('That is Pal Duel. Paddle skill wins; smart summons steal rallies.')
+        window.clearTimeout(coachTimer.current)
+        coachTimer.current = window.setTimeout(() => {
+          setCoach(null)
+          try { localStorage.setItem('pongapp.pal-tutorial.v1', 'seen') } catch { /* private browsing */ }
+        }, 3500)
       }
     }
-    const keyup = (event: KeyboardEvent) => held.delete(event.code)
-    // A window that loses focus mid-press never delivers the keyup, which used
-    // to leave a paddle drifting into the wall until the player pressed again.
-    const release = () => held.clear()
+  }), [audio, coach, primaryPlayer?.id, props.subscribe])
 
-    window.addEventListener('keydown', keydown)
-    window.addEventListener('keyup', keyup)
-    window.addEventListener('blur', release)
-
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      heldKeys.current.add(event.code)
+      if (!primaryPlayer || event.repeat) return
+      const type = event.code === 'Digit1' || event.code === 'KeyQ' ? 'guard' : event.code === 'Digit2' || event.code === 'KeyW' ? 'striker' : event.code === 'Digit3' || event.code === 'KeyE' ? 'captain' : null
+      if (type) props.onSummon(primaryPlayer.id, type)
+    }
+    const up = (event: KeyboardEvent) => heldKeys.current.delete(event.code)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
     let frame = 0
     let previous = performance.now()
-    const step = (now: number) => {
+    const move = (now: number) => {
       const delta = Math.min(0.05, (now - previous) / 1000)
       previous = now
-      for (const [index, id] of ids.entries()) {
-        const map = seatKeys[index]
-        if (!map || !id) continue
+      if (primaryPlayer) {
         let direction = 0
-        for (const code of held) direction += map[code] ?? 0
-        if (direction !== 0) {
-          const current = desired.current[id] ?? 0.5
-          const side = state.players[id]?.side ?? viewSide
-          const logicalDirection = screenDirectionToLogical(Math.sign(direction), side, viewSide)
-          applyTarget(id, current + logicalDirection * PADDLE_SPEED * delta)
+        if (heldKeys.current.has('ArrowLeft') || heldKeys.current.has('KeyA')) direction -= 1
+        if (heldKeys.current.has('ArrowRight') || heldKeys.current.has('KeyD')) direction += 1
+        if (direction) {
+          const current = desired.current[primaryPlayer.id] ?? primaryPlayer.position
+          const logical = viewSide === 'top' ? -direction : direction
+          desired.current[primaryPlayer.id] = Math.max(0.08, Math.min(0.92, current + logical * PADDLE_SPEED * delta))
+          props.onTarget(primaryPlayer.id, desired.current[primaryPlayer.id]!)
         }
       }
-      frame = requestAnimationFrame(step)
+      frame = requestAnimationFrame(move)
     }
-    frame = requestAnimationFrame(step)
-
+    frame = requestAnimationFrame(move)
     return () => {
-      window.removeEventListener('keydown', keydown)
-      window.removeEventListener('keyup', keyup)
-      window.removeEventListener('blur', release)
       cancelAnimationFrame(frame)
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
     }
-  }, [applyTarget, audio, localPlayerKey, usePlayerAbility])
+  }, [primaryPlayer?.id, props.onSummon, props.onTarget, viewSide])
+
+  const targetFromPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+    const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+    const player = localPlayers.length > 1 && y < 0.5 ? localPlayers.find((candidate) => candidate.side === 'top') : primaryPlayer
+    if (!player) return
+    const logical = screenFractionToLogical(x, player.side, viewSide)
+    desired.current[player.id] = logical
+    props.onTarget(player.id, logical)
+  }, [localPlayers, primaryPlayer, props.onTarget, viewSide])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!primaryPlayer) return
     void audio.unlock()
     event.currentTarget.setPointerCapture(event.pointerId)
-    const pointer = courtPointer(event)
-    // In shared-screen duel, the top half belongs to Player Two and the bottom
-    // half belongs to Player One. Separate pointer IDs make this true for two
-    // simultaneous fingers, not just alternating taps.
-    const player = localPlayers.length > 1 && pointer.y < 0.5 ? localPlayers[1] : primaryPlayer
-    if (!player) return
-    const fraction = screenFractionToLogical(pointer.x, player.side, primaryPlayer.side)
-    const length = player.growTicks > 0 ? GROWN_PADDLE_LENGTH : BASE_PADDLE_LENGTH
-    // Grabbing the paddle drags it; pressing elsewhere jumps to the press. The
-    // grab tolerance is a little wider than the paddle so a near-miss with a
-    // thumb still feels like a grab rather than a teleport.
-    if (Math.abs(fraction - player.position) <= length * 0.75) {
-      grabs.current.set(event.pointerId, { id: player.id, offset: player.position - fraction })
-    } else {
-      grabs.current.set(event.pointerId, { id: player.id, offset: 0 })
-      applyTarget(player.id, fraction)
-    }
+    targetFromPointer(event)
   }
 
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const held = grabs.current.get(event.pointerId)
-    if (!held || !primaryPlayer) return
-    if (event.pointerType === 'mouse' && event.buttons === 0) {
-      grabs.current.delete(event.pointerId)
-      return
-    }
-    const player = state.players[held.id]
-    if (!player) return
-    applyTarget(held.id, axisFraction(event, player.side, primaryPlayer.side) + held.offset)
-  }
-
-  const endPointer = (event: React.PointerEvent<HTMLDivElement>) => { grabs.current.delete(event.pointerId) }
-
+  const teams = Object.values(state.players).map((player) => ({
+    player,
+    score: state.scores[player.team] ?? 0,
+    local: props.localPlayerIds.includes(player.id),
+    identity: seatIdentityForColor(player.color),
+  })).sort((a, b) => Number(a.local) - Number(b.local))
   const countdown = countdownValue(state)
-  const winner = state.winnerTeam ? teams.find((team) => team.team === state.winnerTeam) : undefined
-  const servingPlayer = state.servingPlayerId ? state.players[state.servingPlayerId] : undefined
-  const servingLocalIndex = servingPlayer ? localPlayers.findIndex((player) => player.id === servingPlayer.id) : -1
-  const servingIsLocal = servingLocalIndex >= 0
-  const servingSeat = servingPlayer ? seatIdentityForColor(servingPlayer.color) : null
-  const serveHeading = servingPlayer
-    ? servingIsLocal
-      ? localPlayers.length > 1
-        ? `${servingPlayer.name} serves · move to aim`
-        : 'Your serve · move to aim'
-      : `${servingPlayer.name} serves`
-    : null
-  const abilityStatus = (player: PlayerState) => {
-    const cooled = player.cooldownTicks <= 0
-    const available = state.phase === 'playing'
-      && state.serveTicks <= 0
-    return {
-      ready: cooled && available,
-      waiting: cooled && !available,
-      // Fills toward ready against the skill's real shared cooldown.
-      progress: Math.min(1, Math.max(0, 1 - player.cooldownTicks / ABILITY_COOLDOWNS[player.ability])),
-      seconds: Math.ceil(player.cooldownTicks / TICK_RATE),
-    }
-  }
-  const tallDuel = state.config.mode === 'duel'
-    && (!primaryPlayer || primaryPlayer.side === 'top' || primaryPlayer.side === 'bottom')
+  const winner = Object.values(state.players).find((player) => player.team === state.winnerTeam)
+  const topLocal = localPlayers.length > 1 ? localPlayers.find((player) => player.side === 'top') : undefined
 
   return (
-    <section className="pg-game-layout" aria-label="Pong match">
-      <div className="pg-game-topbar">
-        <div className="pg-game-title">
-          <strong>{props.title}</strong>
-          <span className="pg-visually-hidden">{props.subtitle}</span>
-        </div>
-        <button className="pg-match-exit" onClick={props.onExit} aria-label="Exit match">Exit</button>
-      </div>
+    <section className="pg-match" aria-label="Pal Duel match">
+      <header className="pg-match__topbar">
+        <div><strong>{props.title}</strong><span>{props.subtitle}</span></div>
+        <button onClick={props.onExit}>Exit</button>
+      </header>
 
-      {/*
-        The scoreboard lives *above* the court, not on it.
-        Floating it inside the canvas cost two things at once: in Arena and
-        Crosscourt the pill sits exactly over the top wall, so it hid the top
-        player's paddle — `PADDLE_OFFSET` is 0.045 of the court, which on an
-        820px board is 37px, well inside a 12px-inset pill — and a translucent
-        chip over a surface that ranges from near-black to full-bright lime
-        loses contrast precisely when a rally is at its most intense.
-      */}
-      <div className={`pg-hud-bar${tallDuel ? ' pg-hud-bar--tall-duel' : ''}`}>
-        <div className={`pg-scoreboard pg-scoreboard--${teams.length}`}>
-          {teams.map((team) => (
-            <div
-              key={team.team}
-              className={`pg-score${team.isLocal ? ' pg-score--you' : ''}`}
-              style={{ ['--pg-score-color' as string]: team.hex }}
-            >
-              <span className={`pg-seat-mark pg-seat-mark--${team.pattern}`} aria-hidden="true" />
-              <span className="pg-score__name">{team.label}</span>
-              <b className="pg-score__value">{team.score}</b>
+      {topLocal && <PalTray state={state} player={topLocal} top onSummon={(type) => props.onSummon(topLocal.id, type)} />}
+
+      <div className="pg-match__hud">
+        <div className="pg-duel-score">
+          {teams.map(({ player, score, local, identity }) => (
+            <div key={player.id} className={local ? 'is-you' : ''} style={{ ['--seat-color' as string]: identity.hex }}>
+              <span>{local ? (localPlayers.length > 1 ? player.side === 'bottom' ? 'P1' : 'P2' : 'YOU') : player.name}</span><b>{score}</b>
             </div>
           ))}
         </div>
-
-        {/*
-          The rally counter. `heat` has been brightening the court for a while
-          with nothing behind it — this is the number that escalation is now
-          actually worth, so it sits next to the score rather than on the court.
-        */}
-        <div
-          className={`pg-rally${(state.rallyHits ?? 0) >= RALLY_STEPS[0]!.hits ? ' is-hot' : ''}`}
-          title={`Rally length. Past ${RALLY_STEPS.map((step) => step.hits).join(' and ')} hits the point is worth more.`}
-        >
-          <span className="pg-rally__label">rally</span>
-          <b className="pg-rally__value">{state.rallyHits ?? 0}</b>
-          {rallyMultiplierForHits(state.rallyHits ?? 0) > 1 && (
-            <span className="pg-rally__multiplier">×{rallyMultiplierForHits(state.rallyHits ?? 0)}</span>
-          )}
-        </div>
-
-        <div className={`pg-timer${state.overtime ? ' pg-timer--overtime' : ''}`}>
-          {state.overtime
-            ? 'OVERTIME'
-            : `${Math.floor(secondsRemaining(state) / 60)}:${String(secondsRemaining(state) % 60).padStart(2, '0')}`}
-        </div>
-
-        {/* The canvas is unreadable to assistive tech, so the score lives here too. */}
-        <p className="pg-visually-hidden" aria-live="polite">
-          {teams.map((team) => `${team.label} ${team.score}`).join(', ')}
-          {state.overtime ? ', overtime' : ''}
-        </p>
+        <div className={`pg-match-clock${state.overtime ? ' is-overtime' : ''}`}>{secondsLabel(state)}</div>
+        <div className={`pg-rally-chip${state.rallyHits >= 8 ? ' is-hot' : ''}`}><span>RALLY</span><b>{state.rallyHits}</b></div>
+        {props.network && props.network.quality !== 'good' && (
+          <div className={`pg-network pg-network--${props.network.quality}`} title={`Median ${props.network.latencyMs ?? '—'}ms · p95 ${props.network.latencyP95Ms ?? '—'}ms · jitter ${props.network.jitterMs ?? '—'}ms`}>
+            {props.network.quality === 'poor' ? 'Connection struggling' : `${props.network.latencyMs ?? '—'}ms`}
+          </div>
+        )}
       </div>
 
       <div
         ref={mountRef}
-        className={`pg-canvas-wrap${tallDuel ? ' pg-canvas-wrap--tall-duel' : ''}`}
+        className="pg-canvas-wrap pg-canvas-wrap--pal-duel"
         data-phase={state.phase}
         onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endPointer}
-        onPointerCancel={endPointer}
+        onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) targetFromPointer(event) }}
       >
-        <div className="pg-hud">
-          {moment && <div className={`pg-moment pg-moment--${moment.kind}`} key={moment.tick} aria-hidden="true">{moment.label}</div>}
-          {state.powerUp && state.powerUp.ageTicks < 120 && (
-            <div className="pg-powerup-callout" key={`${state.powerUp.id}-${state.tick - state.powerUp.ageTicks}`} aria-hidden="true">
-              <strong style={{ color: POWER_UP_IDENTITIES[state.powerUp.id].hex }}>{POWER_UP_IDENTITIES[state.powerUp.id].label}</strong>
-              <span>Hit the orb · {POWER_UP_IDENTITIES[state.powerUp.id].effect}</span>
-            </div>
-          )}
-          {serveHeading && state.serveTicks > 0 && state.phase === 'playing' && (
-            <div
-              className="pg-serve-guide"
-              role="status"
-              style={{ ['--pg-serve-color' as string]: servingSeat?.hex ?? '#fffdf7' }}
-            >
-              <strong>{serveHeading}</strong>
-              <span>{servingIsLocal ? 'Your paddle position sets the launch direction.' : 'Watch their paddle—their position sets the launch direction.'}</span>
-            </div>
-          )}
-          {countdown !== null && primaryPlayer && (
-            <div className="pg-view-guide">
-              {localPlayers.length > 1
-                ? <><strong>↓ P1 · DRAG BOTTOM · A/D + SPACE</strong><span>P2 · DRAG TOP · ARROWS + ENTER ↑</span></>
-                : <><strong>↓ YOU · BOTTOM PADDLE</strong><span>Drag or use A/D · centre hits fly faster · Space uses {ABILITY_COPY[primaryPlayer.ability].label}.</span></>}
-            </div>
-          )}
-          {countdown !== null && (
-            <div className="pg-countdown" key={countdown} aria-hidden="true">{countdown}</div>
-          )}
-          {countdown === null && servePrompt && state.phase === 'playing' && (
-            <div className="pg-countdown pg-countdown--go" aria-hidden="true">GO</div>
-          )}
-
-          {state.phase === 'finished' && (
-            <div className="pg-game-message">
-              <div className="pg-game-message__card">
-                <p className="pg-kicker">Match complete</p>
-                <h2>{winner?.label ?? state.winnerTeam} wins</h2>
-                <div className="pg-result-scores">
-                  {teams.map((team) => (
-                    <div key={team.team} className="pg-result-score" style={{ ['--pg-score-color' as string]: team.hex }}>
-                      <b>{team.score}</b>
-                      <span>{team.label}</span>
-                    </div>
-                  ))}
-                </div>
-                {primaryPlayer && (
-                  <p className="pg-result-line">
-                    {primaryPlayer.returns} returns · {primaryPlayer.perfectReturns} perfect · longest rally {state.longestRallyHits ?? 0}
-                  </p>
-                )}
-                <div className="pg-button-row">
-                  {props.onRematch && <button className="pg-primary-button" onClick={props.onRematch}>Rematch</button>}
-                  <button className="pg-secondary-button" onClick={props.onExit}>Home</button>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="pg-court-ui" aria-hidden="true">
+          {moment && <div className="pg-moment" key={moment}>{moment}</div>}
+          {coach && <div className="pg-coach"><span>PAL COACH</span><strong>{coach}</strong></div>}
+          {countdown !== null && <div className="pg-countdown" key={countdown}>{countdown}</div>}
+          {state.phase === 'playing' && state.serveTicks > 0 && <div className="pg-serve-callout">{state.servingPlayerId === primaryPlayer?.id ? 'YOUR SERVE · paddle position aims it' : 'THEIR SERVE'}</div>}
         </div>
       </div>
 
-      <div className="pg-controls">
-        <div className={`pg-ability-stack${localPlayers.length > 1 ? ' pg-ability-stack--two' : ''}`}>
-          {localPlayers.map((player, index) => {
-            const status = abilityStatus(player)
-            const copy = ABILITY_COPY[player.ability]
-            const position = index === 0 ? 'bottom' : 'top'
-            return (
-              <button
-                key={player.id}
-                className={`pg-ability-button${status.ready ? ' is-ready' : ''}`}
-                style={{
-                  ['--pg-ability-progress' as string]: `${Math.round(status.progress * 100)}%`,
-                  ['--pg-seat-color' as string]: seatIdentityForColor(player.color).hex,
-                }}
-                aria-label={`${player.name}, ${position}: ${copy.action} ${status.ready ? 'Ready now' : status.waiting ? 'Wait for the ball to launch' : `Ready in ${status.seconds} seconds`}`}
-                title={copy.action}
-                type="button"
-                disabled={!status.ready}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); void audio.unlock(); usePlayerAbility(player.id) }}
-              >
-                <span className="pg-ability-button__glyph" aria-hidden="true">{ABILITY_GLYPH[player.ability]}</span>
-                <span className="pg-ability-button__copy">
-                  <span className="pg-ability-button__eyebrow">{localPlayers.length > 1 ? `${player.name} · ${position}` : 'Skill'}</span>
-                  <span className="pg-ability-button__name">{copy.label}</span>
-                </span>
-                <span className="pg-ability-button__state">{status.ready ? 'READY' : status.waiting ? 'WAIT' : `${status.seconds}s`}</span>
-              </button>
-            )
-          })}
+      {primaryPlayer && <PalTray state={state} player={primaryPlayer} onSummon={(type) => props.onSummon(primaryPlayer.id, type)} />}
+
+      {state.phase === 'finished' && (
+        <div className="pg-result-overlay">
+          <div className="pg-result-card">
+            <p className="pg-kicker">Match complete</p>
+            <h2>{resultLabel(state, primaryPlayer)}</h2>
+            <p>{winner?.name} takes the duel.</p>
+            {primaryPlayer && <div className="pg-result-stats"><span><b>{primaryPlayer.returns}</b> paddle returns</span><span><b>{primaryPlayer.palHits}</b> Pal saves</span><span><b>{state.longestRallyHits}</b> best rally</span></div>}
+            <div className="pg-button-row">
+              {props.onRematch && <button className="pg-primary-button" onClick={props.onRematch}>Rematch</button>}
+              <button className="pg-secondary-button" onClick={props.onExit}>Home</button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </section>
   )
 }

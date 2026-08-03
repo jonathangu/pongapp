@@ -1,10 +1,8 @@
 import {
-  AI_DIFFICULTY_LABEL,
   aiInputs,
   buildMatchConfig,
   createAiMemory,
   createGame,
-  normalizeGameState,
   restartGame,
   stepGame,
   type AiControllerMemory,
@@ -27,7 +25,7 @@ import type { StoredParticipant, StoredRoomRecord } from './persistence'
 interface InternalParticipant extends StoredParticipant {}
 
 const RECONNECT_GRACE_MS = 20_000
-const snapshotEveryTicks = (state: GameState): number => state.config.mode === 'duel' ? 2 : 3
+const SNAPSHOT_EVERY_TICKS = 2
 
 export class GameRoom {
   private readonly participants = new Map<string, InternalParticipant>()
@@ -45,15 +43,14 @@ export class GameRoom {
     if (restored) {
       for (const restoredParticipant of restored.participants) {
         const participant = structuredClone(restoredParticipant)
-        if (!participant.isAi) {
-          participant.connected = false
-          participant.disconnectedAt = Date.now()
-        }
+        participant.connected = false
+        participant.disconnectedAt = Date.now()
         this.participants.set(participant.id, participant)
       }
-      this.game = restored.game ? normalizeGameState(structuredClone(restored.game)) : null
-    } else {
-      this.addAiParticipants()
+      this.game = restored.game?.rulesetVersion === 2 ? structuredClone(restored.game) : null
+      if (this.game) {
+        for (const player of Object.values(this.game.players)) player.isAi = true
+      }
     }
     if (this.game && this.game.phase !== 'finished') this.startLoop()
   }
@@ -79,6 +76,13 @@ export class GameRoom {
   private async handleRawMessage(socket: WebSocket, raw: string): Promise<void> {
     const parsed = parseWireMessage(raw)
     if (!parsed) {
+      try {
+        const candidate = JSON.parse(raw) as { type?: unknown; version?: unknown }
+        if (candidate.type === 'hello' && candidate.version !== PROTOCOL_VERSION) {
+          this.send(socket, { type: 'error', code: 'refresh_required', message: 'PongApp was upgraded. Refresh to play Pal Duel.', recoverable: false })
+          return
+        }
+      } catch { /* invalid JSON uses the normal message below */ }
       this.send(socket, { type: 'error', code: 'invalid_message', message: 'That room message was invalid.', recoverable: true })
       return
     }
@@ -104,66 +108,47 @@ export class GameRoom {
     if (!participant) return
     participant.connected = false
     participant.disconnectedAt = Date.now()
+    const player = this.game?.players[participant.id]
+    if (player && this.game?.phase !== 'finished') {
+      player.isAi = true
+      player.aiDifficulty = 'rally'
+    }
     this.transferHost()
     await this.persist()
     this.broadcastLobby()
-  }
-
-  private addAiParticipants(): void {
-    const maximum = this.config.mode === 'duel' ? 2 : 4
-    const count = Math.min(this.config.aiSlots, maximum - 1)
-    for (let index = maximum - count; index < maximum; index += 1) {
-      const id = `ai-${index + 1}`
-      this.participants.set(id, {
-        id,
-        guestId: id,
-        profileId: null,
-        displayName: count > 1
-          ? `${AI_DIFFICULTY_LABEL[this.config.aiDifficulty]} ${index + 1}`
-          : AI_DIFFICULTY_LABEL[this.config.aiDifficulty],
-        ability: ['dash', 'bend', 'pulse', 'dash'][index] as InternalParticipant['ability'],
-        slot: index,
-        isHost: false,
-        isAi: true,
-        isReady: true,
-        connected: true,
-        reconnectToken: '',
-        lastSeq: 0,
-        lastTarget: 0.5,
-        disconnectedAt: null,
-      })
-    }
   }
 
   private cleanupDisconnected(): void {
     if (this.game?.phase === 'playing') return
     const cutoff = Date.now() - RECONNECT_GRACE_MS
     for (const [id, participant] of this.participants) {
-      if (!participant.isAi && !participant.connected && participant.disconnectedAt && participant.disconnectedAt < cutoff) this.participants.delete(id)
+      if (!participant.connected && participant.disconnectedAt && participant.disconnectedAt < cutoff) this.participants.delete(id)
     }
     this.transferHost()
   }
 
   private async handleHello(socket: WebSocket, message: Extract<ClientMessage, { type: 'hello' }>): Promise<void> {
     this.cleanupDisconnected()
-    const reconnect = [...this.participants.values()].find((participant) =>
-      !participant.isAi && participant.guestId === message.guestId && Boolean(message.reconnectToken) && participant.reconnectToken === message.reconnectToken,
+    let participant = [...this.participants.values()].find((candidate) =>
+      candidate.guestId === message.guestId
+      && Boolean(message.reconnectToken)
+      && candidate.reconnectToken === message.reconnectToken,
     )
-    let participant = reconnect
     if (participant) {
       participant.connected = true
       participant.disconnectedAt = null
       participant.displayName = message.displayName
-      participant.ability = message.ability
-      if (this.game?.players[participant.id]) this.game.players[participant.id]!.isAi = false
+      const player = this.game?.players[participant.id]
+      if (player) {
+        player.isAi = false
+        player.aiDifficulty = undefined
+      }
     } else {
-      const maxPlayers = this.config.mode === 'duel' ? 2 : 4
       const usedSlots = new Set([...this.participants.values()].map((candidate) => candidate.slot).filter((slot): slot is number => slot !== null))
       let slot: number | null = null
       if (message.role !== 'spectator') {
-        for (let index = 0; index < maxPlayers; index += 1) {
-          if (!usedSlots.has(index)) { slot = index; break }
-        }
+        if (!usedSlots.has(0)) slot = 0
+        else if (!usedSlots.has(1)) slot = 1
       }
       const id = crypto.randomUUID()
       participant = {
@@ -171,11 +156,9 @@ export class GameRoom {
         guestId: message.guestId,
         profileId: null,
         displayName: message.displayName,
-        ability: message.ability,
         slot,
-        isHost: ![...this.participants.values()].some((candidate) => candidate.isHost && !candidate.isAi),
+        isHost: ![...this.participants.values()].some((candidate) => candidate.isHost),
         isAi: false,
-        isReady: false,
         connected: true,
         reconnectToken: crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''),
         lastSeq: 0,
@@ -200,31 +183,29 @@ export class GameRoom {
     })
     if (this.game) this.send(socket, { type: 'snapshot', serverTick: this.game.tick, acknowledgedSeq: participant.lastSeq, state: this.game })
     this.broadcastLobby()
+    await this.maybeStart()
   }
 
   private async handleParticipantMessage(socket: WebSocket, participant: InternalParticipant, message: ClientMessage): Promise<void> {
-    if (message.type === 'ready' && participant.slot !== null && !participant.isAi) {
-      participant.isReady = message.ready
-      await this.persist()
-      this.broadcastLobby()
-      await this.maybeStart()
-    } else if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
+    if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
       participant.lastSeq = message.seq
       participant.lastTarget = message.target
-      // A skill tap is an edge, while steering packets are continuous. A
-      // regular input packet can arrive after the tap but before the next
-      // server tick, so latch the edge until stepGame consumes it instead of
-      // allowing that newer steering packet to erase the press.
       this.inputs[participant.id] = {
         target: message.target,
-        abilityPressed: message.abilityPressed || this.inputs[participant.id]?.abilityPressed === true,
+        summon: message.summon ?? this.inputs[participant.id]?.summon ?? null,
       }
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
-    } else if (message.type === 'rematch' && participant.isHost && this.game?.phase === 'finished') {
+    } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
       this.game = restartGame(this.game, Date.now() >>> 0)
       this.aiMemory = createAiMemory()
-      for (const candidate of this.participants.values()) if (!candidate.isAi && candidate.slot !== null) candidate.isReady = true
+      for (const candidate of this.participants.values()) {
+        const player = this.game.players[candidate.id]
+        if (player) {
+          player.isAi = !candidate.connected
+          player.aiDifficulty = candidate.connected ? undefined : 'rally'
+        }
+      }
       await this.persist()
       this.startLoop()
       this.broadcastLobby()
@@ -236,18 +217,12 @@ export class GameRoom {
 
   private async maybeStart(): Promise<void> {
     if (this.game) return
-    const players = [...this.participants.values()].filter((participant) => participant.slot !== null)
-    const humans = players.filter((participant) => !participant.isAi && participant.connected)
-    const required = this.config.mode === 'duel' ? 2 : this.config.mode === 'arena' ? 3 : 4
-    if (players.length < required || humans.length === 0 || humans.some((participant) => !participant.isReady)) return
-    const orderedHumans = humans.sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
+    const players = [...this.participants.values()]
+      .filter((participant) => participant.slot !== null && participant.connected)
+      .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
+    if (players.length < 2) return
     this.game = createGame(buildMatchConfig({
-      mode: this.config.mode,
-      humanPlayers: orderedHumans.map((candidate) => ({ id: candidate.id, name: candidate.displayName, ability: candidate.ability })),
-      totalPlayers: this.config.mode === 'arena' ? Math.min(4, players.length) : required,
-      aiDifficulty: this.config.aiDifficulty,
-      itemIntensity: this.config.itemIntensity,
-      mutator: this.config.mutator ?? 'none',
+      humanPlayers: players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
       seed: Date.now() >>> 0,
     }))
     this.aiMemory = createAiMemory()
@@ -259,26 +234,17 @@ export class GameRoom {
 
   private startLoop(): void {
     if (this.loop) return
-    this.loop = setInterval(() => this.tick(), 1000 / 60)
+    this.loop = setInterval(() => void this.tick(), 1000 / 60)
   }
 
-  private tick(): void {
+  private async tick(): Promise<void> {
     if (!this.game) return
-    for (const participant of this.participants.values()) {
-      if (!participant.isAi && !participant.connected && participant.disconnectedAt && Date.now() - participant.disconnectedAt >= 2000) {
-        const player = this.game.players[participant.id]
-        if (player) {
-          player.isAi = true
-          player.aiDifficulty = this.config.aiDifficulty
-        }
-      }
-    }
-    const mergedInputs = { ...aiInputs(this.game, this.aiMemory), ...this.inputs }
-    stepGame(this.game, mergedInputs)
-    for (const input of Object.values(this.inputs)) input.abilityPressed = false
-    if (this.game.tick % snapshotEveryTicks(this.game) === 0 || this.game.events.length > 0) this.broadcastSnapshot()
-    for (const event of this.game.events) this.broadcast({ type: 'event', event })
-    if (this.game.tick % 60 === 0 || this.game.phase === 'finished') void this.persist()
+    const automatic = aiInputs(this.game, this.aiMemory)
+    stepGame(this.game, { ...this.inputs, ...automatic })
+    for (const input of Object.values(this.inputs)) input.summon = null
+    const important = this.game.events.length > 0
+    if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
+    if (important || this.game.tick % 60 === 0) await this.persist()
     if (this.game.phase === 'finished') {
       if (this.loop) clearInterval(this.loop)
       this.loop = null
@@ -287,33 +253,34 @@ export class GameRoom {
     }
   }
 
-  private transferHost(): void {
-    const connected = [...this.participants.values()]
-      .filter((participant) => !participant.isAi && participant.connected)
-      .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
-    if (connected.some((participant) => participant.isHost)) return
-    for (const participant of this.participants.values()) participant.isHost = false
-    if (connected[0]) connected[0].isHost = true
-  }
-
   private publicParticipant(participant: InternalParticipant): RoomParticipant {
-    const { id, profileId, displayName, ability, slot, isHost, isAi, isReady, connected } = participant
-    return { id, profileId, displayName, ability, slot, isHost, isAi, isReady, connected }
+    const { id, profileId, displayName, slot, isHost, isAi, connected } = participant
+    return { id, profileId, displayName, slot, isHost, isAi, connected }
   }
 
   private lobby(): RoomLobby {
     return {
       roomCode: this.config.roomCode,
-      mode: this.config.mode,
-      itemIntensity: this.config.itemIntensity,
-      mutator: this.config.mutator ?? 'none',
-      aiDifficulty: this.config.aiDifficulty,
-      aiSlots: this.config.aiSlots,
-      participants: [...this.participants.values()]
-        .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
-        .map((participant) => this.publicParticipant(participant)),
+      participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
     }
+  }
+
+  private transferHost(): void {
+    const current = [...this.participants.values()].find((candidate) => candidate.isHost && candidate.connected)
+    if (current) return
+    for (const candidate of this.participants.values()) candidate.isHost = false
+    const replacement = [...this.participants.values()].find((candidate) => candidate.connected)
+    if (replacement) replacement.isHost = true
+  }
+
+  private async persist(): Promise<void> {
+    await this.onPersist({
+      config: this.config,
+      participants: [...this.participants.values()].map((participant) => structuredClone(participant)),
+      game: this.game ? structuredClone(this.game) : null,
+      updatedAt: Date.now(),
+    })
   }
 
   private broadcastLobby(): void {
@@ -333,16 +300,6 @@ export class GameRoom {
   }
 
   private send(socket: WebSocket, message: ServerMessage): void {
-    if (socket.readyState !== socket.OPEN) return
-    try { socket.send(encodeServerMessage(message)) } catch { /* close/error owns cleanup */ }
-  }
-
-  private persist(): Promise<void> {
-    return this.onPersist({
-      config: this.config,
-      participants: [...this.participants.values()],
-      game: this.game,
-      updatedAt: Date.now(),
-    })
+    try { socket.send(encodeServerMessage(message)) } catch { /* close owns cleanup */ }
   }
 }

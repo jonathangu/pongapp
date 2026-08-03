@@ -19,7 +19,7 @@ export interface StoredRoomRecord {
 }
 
 interface RoomDatabase {
-  version: 1
+  version: 2
   rooms: Record<string, StoredRoomRecord>
 }
 
@@ -32,7 +32,9 @@ export class FileRoomStore {
   async load(): Promise<Map<string, StoredRoomRecord>> {
     try {
       const parsed = JSON.parse(await readFile(this.path, 'utf8')) as Partial<RoomDatabase>
-      if (parsed.version !== 1 || !parsed.rooms) throw new Error('Unsupported room database format')
+      // v2 is intentionally a hard ruleset cut. Ignore persisted v1 rooms so
+      // the server can boot cleanly on the existing Fly volume.
+      if (parsed.version !== 2 || !parsed.rooms) return new Map()
       for (const [code, record] of Object.entries(parsed.rooms)) this.records.set(code, record)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -42,7 +44,7 @@ export class FileRoomStore {
 
   save(code: string, record: StoredRoomRecord): Promise<void> {
     this.records.set(code, structuredClone(record))
-    const database: RoomDatabase = { version: 1, rooms: Object.fromEntries(this.records) }
+    const database: RoomDatabase = { version: 2, rooms: Object.fromEntries(this.records) }
     const payload = JSON.stringify(database)
     const temporaryPath = `${this.path}.next`
     this.writeQueue = this.writeQueue.catch((error: unknown) => {

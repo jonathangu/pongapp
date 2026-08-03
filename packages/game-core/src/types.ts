@@ -1,22 +1,13 @@
-export const SIDES = ['left', 'right', 'top', 'bottom'] as const
+export const SIDES = ['top', 'bottom'] as const
 export type Side = (typeof SIDES)[number]
 
-export const GAME_MODES = ['duel', 'arena', 'crosscourt'] as const
-export type GameMode = (typeof GAME_MODES)[number]
-
-export const ABILITIES = ['dash', 'bend', 'guard', 'pulse'] as const
-export type AbilityId = (typeof ABILITIES)[number]
-
-export const POWER_UPS = ['grow', 'overdrive', 'multiball', 'warp', 'gravity'] as const
-export type PowerUpId = (typeof POWER_UPS)[number]
+export const PAL_TYPES = ['guard', 'striker', 'captain'] as const
+export type PalType = (typeof PAL_TYPES)[number]
+export type ActivePalType = PalType | 'hatchling'
 
 export const AI_DIFFICULTIES = ['rookie', 'rally', 'pro', 'ace'] as const
 export type AiDifficulty = (typeof AI_DIFFICULTIES)[number]
 
-export const MATCH_MUTATORS = ['none', 'bigBall', 'noWalls', 'doublePoints', 'mirroredControls'] as const
-export type MatchMutator = (typeof MATCH_MUTATORS)[number]
-
-export type ItemIntensity = 'off' | 'standard' | 'wild'
 export type GamePhase = 'countdown' | 'playing' | 'finished'
 
 export interface PlayerDefinition {
@@ -24,92 +15,77 @@ export interface PlayerDefinition {
   name: string
   side: Side
   team: string
-  ability: AbilityId
   isAi: boolean
   aiDifficulty?: AiDifficulty
   color: number
 }
 
 export interface MatchConfig {
-  mode: GameMode
   players: PlayerDefinition[]
-  itemIntensity: ItemIntensity
-  mutator: MatchMutator
   scoreToWin: number
   timeLimitTicks: number
+  /** Physical longitudinal length measured in court widths. */
+  courtLengthScale: number
   seed: number
 }
 
 export interface PlayerState extends PlayerDefinition {
   position: number
   velocity: number
-  cooldownTicks: number
-  growTicks: number
-  bendTicks: number
-  guardTicks: number
-  pulseTicks: number
-  overdriveHits: number
   returns: number
   perfectReturns: number
-  abilityUses: number
+  palEnergy: number
+  palEnergyProgressTicks: number
+  palsSummoned: number
+  palHits: number
 }
 
 export interface BallState {
   id: string
   x: number
   y: number
+  /** Velocity is expressed in physical court-width units per second. */
   vx: number
   vy: number
   radius: number
   spin: number
   lastToucherId: string | null
-  warpCooldownTicks: number
-  transientTicks: number | null
 }
 
-export interface PowerUpState {
-  id: PowerUpId
-  x: number
-  y: number
-  vx: number
-  vy: number
-  ageTicks: number
-}
-
-/** A one-hit defensive helper created by the Summon skill (`dash` on the wire). */
-export interface SummonedPaddleState {
+export interface PalState {
   id: string
   ownerId: string
   side: Side
+  type: ActivePalType
+  anchor: number
   position: number
+  /** Distance from the owner's goal line in normalized screen coordinates. */
   depth: number
   phase: number
+  spawnedAtTick: number
+  armedAtTick: number
   expiresAtTick: number
-}
-
-export interface WorldEffects {
-  warpTicks: number
-  gravityTicks: number
+  parentId: string | null
 }
 
 export type ShotType = 'return' | 'perfect' | 'drive' | 'cut' | 'drop'
+export type EnergyReason = 'regen' | 'perfect' | 'comeback' | 'spent' | 'overtime'
 
 export type GameEvent =
   | { type: 'matchStart' }
   | { type: 'countdown'; value: number }
-  | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number; shot?: ShotType }
-  | { type: 'score'; scorerId: string | null; team: string; againstPlayerId: string; ballId: string; points: number; rallyHits: number }
-  | { type: 'rallyHot'; hits: number; multiplier: number }
-  | { type: 'ability'; playerId: string; ability: AbilityId; fromPosition: number; toPosition: number }
-  | { type: 'summonHit'; playerId: string; summonId: string; ballId: string; x: number; y: number }
-  | { type: 'powerUpSpawn'; powerUp: PowerUpState }
-  | { type: 'powerUp'; playerId: string | null; powerUp: PowerUpId }
-  | { type: 'shield'; playerId: string; ballId: string }
-  | { type: 'warp'; ballId: string }
+  | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number; shot: ShotType }
+  | { type: 'score'; scorerId: string; team: string; againstPlayerId: string; ballId: string; points: 1; rallyHits: number }
+  | { type: 'rallyHot'; hits: number; level: 'hot' | 'blazing' }
+  | { type: 'palSummoned'; playerId: string; pal: PalState }
+  | { type: 'palArmed'; playerId: string; palId: string; palType: ActivePalType; x: number; y: number }
+  | { type: 'palHit'; playerId: string; palId: string; palType: ActivePalType; ballId: string; x: number; y: number }
+  | { type: 'palExpired'; playerId: string; palId: string; palType: ActivePalType; reason: 'timeout' | 'goal' }
+  | { type: 'energyChanged'; playerId: string; energy: number; reason: EnergyReason }
   | { type: 'matchEnd'; winnerTeam: string }
 
 export interface GameState {
-  rulesetVersion: 1
+  rulesetVersion: 2
   config: MatchConfig
   phase: GamePhase
   tick: number
@@ -123,11 +99,8 @@ export interface GameState {
   freezeTicks: number
   players: Record<string, PlayerState>
   balls: BallState[]
-  summonedPaddles: SummonedPaddleState[]
+  pals: PalState[]
   scores: Record<string, number>
-  powerUp: PowerUpState | null
-  powerUpSpawnTicks: number
-  worldEffects: WorldEffects
   winnerTeam: string | null
   rngState: number
   events: GameEvent[]
@@ -135,7 +108,7 @@ export interface GameState {
 
 export interface GameInput {
   target: number
-  abilityPressed: boolean
+  summon: PalType | null
 }
 
 export type InputMap = Record<string, GameInput | undefined>
