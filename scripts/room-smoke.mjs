@@ -1,4 +1,5 @@
 const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
+const PROTOCOL_VERSION = 2
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)
@@ -28,10 +29,10 @@ async function connect(roomCode, index) {
   socket.addEventListener('message', (event) => {
     const message = JSON.parse(String(event.data))
     client.messages.push(message)
-    for (let index = client.waiters.length - 1; index >= 0; index -= 1) {
-      const waiter = client.waiters[index]
+    for (let waiterIndex = client.waiters.length - 1; waiterIndex >= 0; waiterIndex -= 1) {
+      const waiter = client.waiters[waiterIndex]
       if (!waiter.predicate(message)) continue
-      client.waiters.splice(index, 1)
+      client.waiters.splice(waiterIndex, 1)
       waiter.resolve(message)
     }
   })
@@ -41,31 +42,26 @@ async function connect(roomCode, index) {
   })
   socket.send(JSON.stringify({
     type: 'hello',
-    version: 1,
+    version: PROTOCOL_VERSION,
     guestId: `smoke-player-${index + 1}`,
     displayName: name,
-    ability: ['dash', 'bend', 'guard'][index],
     role: 'player',
   }))
   const welcome = await waitFor(client, (message) => message.type === 'welcome')
+  invariant(welcome.version === PROTOCOL_VERSION, `${name} received the wrong protocol`)
   invariant(welcome.participant.slot === index, `${name} did not receive slot ${index}`)
+  client.playerId = welcome.participant.id
   return client
 }
 
 const health = await fetch(new URL('/api/health', serverUrl)).then((response) => response.json())
 invariant(health.status === 'ok', 'Room server health check failed')
+invariant(health.protocol === PROTOCOL_VERSION, `Expected protocol ${PROTOCOL_VERSION}, received ${health.protocol}`)
 
 const createResponse = await fetch(new URL('/api/rooms', serverUrl), {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({
-    mode: 'arena',
-    itemIntensity: 'wild',
-    aiDifficulty: 'pro',
-    aiSlots: 1,
-    hostName: 'Player 1',
-    hostAbility: 'dash',
-  }),
+  body: JSON.stringify({ hostName: 'Player 1' }),
 })
 invariant(createResponse.status === 201, `Room creation failed with ${createResponse.status}`)
 const { roomCode } = await createResponse.json()
@@ -74,25 +70,34 @@ invariant(/^[A-Z2-9]{6}$/.test(roomCode), 'Room code was invalid')
 const clients = []
 let completed = false
 try {
-  for (let index = 0; index < 3; index += 1) clients.push(await connect(roomCode, index))
-  for (const client of clients) client.socket.send(JSON.stringify({ type: 'ready', ready: true }))
+  clients.push(await connect(roomCode, 0))
+  clients.push(await connect(roomCode, 1))
 
-  const snapshot = await waitFor(clients[0], (message) => message.type === 'snapshot' && message.state.phase === 'playing', 15_000)
+  const snapshot = await waitFor(
+    clients[0],
+    (message) => message.type === 'snapshot' && message.state.phase === 'playing',
+    15_000,
+  )
   const players = Object.values(snapshot.state.players)
-  invariant(players.length === 4, `Expected a four-player Arena, received ${players.length}`)
-  invariant(players.filter((player) => player.isAi).length === 1, 'Expected exactly one AI player')
-  invariant(players.filter((player) => !player.isAi).length === 3, 'Expected exactly three human players')
+  invariant(players.length === 2, `Expected a two-player duel, received ${players.length}`)
+  invariant(players.every((player) => !player.isAi), 'Expected exactly two human players')
 
-  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, target: 0.2, abilityPressed: true }))
-  const acknowledged = await waitFor(clients[0], (message) => message.type === 'snapshot' && message.acknowledgedSeq === 1)
-  invariant(acknowledged.serverTick > snapshot.serverTick, 'Server did not advance after input')
+  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, target: 0.2, summon: 'guard' }))
+  const summoned = await waitFor(
+    clients[0],
+    (message) => message.type === 'snapshot'
+      && message.acknowledgedSeq >= 1
+      && message.state.pals.some((pal) => pal.ownerId === clients[0].playerId && pal.type === 'guard'),
+  )
+  const owner = summoned.state.players[clients[0].playerId]
+  invariant(owner.palEnergy === 0, `Guard did not spend two energy; player has ${owner.palEnergy}`)
 
   const sentAt = Date.now()
   clients[0].socket.send(JSON.stringify({ type: 'ping', sentAt }))
   const pong = await waitFor(clients[0], (message) => message.type === 'pong' && message.sentAt === sentAt)
   invariant(pong.serverAt >= sentAt, 'Pong timestamp was invalid')
 
-  console.log(`room-smoke ok: ${roomCode}, 3 humans + 1 AI, input acknowledged at tick ${acknowledged.serverTick}`)
+  console.log(`room-smoke ok: ${roomCode}, 2 humans auto-started, Guard summoned at tick ${summoned.serverTick}`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')

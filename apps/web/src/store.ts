@@ -1,10 +1,9 @@
-import type { AbilityId, GameState } from '@pongapp/game-core'
+import type { GameState } from '@pongapp/game-core'
 import type { CourtEffectsSettings } from './game/PixiCourt'
 
 export interface GuestProfile {
   id: string
   name: string
-  favoriteAbility: AbilityId
   matches: number
   wins: number
   bestRally: number
@@ -41,9 +40,6 @@ export function loadProfile(): GuestProfile {
       return {
         id: parsed.id,
         name: parsed.name,
-        // Guard is retained in the wire format for rolling-room compatibility,
-        // but it was passive and confusing. Existing selections migrate to Pulse.
-        favoriteAbility: parsed.favoriteAbility === 'guard' ? 'pulse' : parsed.favoriteAbility ?? 'dash',
         matches: parsed.matches ?? 0,
         wins: parsed.wins ?? 0,
         bestRally: parsed.bestRally ?? 0,
@@ -53,7 +49,6 @@ export function loadProfile(): GuestProfile {
   const profile: GuestProfile = {
     id: randomId(),
     name: 'Player One',
-    favoriteAbility: 'dash',
     matches: 0,
     wins: 0,
     bestRally: 0,

@@ -1,20 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
   <defs>
-    <radialGradient id="g" cx="50%" cy="46%" r="60%">
-      <stop offset="0" stop-color="#1a3428"/>
-      <stop offset="1" stop-color="#0b1611"/>
-    </radialGradient>
-    <filter id="glow"><feGaussianBlur stdDeviation="14"/></filter>
+    <radialGradient id="bg" cx="50%" cy="44%" r="72%"><stop stop-color="#1b4a36"/><stop offset="1" stop-color="#08110d"/></radialGradient>
+    <linearGradient id="court" x2="0" y2="1"><stop stop-color="#164a36"/><stop offset="1" stop-color="#0d3023"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="18"/></filter>
   </defs>
-  <rect width="1200" height="630" rx="42" fill="url(#g)"/>
-  <rect x="410" y="72" width="380" height="380" rx="42" fill="#123f2e" stroke="#dfff68" stroke-width="7"/>
-  <path d="M600 72v380M410 262h380" stroke="#dfff68" stroke-width="3" stroke-dasharray="16 14" opacity=".45"/>
-  <circle cx="650" cy="205" r="42" fill="#dfff68" opacity=".35" filter="url(#glow)"/>
-  <circle cx="650" cy="205" r="17" fill="#fffdf7"/>
-  <rect x="427" y="188" width="13" height="106" rx="7" fill="#dfff68"/>
-  <rect x="760" y="228" width="13" height="106" rx="7" fill="#f36f44"/>
-  <rect x="548" y="89" width="106" height="13" rx="7" fill="#67d4ff"/>
-  <rect x="594" y="422" width="106" height="13" rx="7" fill="#b59cff"/>
-  <text x="600" y="535" text-anchor="middle" fill="#fffdf7" font-family="Manrope, sans-serif" font-size="86" font-weight="800">PONG!</text>
-  <text x="600" y="585" text-anchor="middle" fill="#93a398" font-family="DM Sans, sans-serif" font-size="28">FOUR WALLS. ONE WINNER.</text>
+  <rect width="1200" height="630" rx="42" fill="url(#bg)"/>
+  <circle cx="862" cy="310" r="170" fill="#dfff68" opacity=".08" filter="url(#glow)"/>
+  <rect x="744" y="34" width="278" height="494" rx="32" fill="url(#court)" stroke="#355e49" stroke-width="4"/>
+  <path d="M744 281h278M883 34v494" stroke="#fffdf7" stroke-width="2" stroke-dasharray="12 12" opacity=".2"/>
+  <rect x="798" y="476" width="170" height="16" rx="8" fill="#dfff68"/>
+  <rect x="805" y="68" width="156" height="16" rx="8" fill="#f36f44"/>
+  <path d="m848 254 14 13 10-18 10 18 14-13-5 20h-38z" fill="#dfff68"/>
+  <rect x="836" y="277" width="72" height="27" rx="14" fill="#dfff68"/>
+  <circle cx="857" cy="288" r="4" fill="#0b1611"/><circle cx="887" cy="288" r="4" fill="#0b1611"/>
+  <path d="M861 297q11 8 22 0" fill="none" stroke="#0b1611" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="901" cy="356" r="14" fill="#fffdf7"/>
+  <path d="M901 342 846 304" stroke="#fffdf7" stroke-width="7" opacity=".35"/>
+  <text x="98" y="218" fill="#dfff68" font-family="Manrope, sans-serif" font-size="32" font-weight="800" letter-spacing="7">SUMMON · RETURN · WIN</text>
+  <text x="92" y="332" fill="#fffdf7" font-family="Manrope, sans-serif" font-size="94" font-weight="900">PAL DUEL!</text>
+  <text x="98" y="390" fill="#a9b9ae" font-family="DM Sans, sans-serif" font-size="30">Pong — now with tiny one-hit heroes.</text>
+  <rect x="98" y="441" width="258" height="56" rx="28" fill="#dfff68"/>
+  <text x="227" y="479" text-anchor="middle" fill="#0b1611" font-family="Manrope, sans-serif" font-size="24" font-weight="900">PLAY INSTANTLY</text>
 </svg>

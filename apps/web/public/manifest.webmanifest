@@ -1,13 +1,13 @@
 {
-  "name": "PONG! by RackeTapp",
-  "short_name": "PONG!",
-  "description": "Four walls. One winner.",
+  "name": "PAL DUEL! by RackeTapp",
+  "short_name": "PAL DUEL!",
+  "description": "Summon tiny one-hit Paddle Pals in a fast vertical 1v1.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",
   "background_color": "#0b1611",
   "theme_color": "#0b1611",
-  "orientation": "any",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "icon-192.png",

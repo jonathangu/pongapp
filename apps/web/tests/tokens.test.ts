@@ -14,7 +14,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { COURT_PALETTE, POWER_UP_IDENTITIES, SEAT_PALETTE } from '@pongapp/game-core'
+import { COURT_PALETTE, PAL_IDENTITIES, SEAT_PALETTE } from '@pongapp/game-core'
 
 const tokensPath = fileURLToPath(new URL('../src/styles/tokens.css', import.meta.url))
 const source = readFileSync(tokensPath, 'utf8')
@@ -64,8 +64,8 @@ describe('tokens.css mirrors the game-core palette', () => {
     },
   )
 
-  it.each(Object.values(POWER_UP_IDENTITIES).map((identity) => [identity.id, identity.hex] as const))(
-    'power-up %s uses a colour that exists in tokens.css (%s)',
+  it.each(Object.values(PAL_IDENTITIES).map((identity) => [identity.id, identity.hex] as const))(
+    'Pal %s uses a colour that exists in tokens.css (%s)',
     (id, hex) => {
       expect(`${id} -> ${hex} present: ${hexes.has(hex.toLowerCase())}`).toBe(`${id} -> ${hex} present: true`)
     },

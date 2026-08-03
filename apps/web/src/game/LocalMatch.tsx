@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { aiInputs, createAiMemory, createGame, restartGame, stepGame, TICK_RATE, type GameState, type MatchConfig } from '@pongapp/game-core'
+import {
+  TICK_RATE,
+  aiInputs,
+  createAiMemory,
+  createGame,
+  restartGame,
+  stepGame,
+  type GameState,
+  type MatchConfig,
+  type PalType,
+} from '@pongapp/game-core'
 import { GameCourt } from './GameCourt'
 import { screenDirectionToLogical } from './perspective'
 import type { CourtEffectsSettings } from './PixiCourt'
@@ -17,8 +27,8 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
   const stateRef = useRef(createGame(config))
   const aiMemory = useRef(createAiMemory())
   const targets = useRef<Record<string, number>>(Object.fromEntries(humanPlayerIds.map((id) => [id, 0.5])))
-  const abilities = useRef(new Set<string>())
-  const gamepadButtons = useRef<Record<number, boolean>>({})
+  const summons = useRef<Record<string, PalType | null>>({})
+  const gamepadButtons = useRef<Record<string, boolean>>({})
   const listeners = useRef(new Set<(state: GameState) => void>())
   const resultRecorded = useRef(false)
 
@@ -39,21 +49,25 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
           const gamepad = gamepads[index]
           const player = state.players[id]
           if (gamepad && player) {
-            const screenAxis = gamepad.axes[0] ?? 0
-            const axis = screenDirectionToLogical(screenAxis, player.side, viewSide)
+            const axis = screenDirectionToLogical(gamepad.axes[0] ?? 0, player.side, viewSide)
             if (Math.abs(axis) > 0.16) targets.current[id] = Math.max(0, Math.min(1, (targets.current[id] ?? 0.5) + axis * 0.024))
-            const pressed = Boolean(gamepad.buttons[0]?.pressed)
-            if (pressed && !gamepadButtons.current[index]) abilities.current.add(id)
-            gamepadButtons.current[index] = pressed
+            const types: PalType[] = ['guard', 'striker', 'captain']
+            for (let button = 0; button < types.length; button += 1) {
+              const key = `${index}-${button}`
+              const pressed = Boolean(gamepad.buttons[button]?.pressed)
+              if (pressed && !gamepadButtons.current[key]) summons.current[id] = types[button]!
+              gamepadButtons.current[key] = pressed
+            }
           }
-          inputs[id] = { target: targets.current[id] ?? 0.5, abilityPressed: abilities.current.delete(id) }
+          inputs[id] = { target: targets.current[id] ?? 0.5, summon: summons.current[id] ?? null }
+          summons.current[id] = null
         }
         stepGame(state, inputs)
         if (state.phase === 'finished' && !resultRecorded.current) {
           resultRecorded.current = true
           onResult(state)
         }
-        if (state.tick % 3 === 0 || state.events.length > 0) {
+        if (state.tick % 2 === 0 || state.events.length > 0) {
           const view = structuredClone(state)
           for (const listener of listeners.current) listener(view)
         }
@@ -73,8 +87,8 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
   const setTarget = useCallback((id: string, target: number) => {
     targets.current[id] = Math.max(0, Math.min(1, target))
   }, [])
-  const useAbility = useCallback((id: string) => {
-    abilities.current.add(id)
+  const summon = useCallback((id: string, type: PalType) => {
+    summons.current[id] = type
   }, [])
   const rematch = useCallback(() => {
     stateRef.current = restartGame(stateRef.current)
@@ -89,20 +103,13 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
       getState={getState}
       subscribe={subscribe}
       onTarget={setTarget}
-      onAbility={useAbility}
+      onSummon={summon}
       onExit={onExit}
       localPlayerIds={humanPlayerIds}
       settings={effects}
       muted={muted}
-      // Two humans on one device is a different thing from a duel against the
-      // computer, and the header saying "Classic Duel · 0 AI" for both left the
-      // player to work out which one they had started.
-      title={humanPlayerIds.length > 1
-        ? 'Two players, one phone'
-        : config.mode === 'duel' ? 'You vs the computer' : config.mode === 'arena' ? 'Four-Side Arena' : 'Crosscourt Doubles'}
-      subtitle={humanPlayerIds.length > 1
-        ? `First to ${config.scoreToWin} · ${config.itemIntensity} power-ups`
-        : `First to ${config.scoreToWin} · ${config.itemIntensity} power-ups · ${Object.values(config.players).filter((player) => player.isAi).length} AI`}
+      title={humanPlayerIds.length > 1 ? 'Same-Phone Pal Duel' : 'You vs the computer'}
+      subtitle={`First to ${config.scoreToWin} · summon smart · every Pal gets one save`}
       onRematch={rematch}
     />
   )

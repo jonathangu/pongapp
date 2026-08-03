@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { buildMatchConfig, createGame } from '@pongapp/game-core'
-import { advanceLocalPaddlePreview, ballPredictionEnabled, predictedHumanTarget, worldPredictionEnabled } from '../src/game/prediction'
+import { advanceLocalPaddlePreview, ballPredictionEnabled, interpolatePosition, worldPredictionEnabled } from '../src/game/prediction'
 
-function stateWith(mutator: 'none' | 'mirroredControls' = 'none') {
+function stateWith() {
   const state = createGame(buildMatchConfig({
-    mode: 'duel',
     humanPlayers: [{ id: 'human', name: 'Human' }],
-    itemIntensity: 'off',
-    mutator,
     seed: 9,
   }))
   state.phase = 'playing'
@@ -25,9 +22,10 @@ describe('render prediction', () => {
     expect(ballPredictionEnabled(state)).toBe(false)
   })
 
-  it('previews mirrored controls on the same side the server will choose', () => {
-    expect(predictedHumanTarget(stateWith('mirroredControls'), 0.2)).toBeCloseTo(0.8)
-    expect(predictedHumanTarget(stateWith(), 0.2)).toBeCloseTo(0.2)
+  it('interpolates a remote paddle between buffered snapshots', () => {
+    expect(interpolatePosition(0.2, 0.8, 0.5)).toBeCloseTo(0.5)
+    expect(interpolatePosition(0.2, 0.8, -1)).toBeCloseTo(0.2)
+    expect(interpolatePosition(0.2, 0.8, 2)).toBeCloseTo(0.8)
   })
 
   it('keeps local paddle motion continuous across stale server snapshots', () => {

@@ -1,4 +1,4 @@
-import type { AbilityId, GameEvent } from '@pongapp/game-core'
+import type { GameEvent } from '@pongapp/game-core'
 
 /**
  * A compact procedural sound engine. Every cue is layered from short Web Audio
@@ -56,7 +56,7 @@ export class GameAudio {
       }
     } else if (event.type === 'rallyHot') {
       // Rises with each step, so the second milestone is audibly above the first.
-      const base = event.multiplier >= 3 ? 880 : 660
+      const base = event.level === 'blazing' ? 880 : 660
       this.tone(base, 0.11, 0.05, 'triangle', 0, base * 1.5)
       this.tone(base * 1.5, 0.09, 0.032, 'sine', 0.06)
     } else if (event.type === 'score') {
@@ -64,40 +64,15 @@ export class GameAudio {
       this.tone(82, 0.42, 0.15, 'sine', 0, 46)
       this.tone(220, 0.28, 0.08, 'sawtooth', 0.015, 720)
       this.tone(980, 0.16, 0.04, 'triangle', 0.11, 1380)
-    } else if (event.type === 'ability') {
-      this.ability(event.ability)
-    } else if (event.type === 'summonHit') {
-      this.tone(310, 0.11, 0.06, 'square', 0, 760)
-      this.tone(980, 0.09, 0.035, 'sine', 0.025, 1380)
-      this.noise(0.08, 0.026, 4300)
-    } else if (event.type === 'powerUp') {
-      if (event.powerUp === 'grow') {
-        this.tone(180, 0.25, 0.065, 'triangle', 0, 620)
-        this.tone(360, 0.2, 0.04, 'sine', 0.05, 880)
-      } else if (event.powerUp === 'overdrive') {
-        this.tone(220, 0.24, 0.065, 'sawtooth', 0, 1320)
-        this.noise(0.13, 0.03, 5400)
-      } else if (event.powerUp === 'multiball') {
-        for (const [index, frequency] of [420, 630, 840].entries()) {
-          this.tone(frequency, 0.18, 0.04, 'triangle', index * 0.035, frequency * 1.3)
-        }
-      } else if (event.powerUp === 'warp') {
-        this.tone(1280, 0.27, 0.065, 'sine', 0, 150)
-        this.noise(0.2, 0.035, 4200, 0, 360)
-      } else {
-        this.tone(92, 0.34, 0.11, 'sine', 0, 42)
-        this.tone(520, 0.2, 0.045, 'triangle', 0.03, 210)
-      }
-    } else if (event.type === 'powerUpSpawn') {
-      this.tone(760, 0.15, 0.028, 'sine', 0, 1120)
-      this.tone(1140, 0.13, 0.018, 'triangle', 0.065, 1420)
-    } else if (event.type === 'shield') {
-      this.tone(112, 0.25, 0.11, 'square', 0, 74)
-      this.tone(420, 0.18, 0.045, 'triangle', 0.02, 250)
-      this.noise(0.16, 0.035, 680)
-    } else if (event.type === 'warp') {
-      this.tone(980, 0.19, 0.055, 'sine', 0, 130)
-      this.noise(0.2, 0.04, 3400, 0, 420)
+    } else if (event.type === 'palSummoned') {
+      const notes = event.pal.type === 'captain' ? [220, 440, 660, 990] : event.pal.type === 'striker' ? [360, 760] : [260, 520]
+      for (const [index, frequency] of notes.entries()) this.tone(frequency, 0.18, 0.045, 'triangle', index * 0.045, frequency * 1.2)
+    } else if (event.type === 'palArmed') {
+      this.tone(event.palType === 'captain' ? 720 : 580, 0.09, 0.025, 'sine', 0, 920)
+    } else if (event.type === 'palHit') {
+      this.tone(event.palType === 'captain' ? 180 : 310, 0.14, 0.07, 'square', 0, event.palType === 'striker' ? 1100 : 760)
+      this.tone(980, 0.1, 0.04, 'sine', 0.025, 1380)
+      this.noise(event.palType === 'captain' ? 0.16 : 0.08, 0.035, 4300)
     } else if (event.type === 'matchEnd') {
       for (const [index, frequency] of [261.6, 329.6, 392, 523.3].entries()) {
         this.tone(frequency, 0.62, 0.045, 'sine', index * 0.055)
@@ -125,25 +100,6 @@ export class GameAudio {
     this.context = context
     this.master = master
     this.noiseBuffer = buffer
-  }
-
-  private ability(ability: AbilityId): void {
-    if (ability === 'dash') {
-      for (const [index, frequency] of [440, 660, 880].entries()) {
-        this.tone(frequency, 0.18, 0.038, 'triangle', index * 0.055, frequency * 1.28)
-      }
-      this.tone(180, 0.28, 0.05, 'sine', 0, 320)
-    } else if (ability === 'bend') {
-      this.tone(340, 0.24, 0.05, 'sine', 0, 690)
-      this.tone(356, 0.24, 0.035, 'sine', 0, 520)
-    } else if (ability === 'guard') {
-      this.tone(128, 0.28, 0.09, 'square', 0, 96)
-      this.tone(256, 0.2, 0.045, 'triangle', 0.035)
-    } else {
-      this.tone(310, 0.09, 0.06, 'sine')
-      this.tone(620, 0.12, 0.055, 'sine', 0.045)
-      this.tone(930, 0.15, 0.04, 'sine', 0.09)
-    }
   }
 
   private tone(
