@@ -34,6 +34,7 @@ export class GameRoom {
   private inputs: Record<string, GameInput> = {}
   private aiMemory: AiControllerMemory = createAiMemory()
   private loop: ReturnType<typeof setInterval> | null = null
+  private balanceSummaryLogged = false
 
   constructor(
     readonly config: StoredRoomConfig,
@@ -202,6 +203,7 @@ export class GameRoom {
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
       this.game = restartGame(this.game, Date.now() >>> 0)
       this.aiMemory = createAiMemory()
+      this.balanceSummaryLogged = false
       for (const candidate of this.participants.values()) {
         const player = this.game.players[candidate.id]
         if (player) {
@@ -229,6 +231,7 @@ export class GameRoom {
       seed: Date.now() >>> 0,
     }))
     this.aiMemory = createAiMemory()
+    this.balanceSummaryLogged = false
     await this.persist()
     this.startLoop()
     this.broadcastLobby()
@@ -244,6 +247,7 @@ export class GameRoom {
     if (!this.game) return
     const automatic = aiInputs(this.game, this.aiMemory)
     stepGame(this.game, { ...this.inputs, ...automatic })
+    this.logBalanceEvents()
     for (const input of Object.values(this.inputs)) input.palAction = null
     const important = this.game.events.length > 0
     if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
@@ -254,6 +258,57 @@ export class GameRoom {
       this.broadcast({ type: 'result', state: this.game })
       this.broadcastLobby()
     }
+  }
+
+  /**
+   * Structured balance telemetry deliberately excludes room codes, player IDs,
+   * names, guest IDs, reconnect tokens, and input coordinates. It describes
+   * only the rules and anonymous top/bottom outcomes of online matches.
+   */
+  private logBalanceEvents(): void {
+    const game = this.game
+    if (!game) return
+    const players = Object.values(game.players).sort((a, b) => a.side.localeCompare(b.side))
+    for (const event of game.events) {
+      if (event.type !== 'score') continue
+      const defender = game.players[event.againstPlayerId]
+      const scorer = game.players[event.scorerId]
+      console.info(JSON.stringify({
+        event: 'pongapp.balance.goal.v1',
+        rulesetVersion: game.rulesetVersion,
+        tick: game.tick,
+        rallyHits: event.rallyHits,
+        scorerSide: scorer?.side ?? null,
+        defenderSide: defender?.side ?? null,
+        defenderCamping: event.defenderCamping,
+        goalNumber: Object.values(game.scores).reduce((total, score) => total + score, 0),
+        score: players.map((player) => ({ side: player.side, points: game.scores[player.team] ?? 0 })),
+      }))
+    }
+    if (game.phase !== 'finished' || this.balanceSummaryLogged) return
+    this.balanceSummaryLogged = true
+    console.info(JSON.stringify({
+      event: 'pongapp.balance.match.v1',
+      rulesetVersion: game.rulesetVersion,
+      durationSeconds: Math.round(game.tick / 6) / 10,
+      overtime: game.overtime,
+      longestRallyHits: game.longestRallyHits,
+      players: players.map((player) => ({
+        side: player.side,
+        isAi: player.isAi,
+        points: game.scores[player.team] ?? 0,
+        returns: player.returns,
+        cleanStrikes: player.cleanStrikes,
+        palsSummoned: player.palsSummoned,
+        palHits: player.palHits,
+        palSteals: player.palSteals,
+        goalCampSeconds: Math.round((player.goalCampTicks ?? 0) / 6) / 10,
+        goalsConceded: player.goalsConceded ?? 0,
+        campedGoalsConceded: player.campedGoalsConceded ?? 0,
+        openPostShots: player.openPostShots ?? 0,
+        bankShots: player.bankShots ?? 0,
+      })),
+    }))
   }
 
   private publicParticipant(participant: InternalParticipant): RoomParticipant {

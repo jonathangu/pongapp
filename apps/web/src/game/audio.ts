@@ -83,6 +83,10 @@ export class GameAudio {
     } else if (event.type === 'palShot') {
       this.tone(event.powered ? 92 : 150, event.powered ? 0.32 : 0.17, event.powered ? 0.14 : 0.085, 'sawtooth', 0, event.powered ? 1240 : 740)
       this.noise(event.powered ? 0.22 : 0.1, event.powered ? 0.11 : 0.05, 3700)
+      if (event.shot === 'bank') {
+        this.tone(1180, 0.12, 0.052, 'triangle', 0.045, 430)
+        this.tone(760, 0.09, 0.035, 'sine', 0.1, 1260)
+      }
     } else if (event.type === 'palDamaged') {
       this.tone(180 + event.health * 26, 0.08, 0.04, 'square', 0, 110)
     } else if (event.type === 'palStunned') {

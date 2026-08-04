@@ -5,7 +5,8 @@ export const TICK_SECONDS = 1 / TICK_RATE
 export const DUEL_COURT_LENGTH_SCALE = 4 / 3
 
 export const RAIL_INSET = 0.022
-export const GOAL_WIDTH = 0.34
+/** Wider than v3 launch so a centred mallet cannot erase both open posts. */
+export const GOAL_WIDTH = 0.4
 export const GOAL_DEPTH = 0.045
 export const GOAL_CREASE_DEPTH = 0.095
 export const MALLET_RADIUS = 0.052

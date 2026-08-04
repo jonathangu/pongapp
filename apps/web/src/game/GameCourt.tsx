@@ -124,7 +124,10 @@ function eventMoment(state: GameState): string | null {
   if (event.type === 'palStole') return 'BUMPER STEAL!'
   if (event.type === 'palTethered') return 'HOOK: YOINK!'
   if (event.type === 'tetherBroken') return 'ROPE CUT!'
-  if (event.type === 'palShot') return event.powered ? 'STAR SHOT!' : `${PAL_IDENTITIES[event.palType].label} FIRES!`
+  if (event.type === 'palShot') {
+    if (event.shot === 'bank') return event.powered ? 'STAR BANK SHOT!' : `${PAL_IDENTITIES[event.palType].label}: BANK SHOT!`
+    return event.powered ? 'STAR OPEN-POST SHOT!' : `${PAL_IDENTITIES[event.palType].label}: OPEN POST!`
+  }
   if (event.type === 'palStunned') return `${PAL_IDENTITIES[event.palType].label} is dizzy!`
   if (event.type === 'palPowered') return `${PAL_IDENTITIES[event.palType].label} GOT THE STAR!`
   if (event.type === 'starSpawned') return 'POWER STAR!'

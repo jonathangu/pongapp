@@ -28,6 +28,22 @@ describe('Pal Duel air-hockey AI', () => {
     expect(input.targetY).toBeGreaterThan(0.18)
   })
 
+  it('sets up a bank shot instead of firing through a centred camping goalie', () => {
+    const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], aiDifficulty: 'rally', seed: 12 }))
+    state.phase = 'playing'
+    state.countdownTicks = 0
+    state.serveTicks = 0
+    state.players.human!.x = 0.5
+    state.players.human!.y = 0.82
+    state.balls[0]!.x = 0.42
+    state.balls[0]!.y = 0.42
+    state.balls[0]!.vx = 0
+    state.balls[0]!.vy = 0.5
+    const input = aiInputs(state, createAiMemory())['ai-2']!
+    expect(input.targetX).toBeLessThan(state.balls[0]!.x)
+    expect(input.targetY).toBeLessThan(state.balls[0]!.y)
+  })
+
   it('uses the same six-energy Captain card as a human', () => {
     const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], aiDifficulty: 'ace', seed: 7 }))
     state.phase = 'playing'

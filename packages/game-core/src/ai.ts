@@ -1,5 +1,5 @@
 import { AI_PROFILE, GOAL_WIDTH, PAL_COST, RAIL_INSET } from './constants'
-import { canSummonPal } from './simulation'
+import { canSummonPal, goalAttackAim, isGoalCamping } from './simulation'
 import type { AiControllerMemory, GameInput, GameState, PalState, PalType, PlayerState } from './types'
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, value))
@@ -33,6 +33,7 @@ function targetFor(state: GameState, player: PlayerState): { x: number; y: numbe
   const carrier = enemyCarrier(state, player)
   let targetX = 0.5
   let targetY = player.side === 'top' ? 0.25 : 0.75
+  let aimingShot = false
   if (carrier) {
     targetX = carrier.x
     targetY = carrier.y
@@ -42,18 +43,26 @@ function targetFor(state: GameState, player: PlayerState): { x: number; y: numbe
     targetX = reflectCoordinate(ball.x + ball.vx * time)
     const pressure = clamp(1 - time / 1.2, 0, 1)
     targetY = player.side === 'top' ? 0.2 + pressure * 0.12 : 0.8 - pressure * 0.12
-  } else if (onOwnHalf(player, ball.y) || profile.aggression > 0.55) {
-    const goalDirection = player.side === 'top' ? 1 : -1
-    targetX = clamp(ball.x - ball.vx * 0.07, 0.08, 0.92)
-    targetY = clamp(ball.y - goalDirection * 0.08 / state.config.courtLengthScale, 0.1, 0.9)
+  } else if (onOwnHalf(player, ball.y) || profile.aggression > 0.55 || Object.values(state.players).some((candidate) => candidate.side !== player.side && isGoalCamping(state, candidate))) {
+    const defender = Object.values(state.players).find((candidate) => candidate.side !== player.side)
+    const preferBank = Boolean(defender && isGoalCamping(state, defender) && profile.aggression >= 0.4)
+    const aim = goalAttackAim(state, player.side, ball.x, ball.y, preferBank)
+    const dx = aim.x - ball.x
+    const dy = (aim.y - ball.y) * state.config.courtLengthScale
+    const distance = Math.max(0.001, Math.hypot(dx, dy))
+    const contactOffset = player.radius + ball.radius * 0.9
+    targetX = ball.x - dx / distance * contactOffset
+    targetY = ball.y - dy / distance * contactOffset / state.config.courtLengthScale
+    aimingShot = true
   } else {
     targetX = 0.5 + (ball.x - 0.5) * 0.38
     targetY = player.side === 'top' ? 0.36 : 0.64
   }
   const phase = playerPhase(player.id)
   const noise = Math.sin(state.tick * 0.137 + phase) * profile.aimError
-  targetX += noise
-  targetY += Math.cos(state.tick * 0.103 + phase) * profile.aimError / state.config.courtLengthScale
+  const noiseScale = aimingShot ? 0.38 : 1
+  targetX += noise * noiseScale
+  targetY += Math.cos(state.tick * 0.103 + phase) * profile.aimError * noiseScale / state.config.courtLengthScale
   const goalLane = Math.abs(targetX - 0.5) < GOAL_WIDTH / 2 + player.radius
   if (goalLane && player.side === 'top') targetY = Math.min(targetY, 0.82)
   if (goalLane && player.side === 'bottom') targetY = Math.max(targetY, 0.18)

@@ -55,6 +55,20 @@ median, p95, jitter, and snapshot-gap p95 rather than one noisy ping.
 Never add a second independent predictor inside the renderer. Prediction has
 one owner: `RoomClient` online and the local match loop offline.
 
+## Competitive balance and telemetry
+
+The goal mouth must leave a visible open post around a centred mallet. Computer
+opponents and attacking Pals predict the defender's short movement, choose the
+post with more space, and may use a real one-rail bank against a goalie sitting
+in the mouth. They do not teleport the puck or bypass ordinary collision rules.
+
+Online rooms emit structured `pongapp.balance.goal.v1` and
+`pongapp.balance.match.v1` server logs so goal width, camping, rally length, and
+Pal shot selection can be tuned from aggregate outcomes. These records contain
+only top/bottom sides and gameplay counters—never room codes, names, player or
+guest IDs, reconnect tokens, or input coordinates. Offline matches remain
+device-local and emit no balance telemetry.
+
 ## Input and explanation
 
 - Pointer/touch maps both axes through the same 180° view transform as drawing.

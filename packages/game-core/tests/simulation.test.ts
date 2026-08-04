@@ -6,10 +6,13 @@ import {
   GOAL_WIDTH,
   PAL_ENERGY_MAX,
   PAL_ENERGY_REGEN_TICKS,
+  PAL_PROFILE,
   POWER_STAR_LIFETIME_TICKS,
   buildMatchConfig,
   canUsePalCard,
   createGame,
+  goalAttackAim,
+  isGoalCamping,
   restartGame,
   stepGame,
   type BallState,
@@ -73,6 +76,7 @@ describe('Pal Duel air-hockey simulation', () => {
   })
 
   it('bounces on end rails outside the goal and scores through the opening', () => {
+    expect(GOAL_WIDTH).toBe(0.4)
     const rail = playing()
     rail.balls[0] = puck({ x: 0.5 - GOAL_WIDTH, y: 0.025, vy: -0.8 })
     stepGame(rail)
@@ -82,6 +86,44 @@ describe('Pal Duel air-hockey simulation', () => {
     goal.balls[0] = puck({ x: 0.5, y: -0.06, vy: -0.8, lastToucherId: 'human' })
     stepGame(goal)
     expect(goal.scores['team-0']).toBe(1)
+  })
+
+  it('reads a camping goalie and targets an open post or a real one-rail bank', () => {
+    const state = playing()
+    const defender = state.players.human!
+    defender.x = 0.5
+    defender.y = 0.82
+    expect(isGoalCamping(state, defender)).toBe(true)
+
+    const direct = goalAttackAim(state, 'top', 0.4, 0.42)
+    expect(direct).toMatchObject({ shot: 'openPost' })
+    expect(Math.abs(direct.targetX - defender.x)).toBeGreaterThan(0.14)
+
+    const bank = goalAttackAim(state, 'top', 0.4, 0.42, true)
+    expect(bank.shot).toBe('bank')
+    expect(bank.x < 0 || bank.x > 1).toBe(true)
+    expect(bank.targetX).toBe(direct.targetX)
+  })
+
+  it('runs a bank trajectory through the open post beside a camping goalie', () => {
+    const state = playing()
+    const defender = state.players.human!
+    defender.x = 0.5
+    defender.y = 0.82
+    const start = { x: 0.4, y: 0.42 }
+    const aim = goalAttackAim(state, 'top', start.x, start.y, true)
+    const dx = aim.x - start.x
+    const dy = (aim.y - start.y) * state.config.courtLengthScale
+    const distance = Math.hypot(dx, dy)
+    state.balls[0] = puck({
+      ...start,
+      vx: dx / distance * PAL_PROFILE.striker.shotSpeed,
+      vy: dy / distance * PAL_PROFILE.striker.shotSpeed,
+      lastToucherId: 'ai-2',
+    })
+    for (let tick = 0; tick < 180 && state.scores['team-1'] === 0; tick += 1) stepGame(state)
+    expect(state.scores['team-1']).toBe(1)
+    expect(state.events).toContainEqual(expect.objectContaining({ type: 'score', defenderCamping: true }))
   })
 
   it('regenerates one of six energy pips every five active seconds', () => {
@@ -126,6 +168,21 @@ describe('Pal Duel air-hockey simulation', () => {
     expect(state.events.some((event) => event.type === 'palTethered')).toBe(true)
   })
 
+  it('lets an attacking Hook bank around a goalie who camps in the mouth', () => {
+    const state = playing()
+    state.players.human!.palEnergy = 3
+    const hook = summon(state, 'striker')
+    const defender = state.players['ai-2']!
+    defender.x = 0.5
+    defender.y = 0.18
+    hook.mode = 'carry'
+    hook.carryTicks = 999
+    state.balls[0] = puck({ x: hook.x, y: hook.y, carrierPalId: hook.id, lastToucherId: 'human' })
+    stepGame(state, { human: idle() })
+    expect(state.players.human!.bankShots).toBe(1)
+    expect(state.events).toContainEqual(expect.objectContaining({ type: 'palShot', shot: 'bank' }))
+  })
+
   it('turns a knocked-out Captain into multiple Hatchlings', () => {
     const state = playing()
     state.players.human!.palEnergy = PAL_ENERGY_MAX
@@ -157,6 +214,8 @@ describe('Pal Duel air-hockey simulation', () => {
     expect(state.scores['team-1']).toBe(1)
     expect(state.pals).toEqual([])
     expect(state.players.human!.palEnergy).toBe(1)
+    expect(state.players.human!.campedGoalsConceded).toBe(1)
+    expect(state.events).toContainEqual(expect.objectContaining({ type: 'score', defenderCamping: true }))
   })
 
   it('fills both energy meters for a tied Final Volley and restarts cleanly', () => {

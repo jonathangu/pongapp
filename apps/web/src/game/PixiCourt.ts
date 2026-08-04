@@ -139,6 +139,11 @@ export class PixiCourt {
         const color = PAL_IDENTITIES[event.palType].color
         this.wave(event.x, event.y, color, event.powered ? 0.48 : 0.29)
         this.burst(event.x, event.y, color, event.powered ? 45 : 24, event.powered ? 0.72 : 0.48)
+        if (event.shot === 'bank' && event.bankX !== null && event.bankY !== null) {
+          const owner = state.players[event.playerId]
+          this.wave(event.bankX, event.bankY, COURT_PALETTE.accent.color, 0.32)
+          this.wave(event.targetX, owner?.side === 'top' ? 0.985 : 0.015, color, 0.26)
+        }
         this.shake(event.powered ? 0.78 : 0.38)
       } else if (event.type === 'palDamaged' || event.type === 'palStunned') {
         const color = PAL_IDENTITIES[event.palType].color

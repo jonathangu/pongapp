@@ -2,9 +2,11 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
-import { afterEach, describe, expect, it } from 'vitest'
+import { buildMatchConfig, createGame, type GameState } from '@pongapp/game-core'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMessage } from '@pongapp/protocol'
 import { PROTOCOL_VERSION } from '@pongapp/protocol'
+import { GameRoom } from '../src/room'
 import { createRoomServer, type RoomServer } from '../src/server'
 
 const openServers: RoomServer[] = []
@@ -46,6 +48,46 @@ async function connect(baseUrl: string, roomCode: string, index: number): Promis
 }
 
 describe('Fly room server', () => {
+  it('logs balance outcomes without room or player identity', () => {
+    const game = createGame(buildMatchConfig({
+      humanPlayers: [
+        { id: 'private-player-id', name: 'Jonathan' },
+        { id: 'private-wife-id', name: 'Private Wife' },
+      ],
+      seed: 4,
+    }))
+    game.phase = 'finished'
+    game.tick = 420
+    game.scores['team-0'] = 5
+    game.players['private-wife-id']!.goalCampTicks = 180
+    game.players['private-wife-id']!.goalsConceded = 5
+    game.players['private-wife-id']!.campedGoalsConceded = 3
+    game.events = [
+      { type: 'score', scorerId: 'private-player-id', team: 'team-0', againstPlayerId: 'private-wife-id', ballId: 'private-ball-id', points: 1, rallyHits: 6, defenderCamping: true },
+      { type: 'matchEnd', winnerTeam: 'team-0' },
+    ]
+    const room = new GameRoom(
+      { roomCode: 'ABCDEF', hostName: 'Secret Host', createdAt: 1 },
+      async () => undefined,
+    )
+    const internal = room as unknown as { game: GameState | null; logBalanceEvents(): void }
+    internal.game = game
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    try {
+      internal.logBalanceEvents()
+      const records = log.mock.calls.map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      expect(records).toHaveLength(2)
+      expect(records[0]).toMatchObject({ event: 'pongapp.balance.goal.v1', defenderCamping: true })
+      expect(records[1]).toMatchObject({ event: 'pongapp.balance.match.v1', longestRallyHits: 0 })
+      const rendered = JSON.stringify(records)
+      for (const secret of ['ABCDEF', 'Secret Host', 'Jonathan', 'Private Wife', 'private-player-id', 'private-wife-id', 'private-ball-id']) {
+        expect(rendered).not.toContain(secret)
+      }
+    } finally {
+      log.mockRestore()
+    }
+  })
+
   it('creates an authoritative duel, acknowledges input, and persists the room', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pongapp-room-'))
     const dataPath = join(directory, 'rooms.json')

@@ -42,6 +42,11 @@ export interface PlayerState extends PlayerDefinition {
   palsSummoned: number
   palHits: number
   palSteals: number
+  goalCampTicks: number
+  goalsConceded: number
+  campedGoalsConceded: number
+  openPostShots: number
+  bankShots: number
 }
 
 export interface BallState {
@@ -95,12 +100,12 @@ export type GameEvent =
   | { type: 'matchStart' }
   | { type: 'countdown'; value: number }
   | { type: 'hit'; playerId: string; ballId: string; clean: boolean; speed: number; shot: ShotType; x: number; y: number }
-  | { type: 'score'; scorerId: string; team: string; againstPlayerId: string; ballId: string; points: 1; rallyHits: number }
+  | { type: 'score'; scorerId: string; team: string; againstPlayerId: string; ballId: string; points: 1; rallyHits: number; defenderCamping: boolean }
   | { type: 'rallyHot'; hits: number; level: 'hot' | 'blazing' }
   | { type: 'palSummoned'; playerId: string; pal: PalState }
   | { type: 'palCommanded'; playerId: string; palId: string; palType: ActivePalType }
   | { type: 'palGrabbed'; playerId: string; palId: string; palType: ActivePalType; ballId: string; x: number; y: number }
-  | { type: 'palShot'; playerId: string; palId: string; palType: ActivePalType; ballId: string; powered: boolean; x: number; y: number }
+  | { type: 'palShot'; playerId: string; palId: string; palType: ActivePalType; ballId: string; powered: boolean; shot: 'openPost' | 'bank'; targetX: number; bankX: number | null; bankY: number | null; x: number; y: number }
   | { type: 'palStole'; playerId: string; palId: string; fromPalId: string; ballId: string; x: number; y: number }
   | { type: 'palTethered'; playerId: string; palId: string; ballId: string; x: number; y: number }
   | { type: 'tetherBroken'; playerId: string; palId: string; ballId: string; x: number; y: number }

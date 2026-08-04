@@ -101,6 +101,11 @@ export function createGame(config: MatchConfig): GameState {
     palsSummoned: 0,
     palHits: 0,
     palSteals: 0,
+    goalCampTicks: 0,
+    goalsConceded: 0,
+    campedGoalsConceded: 0,
+    openPostShots: 0,
+    bankShots: 0,
   } satisfies PlayerState]))
   const scores = Object.fromEntries(config.players.map((player) => [player.team, 0]))
   const state: GameState = {
@@ -242,6 +247,13 @@ function clampPlayerTarget(player: PlayerState, x: number, y: number): { x: numb
 
 function updatePlayers(state: GameState, inputs: InputMap): void {
   for (const player of Object.values(state.players)) {
+    // Persisted v3 rooms created before the balance pass do not have telemetry
+    // counters. Keep the wire protocol compatible while upgrading them in place.
+    player.goalCampTicks ??= 0
+    player.goalsConceded ??= 0
+    player.campedGoalsConceded ??= 0
+    player.openPostShots ??= 0
+    player.bankShots ??= 0
     const input = inputs[player.id] ?? { targetX: player.x, targetY: player.y, palAction: null }
     const target = clampPlayerTarget(player, input.targetX, input.targetY)
     const profile = player.isAi ? AI_PROFILE[player.aiDifficulty ?? 'rally'] : null
@@ -250,6 +262,7 @@ function updatePlayers(state: GameState, inputs: InputMap): void {
     player.y = moved.y
     player.vx = moved.vx
     player.vy = moved.vy
+    if (isGoalCamping(state, player)) player.goalCampTicks += 1
     if (input.palAction) usePalCard(state, player, input.palAction)
   }
   resolvePlayerOverlap(state)
@@ -279,6 +292,64 @@ function opponentOf(state: GameState, owner: PlayerState): PlayerState | undefin
 function opponentGoalY(side: Side): number { return side === 'top' ? 1 + GOAL_DEPTH : -GOAL_DEPTH }
 function isOwnHalf(side: Side, y: number): boolean { return side === 'top' ? y <= 0.5 : y >= 0.5 }
 function isOpponentHalf(side: Side, y: number): boolean { return !isOwnHalf(side, y) }
+
+/** A goalie is camping when it sits in the mouth instead of contesting space. */
+export function isGoalCamping(state: GameState, player: PlayerState): boolean {
+  const nearGoal = player.side === 'top' ? player.y <= 0.22 : player.y >= 0.78
+  return state.phase === 'playing'
+    && state.serveTicks <= 0
+    && nearGoal
+    && Math.abs(player.x - 0.5) <= goalHalfWidth + player.radius * 0.7
+}
+
+export interface GoalAttackAim {
+  /** Virtual aim coordinate; may sit beyond a side rail to produce a bank. */
+  x: number
+  y: number
+  /** Real destination inside the goal mouth after any rebound. */
+  targetX: number
+  bankX: number | null
+  bankY: number | null
+  shot: 'openPost' | 'bank'
+}
+
+/**
+ * Pick the post furthest from the predicted goalie. When asked to bank against
+ * a camper, reflect that post across its nearest side rail; ordinary puck
+ * collision then produces a real one-rail shot without special-case physics.
+ */
+export function goalAttackAim(
+  state: GameState,
+  attackerSide: Side,
+  shooterX: number,
+  shooterY: number,
+  preferBank = false,
+): GoalAttackAim {
+  const defender = Object.values(state.players).find((player) => player.side !== attackerSide)
+  const targetY = opponentGoalY(attackerSide)
+  const speed = Math.max(PUCK_START_SPEED, PAL_PROFILE.captain.shotSpeed)
+  const travelTime = Math.abs((targetY - shooterY) * state.config.courtLengthScale) / speed
+  const predictedDefenderX = clamp((defender?.x ?? 0.5) + (defender?.vx ?? 0) * Math.min(0.35, travelTime), RAIL_INSET, 1 - RAIL_INSET)
+  const postInset = BALL_RADIUS + 0.018
+  const leftPost = 0.5 - goalHalfWidth + postInset
+  const rightPost = 0.5 + goalHalfWidth - postInset
+  const leftSpace = Math.abs(leftPost - predictedDefenderX)
+  const rightSpace = Math.abs(rightPost - predictedDefenderX)
+  const targetX = Math.abs(leftSpace - rightSpace) < 0.012
+    ? (shooterX <= 0.5 ? rightPost : leftPost)
+    : (leftSpace > rightSpace ? leftPost : rightPost)
+  const bank = Boolean(defender && preferBank && isGoalCamping(state, defender))
+  if (!bank) return { x: targetX, y: targetY, targetX, bankX: null, bankY: null, shot: 'openPost' }
+  // A bank must enter the opening at the front rail. Aiming at the back of the
+  // net reaches the post too late and clips the end rail before it can score.
+  const mouthY = attackerSide === 'top' ? 1 - RAIL_INSET : RAIL_INSET
+  const wallX = targetX < 0.5 ? RAIL_INSET + BALL_RADIUS : 1 - RAIL_INSET - BALL_RADIUS
+  const virtualX = wallX * 2 - targetX
+  const bankDenominator = virtualX - shooterX
+  const bankFraction = Math.abs(bankDenominator) > 0.0001 ? clamp((wallX - shooterX) / bankDenominator, 0, 1) : 0
+  const bankY = shooterY + (mouthY - shooterY) * bankFraction
+  return { x: virtualX, y: mouthY, targetX, bankX: wallX, bankY, shot: 'bank' }
+}
 
 function palTarget(state: GameState, pal: PalState): { x: number; y: number } {
   const owner = ownerOf(state, pal)
@@ -330,9 +401,9 @@ function shootBall(state: GameState, pal: PalState, ball: BallState): void {
   const owner = ownerOf(state, pal)
   const enemy = owner ? opponentOf(state, owner) : undefined
   const powered = pal.hasStar
-  const targetX = clamp(0.5 + (0.5 - (enemy?.x ?? 0.5)) * 0.42, 0.5 - goalHalfWidth + 0.035, 0.5 + goalHalfWidth - 0.035)
-  const targetY = opponentGoalY(pal.side)
-  const delta = physicalDelta(state, pal.x, pal.y, targetX, targetY)
+  const preferBank = Boolean(enemy && isGoalCamping(state, enemy) && (pal.type === 'striker' || pal.type === 'captain' || powered))
+  const aim = goalAttackAim(state, pal.side, pal.x, pal.y, preferBank)
+  const delta = physicalDelta(state, pal.x, pal.y, aim.x, aim.y)
   const speed = Math.min(PUCK_SPEED_CAP, PAL_PROFILE[pal.type].shotSpeed * (powered ? 1.16 : 1))
   const divisor = Math.max(0.0001, delta.distance)
   ball.x = pal.x + delta.x / divisor * (pal.radius + ball.radius + 0.006)
@@ -346,8 +417,25 @@ function shootBall(state: GameState, pal: PalState, ball: BallState): void {
   pal.mode = 'patrol'
   pal.carryTicks = 0
   pal.commanded = false
-  if (owner) owner.palHits += 1
-  state.events.push({ type: 'palShot', playerId: pal.ownerId, palId: pal.id, palType: pal.type, ballId: ball.id, powered, x: pal.x, y: pal.y })
+  if (owner) {
+    owner.palHits += 1
+    if (aim.shot === 'bank') owner.bankShots = (owner.bankShots ?? 0) + 1
+    else owner.openPostShots = (owner.openPostShots ?? 0) + 1
+  }
+  state.events.push({
+    type: 'palShot',
+    playerId: pal.ownerId,
+    palId: pal.id,
+    palType: pal.type,
+    ballId: ball.id,
+    powered,
+    shot: aim.shot,
+    targetX: aim.targetX,
+    bankX: aim.bankX,
+    bankY: aim.bankY,
+    x: pal.x,
+    y: pal.y,
+  })
   if (powered) {
     pal.hasStar = false
     state.events.push({ type: 'palPowerUsed', playerId: pal.ownerId, palId: pal.id, palType: pal.type, x: pal.x, y: pal.y })
@@ -734,8 +822,11 @@ function scoreGoal(state: GameState, ball: BallState, defender: PlayerState): vo
   const scorer = lastToucher && lastToucher.team !== defender.team ? lastToucher : fallbackScorer(state, defender)
   if (!scorer) return
   const rallyHits = state.rallyHits
+  const defenderCamping = isGoalCamping(state, defender)
   state.scores[scorer.team] = (state.scores[scorer.team] ?? 0) + 1
-  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points: 1, rallyHits })
+  defender.goalsConceded = (defender.goalsConceded ?? 0) + 1
+  if (defenderCamping) defender.campedGoalsConceded = (defender.campedGoalsConceded ?? 0) + 1
+  state.events.push({ type: 'score', scorerId: scorer.id, team: scorer.team, againstPlayerId: defender.id, ballId: ball.id, points: 1, rallyHits, defenderCamping })
   addEnergy(state, defender, 1, 'comeback')
   clearFieldForGoal(state)
   state.balls = [stagedBall(ball.id)]
