@@ -55,7 +55,7 @@ describe('Fly room server', () => {
     const baseUrl = `http://127.0.0.1:${port}`
 
     const health = await fetch(`${baseUrl}/api/health`).then((response) => response.json())
-    expect(health).toMatchObject({ status: 'ok', service: 'pongapp-room', protocol: 2 })
+    expect(health).toMatchObject({ status: 'ok', service: 'pongapp-room', protocol: 3 })
 
     const createResponse = await fetch(`${baseUrl}/api/rooms`, {
       method: 'POST',
@@ -71,17 +71,17 @@ describe('Fly room server', () => {
     expect((await playing).type).toBe('snapshot')
 
     const acknowledged = waitFor(host, (message) => message.type === 'snapshot' && message.acknowledgedSeq === 1)
-    host.send(JSON.stringify({ type: 'input', seq: 1, target: 0.8, summon: null }))
+    host.send(JSON.stringify({ type: 'input', seq: 1, targetX: 0.8, targetY: 0.64, palAction: null }))
     expect((await acknowledged).type).toBe('snapshot')
 
     await waitFor(host, (message) => message.type === 'snapshot' && message.state.phase === 'playing' && message.state.serveTicks === 0)
     const summoned = waitFor(host, (message) => message.type === 'snapshot'
       && message.acknowledgedSeq === 3
       && message.state.pals.some((pal) => pal.type === 'guard'))
-    // A continuous steering packet must not erase a summon edge before the
+    // A continuous steering packet must not erase a Pal edge before the
     // authoritative tick consumes it.
-    host.send(JSON.stringify({ type: 'input', seq: 2, target: 0.8, summon: 'guard' }))
-    host.send(JSON.stringify({ type: 'input', seq: 3, target: 0.8, summon: null }))
+    host.send(JSON.stringify({ type: 'input', seq: 2, targetX: 0.8, targetY: 0.64, palAction: 'guard' }))
+    host.send(JSON.stringify({ type: 'input', seq: 3, targetX: 0.76, targetY: 0.52, palAction: null }))
     expect((await summoned).type).toBe('snapshot')
 
     host.close()
@@ -89,7 +89,7 @@ describe('Fly room server', () => {
     await roomServer.close()
     openServers.splice(openServers.indexOf(roomServer), 1)
     const database = JSON.parse(await readFile(dataPath, 'utf8')) as { version: number; rooms: Record<string, unknown> }
-    expect(database.version).toBe(2)
+    expect(database.version).toBe(3)
     expect(database.rooms[roomCode]).toBeDefined()
   })
 

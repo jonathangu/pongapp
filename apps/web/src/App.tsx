@@ -21,11 +21,11 @@ function roomFromHash(): string | undefined {
 }
 
 function Logo() {
-  return <span className="pg-brand"><svg viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="11" fill="#dfff68"/><path d="M8 10h4v16H8zm16 0h4v16h-4z" fill="#12231b"/><circle cx="18" cy="18" r="3.5" fill="#f36f44"/><path d="m16 8 2-3 2 3 3-2-1 5h-8l-1-5z" fill="#12231b"/></svg><span>PAL DUEL<span className="pg-brand__bang">!</span></span></span>
+  return <span className="pg-brand"><svg viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="11" fill="#dfff68"/><circle cx="10" cy="25" r="5" fill="#12231b"/><circle cx="26" cy="11" r="5" fill="#12231b"/><circle cx="18" cy="18" r="3.2" fill="#f36f44"/><path d="m16 7 2-3 2 3 3-2-1 5h-8l-1-5z" fill="#12231b"/></svg><span>PAL DUEL<span className="pg-brand__bang">!</span></span></span>
 }
 
 function PalPreview({ kind }: { kind: 'guard' | 'striker' | 'captain' }) {
-  return <span className={`pg-pal-preview pg-pal-preview--${kind}`} aria-hidden="true"><i /><b>{kind === 'captain' ? '♛' : kind === 'striker' ? '➤' : '◖━◗'}</b><i /></span>
+  return <span className={`pg-pal-preview pg-pal-preview--${kind}`} aria-hidden="true"><i /><b>{kind === 'captain' ? '♛' : kind === 'striker' ? '〰➤' : '◖●◗'}</b><i /></span>
 }
 
 export default function App() {
@@ -91,7 +91,7 @@ export default function App() {
           <div className="pg-hero__copy">
             <p className="pg-kicker">A RackeTapp side game</p>
             <h1>SUMMON.<br/><span>RETURN.</span> WIN.</h1>
-            <p className="pg-hero__tagline">Pong became a tiny army fight. Move your paddle, build Pal Power, and call one-hit helpers into the rally.</p>
+            <p className="pg-hero__tagline">Air hockey became a tiny-hero duel. Drag your round mallet anywhere, call persistent Pals, and command their wild signature moves.</p>
             <div className="pg-launch-grid pg-launch-grid--duel">
               <button className="pg-launch pg-launch--primary" onClick={startAi}><span className="pg-launch__icon">▶</span><span><strong>Quick Duel</strong><small>Play the AI now</small></span></button>
               <button className="pg-launch pg-launch--friend" onClick={startFriend}><span className="pg-launch__icon">↗</span><span><strong>Invite Friend</strong><small>One link · instant 1v1</small></span></button>
@@ -104,9 +104,9 @@ export default function App() {
 
           <div className="pg-hero__arena" aria-label="The three Paddle Pals">
             <div className="pg-hero__glow" />
-            <div className="pg-pal-showcase pg-pal-showcase--guard"><PalPreview kind="guard"/><div><strong>GUARD</strong><span>2 ✦ · blocks one</span></div></div>
-            <div className="pg-pal-showcase pg-pal-showcase--striker"><PalPreview kind="striker"/><div><strong>STRIKER</strong><span>3 ✦ · fast curve</span></div></div>
-            <div className="pg-pal-showcase pg-pal-showcase--captain"><PalPreview kind="captain"/><div><strong>CAPTAIN</strong><span>6 ✦ · splits in two</span></div></div>
+            <div className="pg-pal-showcase pg-pal-showcase--guard"><PalPreview kind="guard"/><div><strong>BUMPER</strong><span>2 ✦ · steals & clears</span></div></div>
+            <div className="pg-pal-showcase pg-pal-showcase--striker"><PalPreview kind="striker"/><div><strong>HOOK</strong><span>3 ✦ · lassos & slings</span></div></div>
+            <div className="pg-pal-showcase pg-pal-showcase--captain"><PalPreview kind="captain"/><div><strong>CAPTAIN</strong><span>6 ✦ · invades & shoots</span></div></div>
             <div className="pg-hero-ball" />
           </div>
         </section>
@@ -117,9 +117,9 @@ export default function App() {
         </section>
 
         <section className="pg-three-rules">
-          <article><b>01</b><h2>Return the ball</h2><p>Drag anywhere. Your paddle always appears at the bottom on your phone.</p></article>
-          <article><b>02</b><h2>Build Pal Power</h2><p>Energy grows during the rally. Perfect center hits fill it faster.</p></article>
-          <article><b>03</b><h2>Summon smart</h2><p>Every Pal returns one ball, then pops. Placement and timing decide the save.</p></article>
+          <article><b>01</b><h2>Own the arena</h2><p>Drag your round mallet in every direction. Only the rival's protected goal pocket is off-limits.</p></article>
+          <article><b>02</b><h2>Build your squad</h2><p>Pal Power grows every five seconds and from clean strikes. Pals stay, fight, carry, and take several hits.</p></article>
+          <article><b>03</b><h2>Call—and command</h2><p>Tap a card to call a Pal. Tap its lit card again for a steal, lasso, raid, or Power Star super.</p></article>
         </section>
       </main>
 
@@ -130,7 +130,7 @@ export default function App() {
 }
 
 function HowToPlay({ close }: { close: () => void }) {
-  return <div className="pg-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close() }}><section className="pg-modal" role="dialog" aria-modal="true" aria-labelledby="how-title"><button className="pg-modal__close" onClick={close}>Close</button><p className="pg-kicker">Pal Duel manual</p><h2 id="how-title">Pong, with helpers you summon</h2><div className="pg-how-grid"><article><PalPreview kind="guard"/><h3>Guard · 2 energy</h3><p>A wide defender near your goal. It blocks one ball, then bursts.</p></article><article><PalPreview kind="striker"/><h3>Striker · 3 energy</h3><p>Patrols midfield and fires one fast curved return.</p></article><article><PalPreview kind="captain"/><h3>Captain · 6 energy</h3><p>Tracks the ball. Its one return releases two tiny Hatchlings.</p></article></div><ul><li>You earn one energy every 3.5 active seconds.</li><li>A perfect center return awards a bonus energy.</li><li>Concede a goal and receive one comeback energy.</li><li>First to five wins. A tied clock becomes one-goal Final Volley.</li></ul></section></div>
+  return <div className="pg-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close() }}><section className="pg-modal" role="dialog" aria-modal="true" aria-labelledby="how-title"><button className="pg-modal__close" onClick={close}>Close</button><p className="pg-kicker">Pal Duel manual</p><h2 id="how-title">Air hockey, with tiny heroes</h2><div className="pg-how-grid"><article><PalPreview kind="guard"/><h3>Bumper · 2 energy · 4 hearts</h3><p>Guards your end, steals from enemy carriers, and clears danger. Command Bumper to attack the immediate threat.</p></article><article><PalPreview kind="striker"/><h3>Hook · 3 energy · 3 hearts</h3><p>Throws a rope from range, reels the puck in, and slings it at goal. Hit the puck or Hook to cut an enemy tether.</p></article><article><PalPreview kind="captain"/><h3>Captain · 6 energy · 5 hearts</h3><p>Crosses midfield to raid enemy ice, grabs the puck, and shoots. A powered Captain leaves three Hatchlings after a knockout.</p></article></div><ul><li>Drag your circular mallet freely across the arena; the opponent's goal pocket is protected.</li><li>You gain one energy every five active seconds, plus one after every three clean strikes.</li><li>Tap an active Pal's card again to issue its signature command.</li><li>A big Power Star appears about every 15 seconds. Your Pals chase it and gain a role-specific super.</li><li>First to five wins. A tied 2:30 clock becomes one-goal Final Volley.</li></ul></section></div>
 }
 
 function SettingsModal({ settings, update, close }: { settings: AppSettings; update: (patch: Partial<AppSettings>) => void; close: () => void }) {

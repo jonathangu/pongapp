@@ -3,12 +3,14 @@
 Summon. Return. Win.
 
 PongApp is a fast RackeTapp-themed browser duel. Every match is a vertical,
-first-to-five Pong battle where both players earn energy and summon disposable
-Paddle Pals: a Guard, a Striker, or a Captain that bursts into Hatchlings.
+first-to-five air-hockey battle with free 2D mallet movement, physical goals,
+and persistent tiny heroes. Bumper steals and clears, Hook lassos and slings,
+and Captain invades enemy ice to grab and shoot the puck.
 
 Guest play is instant. Choose an AI opponent, share one complete room link, or
-put two players on the same phone. Online scores, physics, energy, and Pal saves
-are authoritative on the room server.
+put two players on the same phone. Online movement, scores, puck physics,
+energy, Pal AI, possession, ropes, Power Stars, and results are authoritative
+on the room server.
 
 ## Local development
 
@@ -33,7 +35,7 @@ ROOM_SERVER_URL=http://127.0.0.1:8080 pnpm smoke:room
 - `apps/web` — React shell, PixiJS court, inputs, audio, and room UI.
 - `apps/room-server` — authoritative Node/WebSocket room service for Fly.io.
 - `packages/game-core` — deterministic Pal Duel simulation and AI.
-- `packages/protocol` — strict protocol-v2 client/server contracts.
+- `packages/protocol` — strict protocol-v3 client/server contracts.
 
 ## Hosting
 

@@ -3,17 +3,24 @@ import {
   BALL_RADIUS,
   DEFAULT_TIME_LIMIT_TICKS,
   DUEL_COURT_LENGTH_SCALE,
-  PAL_ARM_TICKS,
+  GOAL_WIDTH,
   PAL_ENERGY_MAX,
   PAL_ENERGY_REGEN_TICKS,
+  POWER_STAR_LIFETIME_TICKS,
   buildMatchConfig,
-  canSummonPal,
+  canUsePalCard,
   createGame,
-  palCoordinates,
   restartGame,
   stepGame,
+  type BallState,
   type GameState,
 } from '../src'
+
+const idle = (x = 0.5, y = 0.8) => ({ targetX: x, targetY: y, palAction: null })
+const puck = (partial: Partial<BallState> = {}): BallState => ({
+  id: 'puck-1', x: 0.5, y: 0.5, vx: 0, vy: 0, radius: BALL_RADIUS,
+  spin: 0, lastToucherId: null, carrierPalId: null, tetherPalId: null, ...partial,
+})
 
 function playing(): GameState {
   const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], seed: 42 }))
@@ -23,111 +30,136 @@ function playing(): GameState {
   return state
 }
 
-describe('Pal Duel simulation', () => {
-  it('creates a vertical v2 duel with the approved match defaults', () => {
+function summon(state: GameState, type: 'guard' | 'striker' | 'captain') {
+  const player = state.players.human!
+  stepGame(state, { human: { targetX: player.x, targetY: player.y, palAction: type } })
+  const pal = state.pals.find((candidate) => candidate.ownerId === 'human' && candidate.type === type)!
+  pal.mode = 'patrol'
+  pal.stateTicks = 0
+  pal.abilityCooldownTicks = 0
+  return pal
+}
+
+describe('Pal Duel air-hockey simulation', () => {
+  it('creates a vertical v3 duel with round two-dimensional mallets', () => {
     const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], seed: 9 }))
-    expect(state.rulesetVersion).toBe(2)
+    expect(state.rulesetVersion).toBe(3)
     expect(state.config.scoreToWin).toBe(5)
     expect(state.config.timeLimitTicks).toBe(DEFAULT_TIME_LIMIT_TICKS)
     expect(state.config.courtLengthScale).toBe(DUEL_COURT_LENGTH_SCALE)
-    expect(Object.values(state.players).map((player) => player.side)).toEqual(['bottom', 'top'])
-    expect(Object.values(state.players).every((player) => player.palEnergy === 2)).toBe(true)
+    expect(state.players.human).toMatchObject({ x: 0.5, y: 0.82, vx: 0, vy: 0 })
+    expect(state.players['ai-2']).toMatchObject({ x: 0.5, y: 0.18 })
   })
 
-  it('regenerates one energy pip every 3.5 active seconds', () => {
+  it('moves a player freely in both axes while protecting only the opponent crease', () => {
+    const state = playing()
+    const player = state.players.human!
+    for (let tick = 0; tick < 80; tick += 1) stepGame(state, { human: { targetX: 0.78, targetY: 0.36, palAction: null } })
+    expect(player.x).toBeCloseTo(0.78, 2)
+    expect(player.y).toBeCloseTo(0.36, 2)
+    for (let tick = 0; tick < 80; tick += 1) stepGame(state, { human: { targetX: 0.5, targetY: 0, palAction: null } })
+    expect(player.y).toBeGreaterThan(0.14)
+  })
+
+  it('turns mallet motion into a directional puck strike', () => {
+    const state = playing()
+    const player = state.players.human!
+    player.x = 0.4
+    player.y = 0.7
+    state.balls[0] = puck({ x: 0.48, y: 0.7, vx: -0.15 })
+    stepGame(state, { human: { targetX: 0.52, targetY: 0.68, palAction: null } })
+    expect(state.balls[0]!.vx).toBeGreaterThan(0)
+    expect(state.events.some((event) => event.type === 'hit')).toBe(true)
+  })
+
+  it('bounces on end rails outside the goal and scores through the opening', () => {
+    const rail = playing()
+    rail.balls[0] = puck({ x: 0.5 - GOAL_WIDTH, y: 0.025, vy: -0.8 })
+    stepGame(rail)
+    expect(rail.balls[0]!.vy).toBeGreaterThan(0)
+
+    const goal = playing()
+    goal.balls[0] = puck({ x: 0.5, y: -0.06, vy: -0.8, lastToucherId: 'human' })
+    stepGame(goal)
+    expect(goal.scores['team-0']).toBe(1)
+  })
+
+  it('regenerates one of six energy pips every five active seconds', () => {
     const state = playing()
     const human = state.players.human!
     human.palEnergy = 0
-    for (let tick = 0; tick < PAL_ENERGY_REGEN_TICKS - 1; tick += 1) stepGame(state, { human: { target: 0.5, summon: null } })
+    for (let tick = 0; tick < PAL_ENERGY_REGEN_TICKS - 1; tick += 1) stepGame(state, { human: idle() })
     expect(human.palEnergy).toBe(0)
-    stepGame(state, { human: { target: 0.5, summon: null } })
+    stepGame(state, { human: idle() })
     expect(human.palEnergy).toBe(1)
-    expect(state.events).toContainEqual({ type: 'energyChanged', playerId: 'human', energy: 1, reason: 'regen' })
   })
 
-  it('spends energy to summon an anchored Guard and arms it after 200ms', () => {
+  it('summons one persistent Guard, then turns the same card into a command', () => {
     const state = playing()
-    state.serveTicks = 100
-    const human = state.players.human!
-    human.position = 0.72
-    stepGame(state, { human: { target: 0.72, summon: 'guard' } })
-    expect(human.palEnergy).toBe(0)
-    expect(state.pals).toHaveLength(1)
-    expect(state.pals[0]).toMatchObject({ type: 'guard', anchor: 0.72, ownerId: 'human' })
-    for (let tick = 0; tick < PAL_ARM_TICKS; tick += 1) stepGame(state)
-    expect(state.events.some((event) => event.type === 'palArmed')).toBe(true)
+    const guard = summon(state, 'guard')
+    expect(guard.health).toBe(4)
+    expect(state.players.human!.palEnergy).toBe(0)
+    expect(canUsePalCard(state, state.players.human!, 'guard')).toBe(true)
+    stepGame(state, { human: { targetX: 0.5, targetY: 0.8, palAction: 'guard' } })
+    expect(state.pals.filter((pal) => pal.type === 'guard')).toHaveLength(1)
+    expect(state.events).toContainEqual(expect.objectContaining({ type: 'palCommanded', palId: guard.id }))
   })
 
-  it('makes every Guard a one-hit helper', () => {
+  it('lets a Guard take damage, grab the puck, and remain on the field', () => {
     const state = playing()
-    state.serveTicks = 100
-    stepGame(state, { human: { target: 0.5, summon: 'guard' } })
-    for (let tick = 0; tick < PAL_ARM_TICKS; tick += 1) stepGame(state)
-    state.serveTicks = 0
-    const pal = state.pals[0]!
-    const point = palCoordinates(pal)
-    state.balls[0] = {
-      id: 'ball-1', x: point.x, y: point.y - BALL_RADIUS - 0.002,
-      vx: 0, vy: 0.9, radius: BALL_RADIUS, spin: 0, lastToucherId: null,
-    }
+    const guard = summon(state, 'guard')
+    state.balls[0] = puck({ x: guard.x, y: guard.y, vy: 0.9, lastToucherId: 'ai-2' })
     stepGame(state)
-    expect(state.pals).toHaveLength(0)
-    expect(state.events.some((event) => event.type === 'palHit' && event.palType === 'guard')).toBe(true)
-    expect(state.balls[0]!.vy).toBeLessThan(0)
-    expect(state.players.human!.palHits).toBe(1)
+    expect(state.pals.some((pal) => pal.id === guard.id)).toBe(true)
+    expect(guard.health).toBe(3)
+    expect(state.balls[0]!.carrierPalId).toBe(guard.id)
+    expect(state.events.some((event) => event.type === 'palGrabbed')).toBe(true)
   })
 
-  it('splits a hit Captain into two armed-later Hatchlings', () => {
+  it('lets the Hook fire a visible tether and reel the puck', () => {
     const state = playing()
-    state.serveTicks = 100
-    const human = state.players.human!
-    human.palEnergy = PAL_ENERGY_MAX
-    stepGame(state, { human: { target: 0.5, summon: 'captain' } })
-    for (let tick = 0; tick < PAL_ARM_TICKS; tick += 1) stepGame(state)
-    state.serveTicks = 0
-    const captain = state.pals.find((pal) => pal.type === 'captain')!
-    const point = palCoordinates(captain)
-    state.balls[0] = {
-      id: 'ball-1', x: point.x, y: point.y - BALL_RADIUS - 0.002,
-      vx: 0, vy: 0.9, radius: BALL_RADIUS, spin: 0, lastToucherId: null,
-    }
+    state.players.human!.palEnergy = 3
+    const hook = summon(state, 'striker')
+    state.balls[0] = puck({ x: hook.x + 0.16, y: hook.y })
+    stepGame(state, { human: { targetX: 0.5, targetY: 0.8, palAction: 'striker' } })
+    expect(state.balls[0]!.tetherPalId).toBe(hook.id)
+    expect(state.events.some((event) => event.type === 'palTethered')).toBe(true)
+  })
+
+  it('turns a knocked-out Captain into multiple Hatchlings', () => {
+    const state = playing()
+    state.players.human!.palEnergy = PAL_ENERGY_MAX
+    const captain = summon(state, 'captain')
+    captain.health = 1
+    const enemy = state.players['ai-2']!
+    enemy.x = captain.x
+    enemy.y = captain.y
     stepGame(state)
-    expect(state.pals.map((pal) => pal.type)).toEqual(['hatchling', 'hatchling'])
-    expect(state.pals.every((pal) => pal.parentId === captain.id)).toBe(true)
+    expect(state.pals.some((pal) => pal.id === captain.id)).toBe(false)
+    expect(state.pals.filter((pal) => pal.type === 'hatchling').length).toBeGreaterThanOrEqual(2)
   })
 
-  it('enforces Captain reservation and the four-Pal field cap', () => {
+  it('magnetizes a Power Star into a nearby Pal and applies its role upgrade', () => {
     const state = playing()
-    const human = state.players.human!
-    human.palEnergy = PAL_ENERGY_MAX
-    expect(canSummonPal(state, human, 'captain')).toBe(true)
-    stepGame(state, { human: { target: 0.5, summon: 'captain' } })
-    human.palEnergy = PAL_ENERGY_MAX
-    stepGame(state, { human: { target: 0.4, summon: 'guard' } })
-    human.palEnergy = PAL_ENERGY_MAX
-    stepGame(state, { human: { target: 0.6, summon: 'guard' } })
-    human.palEnergy = PAL_ENERGY_MAX
-    expect(canSummonPal(state, human, 'guard')).toBe(false)
+    const guard = summon(state, 'guard')
+    state.powerStar = { id: 'star-test', x: guard.x, y: guard.y, spawnedAtTick: state.tick, expiresAtTick: state.tick + POWER_STAR_LIFETIME_TICKS }
+    stepGame(state)
+    expect(state.powerStar).toBeNull()
+    expect(guard.hasStar).toBe(true)
+    expect(state.events.some((event) => event.type === 'palPowered')).toBe(true)
   })
 
-  it('scores exactly one, clears Pals, and gives the defender comeback energy', () => {
+  it('clears field actors on a goal and grants comeback energy', () => {
     const state = playing()
-    state.players.human!.palEnergy = 2
-    stepGame(state, { human: { target: 0.5, summon: 'guard' } })
-    state.rallyHits = 22
-    const bottom = state.players.human!
-    state.balls[0] = {
-      id: 'ball-1', x: 0.02, y: 1.03, vx: 0, vy: 0.9,
-      radius: BALL_RADIUS, spin: 0, lastToucherId: 'ai-2',
-    }
+    summon(state, 'guard')
+    state.balls[0] = puck({ x: 0.5, y: 1.06, vy: 0.8, lastToucherId: 'ai-2' })
     stepGame(state)
     expect(state.scores['team-1']).toBe(1)
-    expect(state.pals).toHaveLength(0)
-    expect(bottom.palEnergy).toBe(1)
-    expect(state.events).toContainEqual(expect.objectContaining({ type: 'score', points: 1, rallyHits: 22 }))
+    expect(state.pals).toEqual([])
+    expect(state.players.human!.palEnergy).toBe(1)
   })
 
-  it('fills both energy meters for a tied final volley', () => {
+  it('fills both energy meters for a tied Final Volley and restarts cleanly', () => {
     const state = playing()
     state.remainingTicks = 1
     state.players.human!.palEnergy = 0
@@ -135,29 +167,9 @@ describe('Pal Duel simulation', () => {
     stepGame(state)
     expect(state.overtime).toBe(true)
     expect(Object.values(state.players).every((player) => player.palEnergy === PAL_ENERGY_MAX)).toBe(true)
-  })
-
-  it('makes longitudinal travel physically one-third longer', () => {
-    const long = playing()
-    const short = structuredClone(long)
-    short.config.courtLengthScale = 1
-    for (const state of [long, short]) {
-      state.balls[0] = { id: 'ball-1', x: 0.5, y: 0.5, vx: 0, vy: 0.8, radius: BALL_RADIUS, spin: 0, lastToucherId: null }
-      stepGame(state)
-    }
-    const longDelta = long.balls[0]!.y - 0.5
-    const shortDelta = short.balls[0]!.y - 0.5
-    expect(shortDelta / longDelta).toBeCloseTo(DUEL_COURT_LENGTH_SCALE, 5)
-  })
-
-  it('restarts with energy, Pals, and score reset', () => {
-    const state = playing()
-    state.players.human!.palEnergy = 6
-    stepGame(state, { human: { target: 0.5, summon: 'captain' } })
-    state.scores['team-0'] = 4
     const fresh = restartGame(state, 100)
-    expect(fresh.scores).toEqual({ 'team-0': 0, 'team-1': 0 })
+    expect(fresh.rulesetVersion).toBe(3)
     expect(fresh.pals).toEqual([])
-    expect(fresh.players.human!.palEnergy).toBe(2)
+    expect(fresh.powerStar).toBeNull()
   })
 })

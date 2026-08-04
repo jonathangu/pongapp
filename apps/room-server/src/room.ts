@@ -47,7 +47,7 @@ export class GameRoom {
         participant.disconnectedAt = Date.now()
         this.participants.set(participant.id, participant)
       }
-      this.game = restored.game?.rulesetVersion === 2 ? structuredClone(restored.game) : null
+      this.game = restored.game?.rulesetVersion === 3 ? structuredClone(restored.game) : null
       if (this.game) {
         for (const player of Object.values(this.game.players)) player.isAi = true
       }
@@ -79,7 +79,7 @@ export class GameRoom {
       try {
         const candidate = JSON.parse(raw) as { type?: unknown; version?: unknown }
         if (candidate.type === 'hello' && candidate.version !== PROTOCOL_VERSION) {
-          this.send(socket, { type: 'error', code: 'refresh_required', message: 'PongApp was upgraded. Refresh to play Pal Duel.', recoverable: false })
+          this.send(socket, { type: 'error', code: 'refresh_required', message: 'Pal Duel became air hockey. Refresh to play the new version.', recoverable: false })
           return
         }
       } catch { /* invalid JSON uses the normal message below */ }
@@ -162,7 +162,8 @@ export class GameRoom {
         connected: true,
         reconnectToken: crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''),
         lastSeq: 0,
-        lastTarget: 0.5,
+        lastTargetX: 0.5,
+        lastTargetY: slot === 1 ? 0.18 : 0.82,
         disconnectedAt: null,
       }
       this.participants.set(id, participant)
@@ -189,10 +190,12 @@ export class GameRoom {
   private async handleParticipantMessage(socket: WebSocket, participant: InternalParticipant, message: ClientMessage): Promise<void> {
     if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
       participant.lastSeq = message.seq
-      participant.lastTarget = message.target
+      participant.lastTargetX = message.targetX
+      participant.lastTargetY = message.targetY
       this.inputs[participant.id] = {
-        target: message.target,
-        summon: message.summon ?? this.inputs[participant.id]?.summon ?? null,
+        targetX: message.targetX,
+        targetY: message.targetY,
+        palAction: message.palAction ?? this.inputs[participant.id]?.palAction ?? null,
       }
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
@@ -241,7 +244,7 @@ export class GameRoom {
     if (!this.game) return
     const automatic = aiInputs(this.game, this.aiMemory)
     stepGame(this.game, { ...this.inputs, ...automatic })
-    for (const input of Object.values(this.inputs)) input.summon = null
+    for (const input of Object.values(this.inputs)) input.palAction = null
     const important = this.game.events.length > 0
     if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
     if (important || this.game.tick % 60 === 0) await this.persist()

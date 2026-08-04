@@ -34,7 +34,7 @@ async function verifyDeployment() {
   const healthResponse = await fetch(new URL('/api/health', roomServerUrl), { cache: 'no-store' })
   invariant(healthResponse.ok, `Room health returned ${healthResponse.status}`)
   const health = await healthResponse.json()
-  invariant(health.protocol === 2, `Room server protocol was ${health.protocol}, expected 2`)
+  invariant(health.protocol === 3, `Room server protocol was ${health.protocol}, expected 3`)
   console.log(`production-smoke ok: ${siteUrl.href} -> ${scriptPath} -> ${roomServerUrl}`)
 }
 

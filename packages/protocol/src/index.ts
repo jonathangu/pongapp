@@ -1,7 +1,7 @@
 import type { GameState, PalType } from '@pongapp/game-core'
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 2 as const
+export const PROTOCOL_VERSION = 3 as const
 
 const palTypeSchema = z.enum(['guard', 'striker', 'captain'])
 
@@ -24,8 +24,9 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('input'),
     seq: z.number().int().nonnegative(),
-    target: z.number().min(0).max(1),
-    summon: palTypeSchema.nullable(),
+    targetX: z.number().min(0).max(1),
+    targetY: z.number().min(0).max(1),
+    palAction: palTypeSchema.nullable(),
   }),
   z.object({ type: z.literal('emote'), emote: z.enum(['gg', 'wow', 'nice', 'oops']) }),
   z.object({ type: z.literal('rematch') }),

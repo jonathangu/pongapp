@@ -1,10 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pal Duel">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pal Duel air hockey">
   <rect width="128" height="128" rx="28" fill="#0b1611"/>
-  <path d="M31 37h66l-7 53H38z" fill="#dfff68" opacity=".18"/>
-  <path d="m34 31 17 17 13-24 13 24 17-17-7 23H41z" fill="#dfff68"/>
-  <rect x="30" y="65" width="68" height="24" rx="12" fill="#dfff68"/>
-  <circle cx="51" cy="75" r="4" fill="#0b1611"/>
-  <circle cx="77" cy="75" r="4" fill="#0b1611"/>
-  <path d="M54 84q10 8 20 0" fill="none" stroke="#0b1611" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="101" cy="104" r="9" fill="#fffdf7"/>
+  <circle cx="38" cy="90" r="22" fill="#dfff68" stroke="#fffdf7" stroke-width="4"/>
+  <circle cx="90" cy="38" r="22" fill="#f36f44" stroke="#fffdf7" stroke-width="4"/>
+  <circle cx="64" cy="64" r="10" fill="#101b16" stroke="#fffdf7" stroke-width="4"/>
+  <path d="m51 22 13-17 13 17 15-9-6 24H42l-6-24z" fill="#dfff68"/>
+  <circle cx="31" cy="85" r="3" fill="#0b1611"/><circle cx="45" cy="85" r="3" fill="#0b1611"/>
+  <path d="M32 96q6 5 12 0" fill="none" stroke="#0b1611" stroke-width="3" stroke-linecap="round"/>
 </svg>

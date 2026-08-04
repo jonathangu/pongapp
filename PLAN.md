@@ -1,38 +1,51 @@
-# Pal Duel v2 product contract
+# Pal Duel v3 product contract
 
-PongApp is one strong game, not a mode browser: a portrait 1v1 Pong duel where
-energy turns good defense into temporary Paddle Pal allies.
+PongApp is one strong game, not a mode browser: a portrait 1v1 air-hockey
+duel where direct mallet skill and a persistent squad of tiny heroes fight for
+the same puck.
 
 ## Match
 
-- Local player is always shown at the bottom; the opponent is at the top.
+- The local player is always shown at the bottom on their own device.
 - The competitive surface is 9:16 and physically 33% longer than it is wide.
-- First to 5 wins. The clock is 2:30.
+- Each player controls a circular mallet in both axes. The whole arena is open
+  except the opponent's protected goal pocket.
+- The puck rebounds from side and end rails and scores through a physical goal
+  mouth. First to 5 wins; the clock is 2:30.
 - A tied clock starts **Final Volley**: both players receive full energy and
   the next goal wins.
-- Every goal is worth exactly one point.
 - Match routes are AI, private invite, and same-phone. There is no public queue.
 
-## Energy and Paddle Pals
+## Energy and Pals
 
 - Each player starts with 2 of 6 energy.
-- Earn 1 energy every 3.5 active-rally seconds, on a perfect return, and as a
+- Earn 1 energy every 5 active seconds, after every 3 clean strikes, and as a
   comeback grant after conceding. Energy survives goals; active Pals do not.
-- **Guard · 2** — a wide one-hit defender near the goal for up to 7 seconds.
-- **Striker · 3** — a narrow, fast one-hit hunter at midcourt for 5 seconds.
-- **Captain · 6** — tracks the ball, takes one hit, then splits into two
-  one-hit Hatchlings.
-- Every Pal visibly arms before it can touch the ball. Every save destroys that
-  Pal. At most four allies may be active, with room reserved for the Captain's
-  Hatchlings.
-- The AI spends the same energy on the same cards. It receives no hidden Pal
-  or physics advantage.
+- **Bumper · 2 · 4 hearts** — guards its own end, steals from enemy carriers,
+  briefly carries the puck, and clears it.
+- **Hook · 3 · 3 hearts** — chases into range, lassos the puck, reels it in,
+  and slings it at goal. A rival can cut the tether by striking the puck or Pal.
+- **Captain · 6 · 5 hearts** — invades enemy ice, grabs the puck, and fires a
+  hard shot. A powered Captain leaves three Hatchlings when knocked out.
+- Pals persist, move, collide, take damage, become stunned, carry the puck, and
+  recover. One active Pal of each main role may fight for each player.
+- Tapping an active Pal card issues that role's signature command at no energy
+  cost. The AI uses the same energy, cards, commands, and physics.
+
+## Power Star
+
+- A large Power Star appears on the arena roughly every 15 seconds and expires
+  if nobody reaches it.
+- Pals actively contest the Star. It upgrades that Pal's next role-specific
+  play: a protected Bumper steal, a stronger Hook sling, or a Captain power shot.
+- The Star is temporary match drama, never permanent progression power.
 
 ## Product boundaries
 
 - Guest-first and playable within seconds; authentication stays optional.
-- Private room server is authoritative for movement, scores, energy, Pals, and
-  results. Protocol v2 intentionally rejects legacy clients and room data.
+- The private room server is authoritative for 2D movement, puck physics,
+  scores, energy, Pals, possession, tethers, Stars, and results.
+- Protocol v3 intentionally rejects old clients and old persisted room data.
 - Cosmetics and mastery never change gameplay power.
 - No public matchmaking, text chat, hosted accounts, RackeTapp backend work, or
   RackeTapp navigation link in this standalone release.

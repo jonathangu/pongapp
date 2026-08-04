@@ -4,10 +4,10 @@ export type Side = (typeof SIDES)[number]
 export const PAL_TYPES = ['guard', 'striker', 'captain'] as const
 export type PalType = (typeof PAL_TYPES)[number]
 export type ActivePalType = PalType | 'hatchling'
+export type PalMode = 'spawning' | 'patrol' | 'chase' | 'carry' | 'tether' | 'stunned'
 
 export const AI_DIFFICULTIES = ['rookie', 'rally', 'pro', 'ace'] as const
 export type AiDifficulty = (typeof AI_DIFFICULTIES)[number]
-
 export type GamePhase = 'countdown' | 'playing' | 'finished'
 
 export interface PlayerDefinition {
@@ -30,26 +30,31 @@ export interface MatchConfig {
 }
 
 export interface PlayerState extends PlayerDefinition {
-  position: number
-  velocity: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  radius: number
   returns: number
-  perfectReturns: number
+  cleanStrikes: number
   palEnergy: number
   palEnergyProgressTicks: number
   palsSummoned: number
   palHits: number
+  palSteals: number
 }
 
 export interface BallState {
   id: string
   x: number
   y: number
-  /** Velocity is expressed in physical court-width units per second. */
   vx: number
   vy: number
   radius: number
   spin: number
   lastToucherId: string | null
+  carrierPalId: string | null
+  tetherPalId: string | null
 }
 
 export interface PalState {
@@ -57,35 +62,60 @@ export interface PalState {
   ownerId: string
   side: Side
   type: ActivePalType
-  anchor: number
-  position: number
-  /** Distance from the owner's goal line in normalized screen coordinates. */
-  depth: number
-  phase: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  radius: number
+  health: number
+  maxHealth: number
+  mode: PalMode
+  stateTicks: number
+  abilityCooldownTicks: number
+  contactCooldownTicks: number
+  carryTicks: number
+  commanded: boolean
+  hasStar: boolean
   spawnedAtTick: number
-  armedAtTick: number
-  expiresAtTick: number
   parentId: string | null
 }
 
-export type ShotType = 'return' | 'perfect' | 'drive' | 'cut' | 'drop'
-export type EnergyReason = 'regen' | 'perfect' | 'comeback' | 'spent' | 'overtime'
+export interface PowerStarState {
+  id: string
+  x: number
+  y: number
+  spawnedAtTick: number
+  expiresAtTick: number
+}
+
+export type ShotType = 'tap' | 'strike' | 'smash' | 'bank'
+export type EnergyReason = 'regen' | 'cleanHit' | 'comeback' | 'spent' | 'overtime'
 
 export type GameEvent =
   | { type: 'matchStart' }
   | { type: 'countdown'; value: number }
-  | { type: 'hit'; playerId: string; ballId: string; perfect: boolean; speed: number; shot: ShotType }
+  | { type: 'hit'; playerId: string; ballId: string; clean: boolean; speed: number; shot: ShotType; x: number; y: number }
   | { type: 'score'; scorerId: string; team: string; againstPlayerId: string; ballId: string; points: 1; rallyHits: number }
   | { type: 'rallyHot'; hits: number; level: 'hot' | 'blazing' }
   | { type: 'palSummoned'; playerId: string; pal: PalState }
-  | { type: 'palArmed'; playerId: string; palId: string; palType: ActivePalType; x: number; y: number }
-  | { type: 'palHit'; playerId: string; palId: string; palType: ActivePalType; ballId: string; x: number; y: number }
-  | { type: 'palExpired'; playerId: string; palId: string; palType: ActivePalType; reason: 'timeout' | 'goal' }
+  | { type: 'palCommanded'; playerId: string; palId: string; palType: ActivePalType }
+  | { type: 'palGrabbed'; playerId: string; palId: string; palType: ActivePalType; ballId: string; x: number; y: number }
+  | { type: 'palShot'; playerId: string; palId: string; palType: ActivePalType; ballId: string; powered: boolean; x: number; y: number }
+  | { type: 'palStole'; playerId: string; palId: string; fromPalId: string; ballId: string; x: number; y: number }
+  | { type: 'palTethered'; playerId: string; palId: string; ballId: string; x: number; y: number }
+  | { type: 'tetherBroken'; playerId: string; palId: string; ballId: string; x: number; y: number }
+  | { type: 'palDamaged'; playerId: string; palId: string; palType: ActivePalType; health: number; x: number; y: number }
+  | { type: 'palStunned'; playerId: string; palId: string; palType: ActivePalType; x: number; y: number }
+  | { type: 'palPowered'; playerId: string; palId: string; palType: ActivePalType; x: number; y: number }
+  | { type: 'palPowerUsed'; playerId: string; palId: string; palType: ActivePalType; x: number; y: number }
+  | { type: 'palRetreated'; playerId: string; palId: string; palType: ActivePalType; reason: 'knockout' | 'goal' }
+  | { type: 'starSpawned'; star: PowerStarState }
+  | { type: 'starExpired'; starId: string }
   | { type: 'energyChanged'; playerId: string; energy: number; reason: EnergyReason }
   | { type: 'matchEnd'; winnerTeam: string }
 
 export interface GameState {
-  rulesetVersion: 2
+  rulesetVersion: 3
   config: MatchConfig
   phase: GamePhase
   tick: number
@@ -100,6 +130,8 @@ export interface GameState {
   players: Record<string, PlayerState>
   balls: BallState[]
   pals: PalState[]
+  powerStar: PowerStarState | null
+  nextPowerStarTick: number
   scores: Record<string, number>
   winnerTeam: string | null
   rngState: number
@@ -107,13 +139,14 @@ export interface GameState {
 }
 
 export interface GameInput {
-  target: number
-  summon: PalType | null
+  targetX: number
+  targetY: number
+  palAction: PalType | null
 }
 
 export type InputMap = Record<string, GameInput | undefined>
 
 export interface AiControllerMemory {
-  targetByPlayer: Record<string, number>
+  targetByPlayer: Record<string, { x: number; y: number }>
   nextThinkByPlayer: Record<string, number>
 }

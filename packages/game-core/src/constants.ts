@@ -2,35 +2,49 @@ import type { ActivePalType, AiDifficulty, PalType } from './types'
 
 export const TICK_RATE = 60
 export const TICK_SECONDS = 1 / TICK_RATE
-export const PADDLE_OFFSET = 0.045
-export const BASE_PADDLE_LENGTH = 0.22
-export const PADDLE_SPEED = 1.35
-export const BALL_START_SPEED = 0.62
-export const BALL_SPEED_CAP = 1.12
-export const BALL_SPEED_RAMP = 1.055
-export const BALL_RADIUS = 0.015
-export const PERFECT_RETURN_SPEED_BOOST = 1.06
 export const DUEL_COURT_LENGTH_SCALE = 4 / 3
+
+export const RAIL_INSET = 0.022
+export const GOAL_WIDTH = 0.34
+export const GOAL_DEPTH = 0.045
+export const GOAL_CREASE_DEPTH = 0.095
+export const MALLET_RADIUS = 0.052
+export const MALLET_SPEED = 1.2
+export const PUCK_RADIUS = 0.018
+export const PUCK_START_SPEED = 0.58
+export const PUCK_SPEED_CAP = 1.42
+export const PUCK_SPEED_RAMP = 1.035
+
+// Renderer aliases retained to keep rally heat vocabulary concise.
+export const BALL_RADIUS = PUCK_RADIUS
+export const BALL_START_SPEED = PUCK_START_SPEED
+export const BALL_SPEED_CAP = PUCK_SPEED_CAP
 
 export const PAL_ENERGY_MAX = 6
 export const PAL_START_ENERGY = 2
-export const PAL_ENERGY_REGEN_TICKS = Math.round(3.5 * TICK_RATE)
-export const PAL_ARM_TICKS = Math.round(0.2 * TICK_RATE)
+export const PAL_ENERGY_REGEN_TICKS = 5 * TICK_RATE
+export const PAL_ARM_TICKS = Math.round(0.35 * TICK_RATE)
 export const PAL_ACTIVE_LIMIT = 4
+export const POWER_STAR_FIRST_TICKS = 12 * TICK_RATE
+export const POWER_STAR_INTERVAL_TICKS = 15 * TICK_RATE
+export const POWER_STAR_LIFETIME_TICKS = 10 * TICK_RATE
 
 export interface PalProfile {
   cost: number
-  length: number
-  depth: number
-  lifetimeTicks: number
+  radius: number
+  health: number
   moveSpeed: number
+  abilityCooldownTicks: number
+  carryTicks: number
+  shotSpeed: number
+  hookRange: number
 }
 
 export const PAL_PROFILE: Record<ActivePalType, PalProfile> = {
-  guard: { cost: 2, length: 0.2, depth: 0.18, lifetimeTicks: 7 * TICK_RATE, moveSpeed: 0.35 },
-  striker: { cost: 3, length: 0.13, depth: 0.4, lifetimeTicks: 5 * TICK_RATE, moveSpeed: 0.75 },
-  captain: { cost: 6, length: 0.28, depth: 0.3, lifetimeTicks: 7 * TICK_RATE, moveSpeed: 0.6 },
-  hatchling: { cost: 0, length: 0.11, depth: 0.24, lifetimeTicks: 4 * TICK_RATE, moveSpeed: 0.42 },
+  guard: { cost: 2, radius: 0.042, health: 4, moveSpeed: 0.72, abilityCooldownTicks: 90, carryTicks: 25, shotSpeed: 0.92, hookRange: 0 },
+  striker: { cost: 3, radius: 0.034, health: 3, moveSpeed: 0.84, abilityCooldownTicks: 150, carryTicks: 34, shotSpeed: 1.16, hookRange: 0.3 },
+  captain: { cost: 6, radius: 0.05, health: 5, moveSpeed: 0.8, abilityCooldownTicks: 180, carryTicks: 42, shotSpeed: 1.34, hookRange: 0 },
+  hatchling: { cost: 0, radius: 0.026, health: 2, moveSpeed: 0.78, abilityCooldownTicks: 90, carryTicks: 18, shotSpeed: 0.84, hookRange: 0 },
 }
 
 export const PAL_COST: Record<PalType, number> = {
@@ -40,7 +54,7 @@ export const PAL_COST: Record<PalType, number> = {
 }
 
 export const MATCH_COUNTDOWN_TICKS = 3 * TICK_RATE
-export const SERVE_DELAY_TICKS = Math.round(0.75 * TICK_RATE)
+export const SERVE_DELAY_TICKS = Math.round(0.7 * TICK_RATE)
 export const DEFAULT_SCORE_TO_WIN = 5
 export const DEFAULT_TIME_LIMIT_TICKS = Math.round(2.5 * 60 * TICK_RATE)
 
@@ -53,15 +67,15 @@ export const AI_DIFFICULTY_LABEL: Record<AiDifficulty, string> = {
 
 export interface AiProfile {
   reactionTicks: number
-  bounces: number
   aimError: number
   speed: number
+  aggression: number
   summonDelayTicks: number
 }
 
 export const AI_PROFILE: Record<AiDifficulty, AiProfile> = {
-  rookie: { reactionTicks: 26, bounces: 0, aimError: 1.8, speed: 0.68, summonDelayTicks: 54 },
-  rally: { reactionTicks: 16, bounces: 1, aimError: 1, speed: 0.82, summonDelayTicks: 36 },
-  pro: { reactionTicks: 9, bounces: 3, aimError: 0.72, speed: 0.93, summonDelayTicks: 22 },
-  ace: { reactionTicks: 5, bounces: 99, aimError: 0.6, speed: 0.97, summonDelayTicks: 14 },
+  rookie: { reactionTicks: 24, aimError: 0.12, speed: 0.66, aggression: 0.25, summonDelayTicks: 70 },
+  rally: { reactionTicks: 15, aimError: 0.075, speed: 0.8, aggression: 0.42, summonDelayTicks: 48 },
+  pro: { reactionTicks: 9, aimError: 0.04, speed: 0.91, aggression: 0.62, summonDelayTicks: 32 },
+  ace: { reactionTicks: 5, aimError: 0.018, speed: 0.98, aggression: 0.78, summonDelayTicks: 22 },
 }

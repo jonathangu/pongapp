@@ -1,4 +1,4 @@
-import { TICK_RATE, type BallState, type GameState, type PalType } from '@pongapp/game-core'
+import { GOAL_WIDTH, RAIL_INSET, TICK_RATE, type BallState, type GameState, type PalType } from '@pongapp/game-core'
 import {
   PROTOCOL_VERSION,
   type ClientMessage,
@@ -7,7 +7,8 @@ import {
   type RoomParticipant,
   type ServerMessage,
 } from '@pongapp/protocol'
-import { advanceLocalPaddlePreview, ballPredictionEnabled, interpolatePosition, worldPredictionEnabled } from '../game/prediction'
+import { advanceLocalMalletPreview, ballPredictionEnabled, interpolatePoint, worldPredictionEnabled } from '../game/prediction'
+import type { CourtPoint } from '../game/perspective'
 
 export type RoomClientStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
 export type ConnectionQuality = 'good' | 'fair' | 'poor'
@@ -26,20 +27,9 @@ export interface RoomClientView {
   connectionQuality: ConnectionQuality
 }
 
-export interface RoomIdentity {
-  guestId: string
-  displayName: string
-  role?: 'player' | 'spectator'
-}
-
-interface SnapshotSample {
-  state: GameState
-  receivedAt: number
-}
-
-interface RenderBall extends BallState {
-  renderedAt: number
-}
+export interface RoomIdentity { guestId: string; displayName: string; role?: 'player' | 'spectator' }
+interface SnapshotSample { state: GameState; receivedAt: number }
+interface RenderBall extends BallState { renderedAt: number }
 
 function websocketUrl(serverUrl: string, roomCode: string): string {
   const url = new URL(`/api/rooms/${roomCode}/websocket`, serverUrl)
@@ -61,25 +51,21 @@ export class RoomClient {
   private acknowledgedInputSeq = 0
   private latestTargetSeq = 0
   private targetChangedSinceFlush = false
-  private latestTarget = 0.5
-  private pendingSummon: PalType | null = null
+  private latestTarget: CourtPoint = { x: 0.5, y: 0.82 }
+  private pendingPalAction: PalType | null = null
   private inputTimer = 0
   private pingTimer = 0
   private closedByUser = false
   private reconnectAttempt = 0
   private snapshots: SnapshotSample[] = []
   private renderBall: RenderBall | null = null
-  private localRenderPosition: number | null = null
+  private localRenderPoint: CourtPoint | null = null
   private localRenderAt = 0
   private localRenderPlayerId: string | null = null
   private latencySamples: number[] = []
   private snapshotGapSamples: number[] = []
 
-  constructor(
-    private readonly serverUrl: string,
-    private readonly roomCode: string,
-    private readonly identity: RoomIdentity,
-  ) {
+  constructor(private readonly serverUrl: string, private readonly roomCode: string, private readonly identity: RoomIdentity) {
     this.view = {
       status: 'idle', roomCode, lobby: null, gameState: null, participant: null, error: null,
       latencyMs: null, latencyP95Ms: null, jitterMs: null, snapshotGapP95Ms: null, connectionQuality: 'good',
@@ -117,40 +103,27 @@ export class RoomClient {
     socket.addEventListener('error', () => this.patch({ status: 'error', error: 'The room connection failed.' }))
   }
 
-  subscribe(listener: (view: RoomClientView) => void): () => void {
-    this.listeners.add(listener)
-    listener(this.view)
-    return () => this.listeners.delete(listener)
-  }
-
-  subscribeState(listener: (state: GameState) => void): () => void {
-    this.stateListeners.add(listener)
-    if (this.view.gameState) listener(this.view.gameState)
-    return () => this.stateListeners.delete(listener)
-  }
+  subscribe(listener: (view: RoomClientView) => void): () => void { this.listeners.add(listener); listener(this.view); return () => this.listeners.delete(listener) }
+  subscribeState(listener: (state: GameState) => void): () => void { this.stateListeners.add(listener); if (this.view.gameState) listener(this.view.gameState); return () => this.stateListeners.delete(listener) }
 
   getRenderState(): GameState {
     const source = this.view.gameState
     if (!source) throw new Error('No game snapshot is available.')
     const clone = structuredClone(source)
     const now = performance.now()
-    this.renderRemotePaddle(clone, now)
-    this.renderLocalPaddle(clone, now)
+    this.renderRemoteActors(clone, now)
+    this.renderLocalMallet(clone, now)
     this.renderPredictedBall(clone, now)
     return clone
   }
 
-  setTarget(target: number): void {
-    const next = Math.max(0, Math.min(1, target))
-    if (Math.abs(next - this.latestTarget) > 0.0001) this.targetChangedSinceFlush = true
+  setTarget(x: number, y: number): void {
+    const next = { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
+    if (Math.hypot(next.x - this.latestTarget.x, next.y - this.latestTarget.y) > 0.0001) this.targetChangedSinceFlush = true
     this.latestTarget = next
   }
 
-  summon(type: PalType): void {
-    this.pendingSummon = type
-    this.flushInput()
-  }
-
+  usePal(type: PalType): void { this.pendingPalAction = type; this.flushInput() }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
   rematch(): void { this.send({ type: 'rematch' }) }
 
@@ -167,17 +140,12 @@ export class RoomClient {
   private flushInput(): void {
     if (this.socket?.readyState !== WebSocket.OPEN || !this.view.participant || this.view.participant.slot === null) return
     this.inputSeq += 1
-    if (this.targetChangedSinceFlush) {
-      this.latestTargetSeq = this.inputSeq
-      this.targetChangedSinceFlush = false
-    }
-    this.send({ type: 'input', seq: this.inputSeq, target: this.latestTarget, summon: this.pendingSummon })
-    this.pendingSummon = null
+    if (this.targetChangedSinceFlush) { this.latestTargetSeq = this.inputSeq; this.targetChangedSinceFlush = false }
+    this.send({ type: 'input', seq: this.inputSeq, targetX: this.latestTarget.x, targetY: this.latestTarget.y, palAction: this.pendingPalAction })
+    this.pendingPalAction = null
   }
 
-  private send(message: ClientMessage): void {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message))
-  }
+  private send(message: ClientMessage): void { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)) }
 
   private onMessage(raw: string): void {
     let message: ServerMessage
@@ -206,19 +174,14 @@ export class RoomClient {
       const localId = this.view.participant?.id
       const local = localId ? gameState.players[localId] : undefined
       const previousTick = this.view.gameState?.tick
-      if (local && (this.localRenderPlayerId !== local.id || previousTick === undefined || gameState.tick < previousTick)) {
-        this.resetLocalPreview(local.id, local.position)
-      }
+      if (local && (this.localRenderPlayerId !== local.id || previousTick === undefined || gameState.tick < previousTick)) this.resetLocalPreview(local.id, { x: local.x, y: local.y })
       this.patch({ gameState, status: 'playing' })
       for (const listener of this.stateListeners) listener(gameState)
-    } else if (message.type === 'pong') {
-      this.recordLatency(Math.max(0, Date.now() - message.sentAt))
-    } else if (message.type === 'error') {
-      this.patch({ status: message.recoverable ? this.view.status : 'error', error: message.message })
-    }
+    } else if (message.type === 'pong') this.recordLatency(Math.max(0, Date.now() - message.sentAt))
+    else if (message.type === 'error') this.patch({ status: message.recoverable ? this.view.status : 'error', error: message.message })
   }
 
-  private renderRemotePaddle(clone: GameState, now: number): void {
+  private renderRemoteActors(clone: GameState, now: number): void {
     const localId = this.view.participant?.id
     const latest = this.snapshots.at(-1)
     if (!latest || this.snapshots.length < 2) return
@@ -236,51 +199,58 @@ export class RoomClient {
       if (player.id === localId) continue
       const from = before.state.players[player.id]
       const to = after.state.players[player.id]
-      if (from && to) player.position = interpolatePosition(from.position, to.position, amount)
-      else if (renderTick > latest.state.tick) player.position = Math.max(0.08, Math.min(0.92, player.position + player.velocity * Math.min(0.05, (renderTick - latest.state.tick) / TICK_RATE)))
+      if (from && to) Object.assign(player, interpolatePoint(from, to, amount))
+      else if (renderTick > latest.state.tick) {
+        const delta = Math.min(0.05, (renderTick - latest.state.tick) / TICK_RATE)
+        player.x += player.vx * delta
+        player.y += player.vy * delta / clone.config.courtLengthScale
+      }
     }
-    const blend = Math.min(1, Math.max(0, amount))
     for (const pal of clone.pals) {
       const from = before.state.pals.find((candidate) => candidate.id === pal.id)
       const to = after.state.pals.find((candidate) => candidate.id === pal.id)
-      if (from && to) pal.position = from.position + (to.position - from.position) * blend
+      if (from && to) Object.assign(pal, interpolatePoint(from, to, amount))
     }
   }
 
-  private renderLocalPaddle(clone: GameState, now: number): void {
+  private renderLocalMallet(clone: GameState, now: number): void {
     const local = this.view.participant?.id ? clone.players[this.view.participant.id] : undefined
     if (!local) return
-    if (this.localRenderPlayerId !== local.id || this.localRenderPosition === null) this.resetLocalPreview(local.id, local.position)
+    if (this.localRenderPlayerId !== local.id || !this.localRenderPoint) this.resetLocalPreview(local.id, local)
     const delta = Math.min(0.05, Math.max(0, (now - this.localRenderAt) / 1000))
     this.localRenderAt = now
     if (worldPredictionEnabled(clone)) {
       const serverHasLatestTarget = !this.targetChangedSinceFlush && this.acknowledgedInputSeq >= this.latestTargetSeq
-      const authority = serverHasLatestTarget ? local.position : this.localRenderPosition!
-      const previous = this.localRenderPosition!
-      this.localRenderPosition = advanceLocalPaddlePreview(previous, authority, this.latestTarget, delta)
-      local.position = this.localRenderPosition
-      if (delta > 0) local.velocity = (this.localRenderPosition - previous) / delta
+      const authority = serverHasLatestTarget ? { x: local.x, y: local.y } : this.localRenderPoint!
+      const previous = this.localRenderPoint!
+      this.localRenderPoint = advanceLocalMalletPreview(previous, authority, this.latestTarget, delta, clone.config.courtLengthScale)
+      local.x = this.localRenderPoint.x
+      local.y = this.localRenderPoint.y
+      if (delta > 0) { local.vx = (local.x - previous.x) / delta; local.vy = (local.y - previous.y) * clone.config.courtLengthScale / delta }
     } else {
-      local.position = this.localRenderPosition!
-      local.velocity = 0
+      local.x = this.localRenderPoint!.x
+      local.y = this.localRenderPoint!.y
+      local.vx = 0
+      local.vy = 0
     }
   }
 
   private renderPredictedBall(clone: GameState, now: number): void {
     const authoritative = clone.balls[0]
     if (!authoritative) return
-    const hardEvent = clone.events.some((event) => event.type === 'score' || event.type === 'matchStart')
-    if (!this.renderBall || this.renderBall.id !== authoritative.id || hardEvent) {
-      this.renderBall = { ...authoritative, renderedAt: now }
-    }
+    const hardEvent = clone.events.some((event) => event.type === 'score' || event.type === 'matchStart' || event.type === 'palGrabbed' || event.type === 'palShot' || event.type === 'palStole')
+    if (!this.renderBall || this.renderBall.id !== authoritative.id || hardEvent || authoritative.carrierPalId) this.renderBall = { ...authoritative, renderedAt: now }
     const render = this.renderBall
     const delta = Math.min(0.05, Math.max(0, (now - render.renderedAt) / 1000))
     render.renderedAt = now
     if (ballPredictionEnabled(clone)) {
       render.x += render.vx * delta
       render.y += render.vy * delta / clone.config.courtLengthScale
-      if (render.x - render.radius < 0 && render.vx < 0) { render.x = render.radius; render.vx = Math.abs(render.vx) }
-      if (render.x + render.radius > 1 && render.vx > 0) { render.x = 1 - render.radius; render.vx = -Math.abs(render.vx) }
+      if (render.x - render.radius < RAIL_INSET && render.vx < 0) { render.x = RAIL_INSET + render.radius; render.vx = Math.abs(render.vx) }
+      if (render.x + render.radius > 1 - RAIL_INSET && render.vx > 0) { render.x = 1 - RAIL_INSET - render.radius; render.vx = -Math.abs(render.vx) }
+      const inGoal = Math.abs(render.x - 0.5) < GOAL_WIDTH / 2
+      if (!inGoal && render.y - render.radius < RAIL_INSET && render.vy < 0) { render.y = RAIL_INSET + render.radius; render.vy = Math.abs(render.vy) }
+      if (!inGoal && render.y + render.radius > 1 - RAIL_INSET && render.vy > 0) { render.y = 1 - RAIL_INSET - render.radius; render.vy = -Math.abs(render.vy) }
       const error = Math.hypot(authoritative.x - render.x, authoritative.y - render.y)
       if (error > 0.12) { render.x = authoritative.x; render.y = authoritative.y }
       else {
@@ -288,15 +258,8 @@ export class RoomClient {
         render.x += (authoritative.x - render.x) * correction
         render.y += (authoritative.y - render.y) * correction
       }
-      render.vx = authoritative.vx
-      render.vy = authoritative.vy
-      render.spin = authoritative.spin
-    } else {
-      render.x = authoritative.x
-      render.y = authoritative.y
-      render.vx = authoritative.vx
-      render.vy = authoritative.vy
-    }
+      Object.assign(render, { vx: authoritative.vx, vy: authoritative.vy, spin: authoritative.spin, carrierPalId: authoritative.carrierPalId, tetherPalId: authoritative.tetherPalId })
+    } else Object.assign(render, authoritative)
     clone.balls[0] = { ...render }
   }
 
@@ -309,9 +272,7 @@ export class RoomClient {
     const jitter = this.latencySamples.length < 2 ? 0 : Math.round(this.latencySamples.slice(1).reduce((sum, value, index) => sum + Math.abs(value - this.latencySamples[index]!), 0) / (this.latencySamples.length - 1))
     const gaps = [...this.snapshotGapSamples].sort((a, b) => a - b)
     const gapP95 = gaps.length ? Math.round(percentile(gaps, 0.95)) : null
-    const quality: ConnectionQuality = median > 120 || jitter > 45 || (gapP95 ?? 0) > 100
-      ? 'poor'
-      : median > 70 || jitter > 25 || (gapP95 ?? 0) > 60 ? 'fair' : 'good'
+    const quality: ConnectionQuality = median > 120 || jitter > 45 || (gapP95 ?? 0) > 100 ? 'poor' : median > 70 || jitter > 25 || (gapP95 ?? 0) > 60 ? 'fair' : 'good'
     this.patch({ latencyMs: median, latencyP95Ms: p95, jitterMs: jitter, snapshotGapP95Ms: gapP95, connectionQuality: quality })
   }
 
@@ -319,29 +280,17 @@ export class RoomClient {
     window.clearInterval(this.inputTimer)
     window.clearInterval(this.pingTimer)
     if (this.closedByUser) return
-    if (this.reconnectAttempt >= 4) {
-      this.patch({ status: 'error', error: 'Connection lost. Return home and rejoin the room.' })
-      return
-    }
+    if (this.reconnectAttempt >= 4) { this.patch({ status: 'error', error: 'Connection lost. Return home and rejoin the room.' }); return }
     this.reconnectAttempt += 1
     window.setTimeout(() => this.connect(), Math.min(4000, 500 * 2 ** this.reconnectAttempt))
   }
 
-  private resetLocalPreview(playerId: string | null = null, position: number | null = null): void {
+  private resetLocalPreview(playerId: string | null = null, point: CourtPoint | null = null): void {
     this.localRenderPlayerId = playerId
-    this.localRenderPosition = position
+    this.localRenderPoint = point ? { x: point.x, y: point.y } : null
     this.localRenderAt = performance.now()
   }
 
-  private resetRenderState(): void {
-    this.snapshots = []
-    this.snapshotGapSamples = []
-    this.renderBall = null
-    this.resetLocalPreview()
-  }
-
-  private patch(next: Partial<RoomClientView>): void {
-    this.view = { ...this.view, ...next }
-    for (const listener of this.listeners) listener(this.view)
-  }
+  private resetRenderState(): void { this.snapshots = []; this.snapshotGapSamples = []; this.renderBall = null; this.resetLocalPreview() }
+  private patch(next: Partial<RoomClientView>): void { this.view = { ...this.view, ...next }; for (const listener of this.listeners) listener(this.view) }
 }

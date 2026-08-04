@@ -66,10 +66,10 @@ export interface PalIdentity {
 }
 
 export const PAL_IDENTITIES: Record<ActivePalType, PalIdentity> = {
-  guard: { id: 'guard', label: 'Guard Pal', effect: 'Blocks one ball near your goal', glyph: 'shield', color: 0x67d4ff, hex: '#67d4ff' },
-  striker: { id: 'striker', label: 'Striker Pal', effect: 'Fires one fast curved return', glyph: 'bolt', color: 0xf36f44, hex: '#f36f44' },
-  captain: { id: 'captain', label: 'Pal Captain', effect: 'Splits into two helpers when hit', glyph: 'crown', color: 0xdfff68, hex: '#dfff68' },
-  hatchling: { id: 'hatchling', label: 'Hatchling', effect: 'A tiny one-hit helper', glyph: 'spark', color: 0xfffdf7, hex: '#fffdf7' },
+  guard: { id: 'guard', label: 'Bumper Pal', effect: 'Guards your goal, steals carried pucks, and clears danger', glyph: 'shield', color: 0x67d4ff, hex: '#67d4ff' },
+  striker: { id: 'striker', label: 'Hook Pal', effect: 'Lassos the puck from range, reels it in, then slings it back', glyph: 'bolt', color: 0xf36f44, hex: '#f36f44' },
+  captain: { id: 'captain', label: 'Pal Captain', effect: 'Invades enemy ice, grabs the puck, and fires power shots', glyph: 'crown', color: 0xdfff68, hex: '#dfff68' },
+  hatchling: { id: 'hatchling', label: 'Hatchling', effect: 'A scrappy little defender born from the Captain', glyph: 'spark', color: 0xfffdf7, hex: '#fffdf7' },
 }
 
 /** Neutral surfaces the renderer shares with `tokens.css`. */

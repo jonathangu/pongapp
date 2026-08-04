@@ -11,7 +11,7 @@ import {
   type PalType,
 } from '@pongapp/game-core'
 import { GameCourt } from './GameCourt'
-import { screenDirectionToLogical } from './perspective'
+import { screenVectorToWorld, type CourtPoint } from './perspective'
 import type { CourtEffectsSettings } from './PixiCourt'
 
 interface Props {
@@ -26,8 +26,11 @@ interface Props {
 export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onResult }: Props) {
   const stateRef = useRef(createGame(config))
   const aiMemory = useRef(createAiMemory())
-  const targets = useRef<Record<string, number>>(Object.fromEntries(humanPlayerIds.map((id) => [id, 0.5])))
-  const summons = useRef<Record<string, PalType | null>>({})
+  const targets = useRef<Record<string, CourtPoint>>(Object.fromEntries(humanPlayerIds.map((id) => {
+    const player = stateRef.current.players[id]
+    return [id, { x: player?.x ?? 0.5, y: player?.y ?? 0.82 }]
+  })))
+  const palActions = useRef<Record<string, PalType | null>>({})
   const gamepadButtons = useRef<Record<string, boolean>>({})
   const listeners = useRef(new Set<(state: GameState) => void>())
   const resultRecorded = useRef(false)
@@ -49,18 +52,24 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
           const gamepad = gamepads[index]
           const player = state.players[id]
           if (gamepad && player) {
-            const axis = screenDirectionToLogical(gamepad.axes[0] ?? 0, player.side, viewSide)
-            if (Math.abs(axis) > 0.16) targets.current[id] = Math.max(0, Math.min(1, (targets.current[id] ?? 0.5) + axis * 0.024))
+            const screen = { x: gamepad.axes[0] ?? 0, y: gamepad.axes[1] ?? 0 }
+            const world = screenVectorToWorld(screen, viewSide)
+            const current = targets.current[id] ?? { x: player.x, y: player.y }
+            if (Math.hypot(world.x, world.y) > 0.16) targets.current[id] = {
+              x: Math.max(0, Math.min(1, current.x + world.x * 0.024)),
+              y: Math.max(0, Math.min(1, current.y + world.y * 0.024)),
+            }
             const types: PalType[] = ['guard', 'striker', 'captain']
             for (let button = 0; button < types.length; button += 1) {
               const key = `${index}-${button}`
               const pressed = Boolean(gamepad.buttons[button]?.pressed)
-              if (pressed && !gamepadButtons.current[key]) summons.current[id] = types[button]!
+              if (pressed && !gamepadButtons.current[key]) palActions.current[id] = types[button]!
               gamepadButtons.current[key] = pressed
             }
           }
-          inputs[id] = { target: targets.current[id] ?? 0.5, summon: summons.current[id] ?? null }
-          summons.current[id] = null
+          const target = targets.current[id] ?? { x: player?.x ?? 0.5, y: player?.y ?? 0.82 }
+          inputs[id] = { targetX: target.x, targetY: target.y, palAction: palActions.current[id] ?? null }
+          palActions.current[id] = null
         }
         stepGame(state, inputs)
         if (state.phase === 'finished' && !resultRecorded.current) {
@@ -84,11 +93,11 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
     listeners.current.add(listener)
     return () => listeners.current.delete(listener)
   }, [])
-  const setTarget = useCallback((id: string, target: number) => {
-    targets.current[id] = Math.max(0, Math.min(1, target))
+  const setTarget = useCallback((id: string, x: number, y: number) => {
+    targets.current[id] = { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
   }, [])
-  const summon = useCallback((id: string, type: PalType) => {
-    summons.current[id] = type
+  const palAction = useCallback((id: string, type: PalType) => {
+    palActions.current[id] = type
   }, [])
   const rematch = useCallback(() => {
     stateRef.current = restartGame(stateRef.current)
@@ -103,13 +112,13 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
       getState={getState}
       subscribe={subscribe}
       onTarget={setTarget}
-      onSummon={summon}
+      onPalAction={palAction}
       onExit={onExit}
       localPlayerIds={humanPlayerIds}
       settings={effects}
       muted={muted}
       title={humanPlayerIds.length > 1 ? 'Same-Phone Pal Duel' : 'You vs the computer'}
-      subtitle={`First to ${config.scoreToWin} · summon smart · every Pal gets one save`}
+      subtitle={`First to ${config.scoreToWin} · drag anywhere · call Pals, then command them`}
       onRematch={rematch}
     />
   )

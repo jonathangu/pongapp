@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  MALLET_SPEED,
   PAL_COST,
   PAL_ENERGY_MAX,
   PAL_IDENTITIES,
-  PADDLE_SPEED,
+  PAL_PROFILE,
   TICK_RATE,
-  canSummonPal,
+  canUsePalCard,
   secondsRemaining,
   seatIdentityForColor,
   type GameState,
@@ -13,7 +14,7 @@ import {
   type PlayerState,
 } from '@pongapp/game-core'
 import { GameAudio } from './audio'
-import { screenFractionToLogical } from './perspective'
+import { screenPointToWorld, screenVectorToWorld, type CourtPoint } from './perspective'
 import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
 
 interface NetworkStatus {
@@ -26,8 +27,8 @@ interface NetworkStatus {
 interface Props {
   getState: () => GameState
   subscribe: (listener: (state: GameState) => void) => () => void
-  onTarget: (playerId: string, target: number) => void
-  onSummon: (playerId: string, type: PalType) => void
+  onTarget: (playerId: string, x: number, y: number) => void
+  onPalAction: (playerId: string, type: PalType) => void
   onExit: () => void
   localPlayerIds: string[]
   settings: CourtEffectsSettings
@@ -40,11 +41,11 @@ interface Props {
 
 const PAL_ORDER: PalType[] = ['guard', 'striker', 'captain']
 const PAL_SHORT_EFFECT: Record<PalType, string> = {
-  guard: 'blocks one',
-  striker: 'fast curve',
-  captain: 'splits in two',
+  guard: 'steal & clear',
+  striker: 'rope & sling',
+  captain: 'raid & shoot',
 }
-const PAL_CARD_LABEL: Record<PalType, string> = { guard: 'Guard', striker: 'Striker', captain: 'Captain' }
+const PAL_CARD_LABEL: Record<PalType, string> = { guard: 'Bumper', striker: 'Hook', captain: 'Captain' }
 
 function secondsLabel(state: GameState): string {
   if (state.overtime) return 'FINAL VOLLEY'
@@ -63,14 +64,14 @@ function resultLabel(state: GameState, player: PlayerState | undefined): string 
 }
 
 function PalGlyph({ type }: { type: PalType }) {
-  if (type === 'guard') return <span aria-hidden="true">◖━◗</span>
-  if (type === 'striker') return <span aria-hidden="true">➤</span>
+  if (type === 'guard') return <span aria-hidden="true">◖●◗</span>
+  if (type === 'striker') return <span aria-hidden="true">〰➤</span>
   return <span aria-hidden="true">♛</span>
 }
 
 function EnergyMeter({ player, flipped = false }: { player: PlayerState; flipped?: boolean }) {
   return (
-    <div className={`pg-energy${flipped ? ' pg-energy--flipped' : ''}`} aria-label={`${player.palEnergy} of ${PAL_ENERGY_MAX} summon energy`}>
+    <div className={`pg-energy${flipped ? ' pg-energy--flipped' : ''}`} aria-label={`${player.palEnergy} of ${PAL_ENERGY_MAX} Pal energy`}>
       <span className="pg-energy__label">PAL POWER</span>
       <div className="pg-energy__pips">
         {Array.from({ length: PAL_ENERGY_MAX }, (_, index) => <i key={index} className={index < player.palEnergy ? 'is-full' : ''} />)}
@@ -79,25 +80,32 @@ function EnergyMeter({ player, flipped = false }: { player: PlayerState; flipped
   )
 }
 
-function PalTray({ state, player, onSummon, top = false }: { state: GameState; player: PlayerState; onSummon: (type: PalType) => void; top?: boolean }) {
+function PalTray({ state, player, onAction, top = false }: { state: GameState; player: PlayerState; onAction: (type: PalType) => void; top?: boolean }) {
   return (
     <div className={`pg-pal-console${top ? ' pg-pal-console--top' : ''}`}>
       <EnergyMeter player={player} flipped={top} />
-      <div className="pg-pal-tray" aria-label={`${player.name} summon cards`}>
+      <div className="pg-pal-tray" aria-label={`${player.name} Pal cards`}>
         {PAL_ORDER.map((type) => {
           const identity = PAL_IDENTITIES[type]
-          const enabled = canSummonPal(state, player, type)
+          const active = state.pals.find((pal) => pal.ownerId === player.id && pal.type === type)
+          const enabled = canUsePalCard(state, player, type)
+          const hearts = active ? `${'♥'.repeat(active.health)}${'♡'.repeat(Math.max(0, active.maxHealth - active.health))}` : ''
           return (
             <button
               key={type}
-              className={`pg-pal-card pg-pal-card--${type}${enabled ? ' is-ready' : ''}`}
+              className={`pg-pal-card pg-pal-card--${type}${enabled ? ' is-ready' : ''}${active ? ' is-active' : ''}`}
               disabled={!enabled}
-              onClick={() => onSummon(type)}
-              aria-label={`Summon ${identity.label}. Costs ${PAL_COST[type]} energy. ${identity.effect}`}
+              onClick={() => onAction(type)}
+              aria-label={active
+                ? `Command ${identity.label}. ${hearts}. ${identity.effect}`
+                : `Call ${identity.label}. Costs ${PAL_COST[type]} energy. ${identity.effect}`}
             >
               <span className="pg-pal-card__glyph"><PalGlyph type={type} /></span>
-              <span className="pg-pal-card__copy"><strong>{PAL_CARD_LABEL[type]}</strong><small>{PAL_SHORT_EFFECT[type]}</small></span>
-              <span className="pg-pal-card__cost">{PAL_COST[type]}<i>✦</i></span>
+              <span className="pg-pal-card__copy">
+                <strong>{active ? `GO, ${PAL_CARD_LABEL[type]}!` : PAL_CARD_LABEL[type]}</strong>
+                <small>{active ? `${hearts} · command` : PAL_SHORT_EFFECT[type]}</small>
+              </span>
+              <span className="pg-pal-card__cost">{active ? 'GO!' : <>{PAL_PROFILE[type].cost}<i>✦</i></>}</span>
             </button>
           )
         })}
@@ -106,13 +114,33 @@ function PalTray({ state, player, onSummon, top = false }: { state: GameState; p
   )
 }
 
+function eventMoment(state: GameState): string | null {
+  const event = state.events.at(-1)
+  if (!event) return null
+  const playerName = 'playerId' in event ? state.players[event.playerId]?.name ?? 'Player' : 'Player'
+  if (event.type === 'palSummoned') return `${playerName} calls ${PAL_IDENTITIES[event.pal.type].label}`
+  if (event.type === 'palCommanded') return `${PAL_IDENTITIES[event.palType].label}: GO!`
+  if (event.type === 'palGrabbed') return `${PAL_IDENTITIES[event.palType].label} GRABS IT!`
+  if (event.type === 'palStole') return 'BUMPER STEAL!'
+  if (event.type === 'palTethered') return 'HOOK: YOINK!'
+  if (event.type === 'tetherBroken') return 'ROPE CUT!'
+  if (event.type === 'palShot') return event.powered ? 'STAR SHOT!' : `${PAL_IDENTITIES[event.palType].label} FIRES!`
+  if (event.type === 'palStunned') return `${PAL_IDENTITIES[event.palType].label} is dizzy!`
+  if (event.type === 'palPowered') return `${PAL_IDENTITIES[event.palType].label} GOT THE STAR!`
+  if (event.type === 'starSpawned') return 'POWER STAR!'
+  if (event.type === 'hit' && event.clean) return 'CLEAN STRIKE!'
+  if (event.type === 'rallyHot') return event.level === 'blazing' ? 'BLAZING RALLY' : 'HOT RALLY'
+  if (event.type === 'score') return `${state.players[event.scorerId]?.name ?? 'Player'} SCORES!`
+  return null
+}
+
 export function GameCourt(props: Props) {
   const mountRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<PixiCourt | null>(null)
   const [state, setState] = useState(() => props.getState())
   const [moment, setMoment] = useState<string | null>(null)
   const [coach, setCoach] = useState<string | null>(() => {
-    try { return localStorage.getItem('pongapp.pal-tutorial.v1') ? null : 'YOU are the bottom paddle. Drag anywhere on the court.' } catch { return null }
+    try { return localStorage.getItem('pongapp.air-hockey-tutorial.v1') ? null : 'YOU are the round mallet at the bottom. Drag it anywhere—up, down, left, or right.' } catch { return null }
   })
   const momentTimer = useRef(0)
   const coachTimer = useRef(0)
@@ -120,13 +148,11 @@ export function GameCourt(props: Props) {
   const localPlayers = props.localPlayerIds.map((id) => state.players[id]).filter((player): player is PlayerState => Boolean(player))
   const primaryPlayer = localPlayers[0]
   const viewSide = primaryPlayer?.side ?? 'bottom'
-  const desired = useRef<Record<string, number>>({})
+  const desired = useRef<Record<string, CourtPoint>>({})
   const heldKeys = useRef(new Set<string>())
+  const pointerPlayers = useRef(new Map<number, string>())
 
-  useEffect(() => {
-    audio.setMuted(props.muted)
-  }, [audio, props.muted])
-
+  useEffect(() => { audio.setMuted(props.muted) }, [audio, props.muted])
   useEffect(() => () => { void audio.destroy() }, [audio])
 
   useEffect(() => {
@@ -160,31 +186,27 @@ export function GameCourt(props: Props) {
   useEffect(() => props.subscribe((next) => {
     setState(next)
     rendererRef.current?.onEvents(next.events, next)
+    for (const event of next.events) audio.play(event)
+    const label = eventMoment(next)
+    if (label) {
+      window.clearTimeout(momentTimer.current)
+      setMoment(label)
+      momentTimer.current = window.setTimeout(() => setMoment(null), 1250)
+    }
+    if (!primaryPlayer || !coach) return
     for (const event of next.events) {
-      audio.play(event)
-      let label: string | null = null
-      if (event.type === 'palSummoned') label = `${next.players[event.playerId]?.name ?? 'Player'} calls ${PAL_IDENTITIES[event.pal.type].label}`
-      else if (event.type === 'palHit') label = `${PAL_IDENTITIES[event.palType].label} saves it!`
-      else if (event.type === 'hit' && event.perfect) label = 'PERFECT — bonus energy!'
-      else if (event.type === 'rallyHot') label = event.level === 'blazing' ? 'BLAZING RALLY' : 'HOT RALLY'
-      else if (event.type === 'score') label = `${next.players[event.scorerId]?.name ?? 'Player'} scores`
-      if (label) {
-        window.clearTimeout(momentTimer.current)
-        setMoment(label)
-        momentTimer.current = window.setTimeout(() => setMoment(null), 1200)
-      }
-      if (!primaryPlayer) continue
-      if (event.type === 'matchStart' && coach) setCoach('Tap a Pal card. Each helper returns one ball, then pops!')
-      if (event.type === 'palSummoned' && event.playerId === primaryPlayer.id && coach) setCoach('Good summon. The portal flashes for 0.2 seconds before your Pal can block.')
-      if (event.type === 'palSummoned' && event.playerId !== primaryPlayer.id && coach) setCoach('Enemy Pal! Aim around it—or make it spend its one save.')
-      if (event.type === 'energyChanged' && event.playerId === primaryPlayer.id && event.energy === PAL_ENERGY_MAX && coach) setCoach('CAPTAIN READY — one hit, then two Hatchlings!')
-      if (event.type === 'palHit' && event.playerId === primaryPlayer.id && coach) {
-        setCoach('That is Pal Duel. Paddle skill wins; smart summons steal rallies.')
+      if (event.type === 'matchStart') setCoach('Call a Pal with a card. It stays, has hearts, and thinks for itself.')
+      if (event.type === 'palSummoned' && event.playerId === primaryPlayer.id) setCoach('Tap that lit card again to command its signature move.')
+      if (event.type === 'palGrabbed' && event.playerId !== primaryPlayer.id) setCoach('Enemy carrying the puck! Ram the carrier, intercept it, or let Bumper steal it.')
+      if (event.type === 'palTethered' && event.playerId !== primaryPlayer.id) setCoach('Cut the rope: hit the puck or knock into Hook before the sling fires.')
+      if (event.type === 'starSpawned') setCoach('POWER STAR! Your Pals chase it and gain a role-specific super move.')
+      if (event.type === 'palPowered' && event.playerId === primaryPlayer.id) {
+        setCoach('Now command that Pal—its next signature move is supercharged.')
         window.clearTimeout(coachTimer.current)
         coachTimer.current = window.setTimeout(() => {
           setCoach(null)
-          try { localStorage.setItem('pongapp.pal-tutorial.v1', 'seen') } catch { /* private browsing */ }
-        }, 3500)
+          try { localStorage.setItem('pongapp.air-hockey-tutorial.v1', 'seen') } catch { /* private browsing */ }
+        }, 4500)
       }
     }
   }), [audio, coach, primaryPlayer?.id, props.subscribe])
@@ -193,8 +215,8 @@ export function GameCourt(props: Props) {
     const down = (event: KeyboardEvent) => {
       heldKeys.current.add(event.code)
       if (!primaryPlayer || event.repeat) return
-      const type = event.code === 'Digit1' || event.code === 'KeyQ' ? 'guard' : event.code === 'Digit2' || event.code === 'KeyW' ? 'striker' : event.code === 'Digit3' || event.code === 'KeyE' ? 'captain' : null
-      if (type) props.onSummon(primaryPlayer.id, type)
+      const type = event.code === 'Digit1' ? 'guard' : event.code === 'Digit2' ? 'striker' : event.code === 'Digit3' ? 'captain' : null
+      if (type) props.onPalAction(primaryPlayer.id, type)
     }
     const up = (event: KeyboardEvent) => heldKeys.current.delete(event.code)
     window.addEventListener('keydown', down)
@@ -205,14 +227,20 @@ export function GameCourt(props: Props) {
       const delta = Math.min(0.05, (now - previous) / 1000)
       previous = now
       if (primaryPlayer) {
-        let direction = 0
-        if (heldKeys.current.has('ArrowLeft') || heldKeys.current.has('KeyA')) direction -= 1
-        if (heldKeys.current.has('ArrowRight') || heldKeys.current.has('KeyD')) direction += 1
-        if (direction) {
-          const current = desired.current[primaryPlayer.id] ?? primaryPlayer.position
-          const logical = viewSide === 'top' ? -direction : direction
-          desired.current[primaryPlayer.id] = Math.max(0.08, Math.min(0.92, current + logical * PADDLE_SPEED * delta))
-          props.onTarget(primaryPlayer.id, desired.current[primaryPlayer.id]!)
+        const screenVector = {
+          x: Number(heldKeys.current.has('ArrowRight') || heldKeys.current.has('KeyD')) - Number(heldKeys.current.has('ArrowLeft') || heldKeys.current.has('KeyA')),
+          y: Number(heldKeys.current.has('ArrowDown') || heldKeys.current.has('KeyS')) - Number(heldKeys.current.has('ArrowUp') || heldKeys.current.has('KeyW')),
+        }
+        if (screenVector.x || screenVector.y) {
+          const world = screenVectorToWorld(screenVector, viewSide)
+          const length = Math.max(1, Math.hypot(world.x, world.y))
+          const current = desired.current[primaryPlayer.id] ?? { x: primaryPlayer.x, y: primaryPlayer.y }
+          const next = {
+            x: Math.max(0, Math.min(1, current.x + world.x / length * MALLET_SPEED * delta)),
+            y: Math.max(0, Math.min(1, current.y + world.y / length * MALLET_SPEED / state.config.courtLengthScale * delta)),
+          }
+          desired.current[primaryPlayer.id] = next
+          props.onTarget(primaryPlayer.id, next.x, next.y)
         }
       }
       frame = requestAnimationFrame(move)
@@ -223,17 +251,26 @@ export function GameCourt(props: Props) {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [primaryPlayer?.id, props.onSummon, props.onTarget, viewSide])
+  }, [primaryPlayer?.id, props.onPalAction, props.onTarget, state.config.courtLengthScale, viewSide])
 
   const targetFromPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
-    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-    const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
-    const player = localPlayers.length > 1 && y < 0.5 ? localPlayers.find((candidate) => candidate.side === 'top') : primaryPlayer
-    if (!player) return
-    const logical = screenFractionToLogical(x, player.side, viewSide)
-    desired.current[player.id] = logical
-    props.onTarget(player.id, logical)
+    const screen = {
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    }
+    let playerId = pointerPlayers.current.get(event.pointerId)
+    if (!playerId) {
+      const candidate = localPlayers.length > 1 && screen.y < 0.5
+        ? localPlayers.find((player) => player.side === (viewSide === 'bottom' ? 'top' : 'bottom'))
+        : primaryPlayer
+      playerId = candidate?.id
+      if (playerId) pointerPlayers.current.set(event.pointerId, playerId)
+    }
+    if (!playerId) return
+    const world = screenPointToWorld(screen, viewSide)
+    desired.current[playerId] = world
+    props.onTarget(playerId, world.x, world.y)
   }, [localPlayers, primaryPlayer, props.onTarget, viewSide])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -241,6 +278,7 @@ export function GameCourt(props: Props) {
     event.currentTarget.setPointerCapture(event.pointerId)
     targetFromPointer(event)
   }
+  const releasePointer = (event: React.PointerEvent<HTMLDivElement>) => pointerPlayers.current.delete(event.pointerId)
 
   const teams = Object.values(state.players).map((player) => ({
     player,
@@ -250,22 +288,22 @@ export function GameCourt(props: Props) {
   })).sort((a, b) => Number(a.local) - Number(b.local))
   const countdown = countdownValue(state)
   const winner = Object.values(state.players).find((player) => player.team === state.winnerTeam)
-  const topLocal = localPlayers.length > 1 ? localPlayers.find((player) => player.side === 'top') : undefined
+  const topLocal = localPlayers.length > 1 ? localPlayers.find((player) => player.side !== viewSide) : undefined
 
   return (
-    <section className="pg-match" aria-label="Pal Duel match">
+    <section className="pg-match" aria-label="Pal Duel air-hockey match">
       <header className="pg-match__topbar">
         <div><strong>{props.title}</strong><span>{props.subtitle}</span></div>
         <button onClick={props.onExit}>Exit</button>
       </header>
 
-      {topLocal && <PalTray state={state} player={topLocal} top onSummon={(type) => props.onSummon(topLocal.id, type)} />}
+      {topLocal && <PalTray state={state} player={topLocal} top onAction={(type) => props.onPalAction(topLocal.id, type)} />}
 
       <div className="pg-match__hud">
         <div className="pg-duel-score">
           {teams.map(({ player, score, local, identity }) => (
             <div key={player.id} className={local ? 'is-you' : ''} style={{ ['--seat-color' as string]: identity.hex }}>
-              <span>{local ? (localPlayers.length > 1 ? player.side === 'bottom' ? 'P1' : 'P2' : 'YOU') : player.name}</span><b>{score}</b>
+              <span>{local ? (localPlayers.length > 1 ? player.side === viewSide ? 'P1' : 'P2' : 'YOU') : player.name}</span><b>{score}</b>
             </div>
           ))}
         </div>
@@ -284,16 +322,18 @@ export function GameCourt(props: Props) {
         data-phase={state.phase}
         onPointerDown={onPointerDown}
         onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) targetFromPointer(event) }}
+        onPointerUp={releasePointer}
+        onPointerCancel={releasePointer}
       >
         <div className="pg-court-ui" aria-hidden="true">
           {moment && <div className="pg-moment" key={moment}>{moment}</div>}
           {coach && <div className="pg-coach"><span>PAL COACH</span><strong>{coach}</strong></div>}
           {countdown !== null && <div className="pg-countdown" key={countdown}>{countdown}</div>}
-          {state.phase === 'playing' && state.serveTicks > 0 && <div className="pg-serve-callout">{state.servingPlayerId === primaryPlayer?.id ? 'YOUR SERVE · paddle position aims it' : 'THEIR SERVE'}</div>}
+          {state.phase === 'playing' && state.serveTicks > 0 && <div className="pg-serve-callout">{state.servingPlayerId === primaryPlayer?.id ? 'YOUR DROP · MOVE TO AIM' : 'THEIR DROP'}</div>}
         </div>
       </div>
 
-      {primaryPlayer && <PalTray state={state} player={primaryPlayer} onSummon={(type) => props.onSummon(primaryPlayer.id, type)} />}
+      {primaryPlayer && <PalTray state={state} player={primaryPlayer} onAction={(type) => props.onPalAction(primaryPlayer.id, type)} />}
 
       {state.phase === 'finished' && (
         <div className="pg-result-overlay">
@@ -301,7 +341,7 @@ export function GameCourt(props: Props) {
             <p className="pg-kicker">Match complete</p>
             <h2>{resultLabel(state, primaryPlayer)}</h2>
             <p>{winner?.name} takes the duel.</p>
-            {primaryPlayer && <div className="pg-result-stats"><span><b>{primaryPlayer.returns}</b> paddle returns</span><span><b>{primaryPlayer.palHits}</b> Pal saves</span><span><b>{state.longestRallyHits}</b> best rally</span></div>}
+            {primaryPlayer && <div className="pg-result-stats"><span><b>{primaryPlayer.returns}</b> puck strikes</span><span><b>{primaryPlayer.palsSummoned}</b> Pals called</span><span><b>{primaryPlayer.palSteals}</b> steals</span><span><b>{state.longestRallyHits}</b> best rally</span></div>}
             <div className="pg-button-row">
               {props.onRematch && <button className="pg-primary-button" onClick={props.onRematch}>Rematch</button>}
               <button className="pg-secondary-button" onClick={props.onExit}>Home</button>

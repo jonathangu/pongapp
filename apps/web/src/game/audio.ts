@@ -41,18 +41,16 @@ export class GameAudio {
       this.tone(520, 0.13, 0.055, 'triangle', 0, 780)
       this.tone(1040, 0.1, 0.035, 'sine', 0.07)
     } else if (event.type === 'hit') {
-      const energy = Math.min(1, Math.max(0, event.speed / 1.25))
+      const energy = Math.min(1, Math.max(0, event.speed / 1.42))
       this.noise(0.035, 0.018 + energy * 0.032, 2100 + energy * 2400)
-      this.tone(event.perfect ? 180 : 250 + energy * 190, event.perfect ? 0.13 : 0.055, event.perfect ? 0.09 : 0.045, event.perfect ? 'square' : 'triangle')
-      if (event.perfect) {
+      this.tone(event.clean ? 180 : 250 + energy * 190, event.clean ? 0.13 : 0.055, event.clean ? 0.09 : 0.045, event.clean ? 'square' : 'triangle')
+      if (event.clean) {
         this.tone(760, 0.12, 0.07, 'sine', 0.012, 1180)
         this.tone(1520, 0.07, 0.035, 'sine', 0.02)
-      } else if (event.shot === 'drive') {
+      } else if (event.shot === 'smash') {
         this.tone(132, 0.09, 0.065, 'square', 0, 240)
-      } else if (event.shot === 'cut') {
+      } else if (event.shot === 'bank') {
         this.tone(640, 0.11, 0.04, 'sine', 0, 310)
-      } else if (event.shot === 'drop') {
-        this.tone(170, 0.12, 0.025, 'sine', 0, 112)
       }
     } else if (event.type === 'rallyHot') {
       // Rises with each step, so the second milestone is audibly above the first.
@@ -67,12 +65,38 @@ export class GameAudio {
     } else if (event.type === 'palSummoned') {
       const notes = event.pal.type === 'captain' ? [220, 440, 660, 990] : event.pal.type === 'striker' ? [360, 760] : [260, 520]
       for (const [index, frequency] of notes.entries()) this.tone(frequency, 0.18, 0.045, 'triangle', index * 0.045, frequency * 1.2)
-    } else if (event.type === 'palArmed') {
-      this.tone(event.palType === 'captain' ? 720 : 580, 0.09, 0.025, 'sine', 0, 920)
-    } else if (event.type === 'palHit') {
+    } else if (event.type === 'palCommanded') {
+      this.tone(event.palType === 'captain' ? 260 : 420, 0.1, 0.05, 'square', 0, 880)
+      this.tone(1080, 0.06, 0.03, 'sine', 0.04)
+    } else if (event.type === 'palGrabbed') {
       this.tone(event.palType === 'captain' ? 180 : 310, 0.14, 0.07, 'square', 0, event.palType === 'striker' ? 1100 : 760)
       this.tone(980, 0.1, 0.04, 'sine', 0.025, 1380)
-      this.noise(event.palType === 'captain' ? 0.16 : 0.08, 0.035, 4300)
+    } else if (event.type === 'palStole') {
+      this.tone(280, 0.17, 0.08, 'square', 0, 940)
+      this.noise(0.1, 0.045, 4400)
+    } else if (event.type === 'palTethered') {
+      this.tone(920, 0.22, 0.045, 'sawtooth', 0, 220)
+      this.noise(0.12, 0.025, 3200)
+    } else if (event.type === 'tetherBroken') {
+      this.noise(0.09, 0.065, 5700)
+      this.tone(720, 0.08, 0.04, 'square', 0, 180)
+    } else if (event.type === 'palShot') {
+      this.tone(event.powered ? 92 : 150, event.powered ? 0.32 : 0.17, event.powered ? 0.14 : 0.085, 'sawtooth', 0, event.powered ? 1240 : 740)
+      this.noise(event.powered ? 0.22 : 0.1, event.powered ? 0.11 : 0.05, 3700)
+    } else if (event.type === 'palDamaged') {
+      this.tone(180 + event.health * 26, 0.08, 0.04, 'square', 0, 110)
+    } else if (event.type === 'palStunned') {
+      for (const [index, frequency] of [760, 620, 480].entries()) this.tone(frequency, 0.12, 0.03, 'sine', index * 0.06)
+    } else if (event.type === 'starSpawned') {
+      for (const [index, frequency] of [523, 784, 1047].entries()) this.tone(frequency, 0.3, 0.045, 'sine', index * 0.065)
+    } else if (event.type === 'palPowered') {
+      for (const [index, frequency] of [392, 659, 988, 1318].entries()) this.tone(frequency, 0.36, 0.05, 'triangle', index * 0.045)
+      this.noise(0.3, 0.03, 5200)
+    } else if (event.type === 'palPowerUsed') {
+      this.tone(82, 0.38, 0.16, 'sawtooth', 0, 1380)
+      this.noise(0.28, 0.12, 4200)
+    } else if (event.type === 'palRetreated') {
+      this.tone(420, 0.16, 0.035, 'triangle', 0, 120)
     } else if (event.type === 'matchEnd') {
       for (const [index, frequency] of [261.6, 329.6, 392, 523.3].entries()) {
         this.tone(frequency, 0.62, 0.045, 'sine', index * 0.055)

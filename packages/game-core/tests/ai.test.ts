@@ -1,50 +1,51 @@
 import { describe, expect, it } from 'vitest'
-import {
-  PAL_ENERGY_MAX,
-  aiInputs,
-  buildMatchConfig,
-  createAiMemory,
-  createGame,
-  predictCoordinateWithBounces,
-} from '../src'
+import { PAL_ENERGY_MAX, aiInputs, buildMatchConfig, createAiMemory, createGame } from '../src'
 
-describe('Pal Duel AI', () => {
-  it('limits prediction to the wall bounces a tier understands', () => {
-    expect(predictCoordinateWithBounces(0.8, 1, 0.6, 0)).toBe(1)
-    expect(predictCoordinateWithBounces(0.8, 1, 0.6, 1)).toBeCloseTo(0.6)
-  })
-
-  it('produces deterministic, bounded movement targets', () => {
+describe('Pal Duel air-hockey AI', () => {
+  it('produces deterministic, bounded two-dimensional targets', () => {
     const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], aiDifficulty: 'pro', seed: 4 }))
     state.phase = 'playing'
     state.countdownTicks = 0
     const one = aiInputs(state, createAiMemory())['ai-2']!
     const two = aiInputs(structuredClone(state), createAiMemory())['ai-2']!
     expect(one).toEqual(two)
-    expect(one.target).toBeGreaterThanOrEqual(0.08)
-    expect(one.target).toBeLessThanOrEqual(0.92)
+    expect(one.targetX).toBeGreaterThanOrEqual(0.07)
+    expect(one.targetX).toBeLessThanOrEqual(0.93)
+    expect(one.targetY).toBeGreaterThanOrEqual(0.07)
+    expect(one.targetY).toBeLessThanOrEqual(0.93)
   })
 
-  it('uses the same energy-gated Captain as a human', () => {
+  it('moves toward a puck threat in both axes rather than reading a fixed goal line', () => {
+    const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], aiDifficulty: 'rally', seed: 7 }))
+    state.phase = 'playing'
+    state.countdownTicks = 0
+    state.balls[0]!.x = 0.78
+    state.balls[0]!.y = 0.38
+    state.balls[0]!.vx = 0.1
+    state.balls[0]!.vy = -0.8
+    const input = aiInputs(state, createAiMemory())['ai-2']!
+    expect(input.targetX).toBeGreaterThan(0.5)
+    expect(input.targetY).toBeGreaterThan(0.18)
+  })
+
+  it('uses the same six-energy Captain card as a human', () => {
     const state = createGame(buildMatchConfig({ humanPlayers: [{ id: 'human', name: 'Human' }], aiDifficulty: 'ace', seed: 7 }))
     state.phase = 'playing'
     state.countdownTicks = 0
     const ai = state.players['ai-2']!
     ai.palEnergy = PAL_ENERGY_MAX
-    let summoned = false
+    let called = false
     const memory = createAiMemory()
-    for (let tick = 0; tick < 120; tick += 1) {
+    for (let tick = 0; tick < 160; tick += 1) {
       state.tick = tick
-      if (aiInputs(state, memory)['ai-2']?.summon === 'captain') {
-        summoned = true
-        break
-      }
+      if (aiInputs(state, memory)['ai-2']?.palAction === 'captain') { called = true; break }
     }
-    expect(summoned).toBe(true)
+    expect(called).toBe(true)
     ai.palEnergy = 0
+    state.pals = []
     for (let tick = 0; tick < 120; tick += 1) {
       state.tick = tick
-      expect(aiInputs(state, memory)['ai-2']?.summon).toBeNull()
+      expect(aiInputs(state, memory)['ai-2']?.palAction).not.toBe('captain')
     }
   })
 })

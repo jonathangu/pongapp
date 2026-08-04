@@ -1,7 +1,7 @@
 {
   "name": "PAL DUEL! by RackeTapp",
   "short_name": "PAL DUEL!",
-  "description": "Summon tiny one-hit Paddle Pals in a fast vertical 1v1.",
+  "description": "Air hockey with persistent tiny heroes you call and command.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",

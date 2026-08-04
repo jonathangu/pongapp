@@ -94,7 +94,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
     if (!inviteUrl) return
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Pal Duel!', text: 'Fight my Paddle Pals in PongApp', url: inviteUrl })
+        await navigator.share({ title: 'Pal Duel!', text: 'Fight my tiny heroes in instant air hockey', url: inviteUrl })
         return
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -139,14 +139,14 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
     <GameCourt
       getState={getState}
       subscribe={subscribeState}
-      onTarget={(_, target) => clientRef.current?.setTarget(target)}
-      onSummon={(_, type: PalType) => clientRef.current?.summon(type)}
+      onTarget={(_, x, y) => clientRef.current?.setTarget(x, y)}
+      onPalAction={(_, type: PalType) => clientRef.current?.usePal(type)}
       onExit={exit}
       localPlayerIds={view.participant?.slot === null ? [] : [participantId]}
       settings={effects}
       muted={muted}
       title="Online Pal Duel"
-      subtitle={`${view.roomCode} · server-authoritative`}
+      subtitle={`${view.roomCode} · live San Francisco arena`}
       network={{ latencyMs: view.latencyMs, latencyP95Ms: view.latencyP95Ms, jitterMs: view.jitterMs, quality: view.connectionQuality }}
       onRematch={() => { resultRecorded.current = false; clientRef.current?.rematch() }}
     />

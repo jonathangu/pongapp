@@ -1,5 +1,5 @@
 const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
-const PROTOCOL_VERSION = 2
+const PROTOCOL_VERSION = 3
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)
@@ -82,7 +82,7 @@ try {
   invariant(players.length === 2, `Expected a two-player duel, received ${players.length}`)
   invariant(players.every((player) => !player.isAi), 'Expected exactly two human players')
 
-  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, target: 0.2, summon: 'guard' }))
+  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, targetX: 0.2, targetY: 0.62, palAction: 'guard' }))
   const summoned = await waitFor(
     clients[0],
     (message) => message.type === 'snapshot'
@@ -97,7 +97,7 @@ try {
   const pong = await waitFor(clients[0], (message) => message.type === 'pong' && message.sentAt === sentAt)
   invariant(pong.serverAt >= sentAt, 'Pong timestamp was invalid')
 
-  console.log(`room-smoke ok: ${roomCode}, 2 humans auto-started, Guard summoned at tick ${summoned.serverTick}`)
+  console.log(`room-smoke ok: ${roomCode}, 2 humans auto-started in 2D, Guard summoned at tick ${summoned.serverTick}`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')
