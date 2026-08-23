@@ -66,6 +66,14 @@ players' phones.
 - A second online soak forced the browser fully offline for 2 seconds mid-match:
   the canvas remained mounted, the client recovered to 15 ms RTT with no error,
   and recorded zero 250 ms freezes over 15 seconds at 4× CPU throttling.
+- The first production watchdog soak showed that waiting for the browser's close
+  handshake could delay the reconnect callback. Commit `50208ad` detached a
+  stale socket and scheduled recovery immediately instead.
+- Final canonical-production trace `8FC3DC1C` proved the correction: Cloudflare
+  logged `closeCategory: stale`, then `participant_reconnected` 155 ms later
+  with the same client session and player seat. Its client sample reported
+  26 ms frame-gap p95, 1 ms render p95, 1.5× resolution, and zero freezes under
+  4× CPU throttling.
 
 The Chromium soak is a repeatable regression signal, not a substitute for real
 iOS/Android telemetry. The new production performance samples close that gap.
