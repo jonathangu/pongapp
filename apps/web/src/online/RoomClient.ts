@@ -42,6 +42,9 @@ function percentile(sorted: number[], fraction: number): number {
 }
 
 export function shouldReconnectAfterClose(code: number): boolean { return code !== 4001 }
+export function hasRoomInputToFlush(targetChanged: boolean, pendingPalAction: PalType | null): boolean {
+  return targetChanged || pendingPalAction !== null
+}
 
 export class RoomClient {
   private socket: WebSocket | null = null
@@ -59,6 +62,9 @@ export class RoomClient {
   private pingTimer = 0
   private closedByUser = false
   private reconnectAttempt = 0
+  private connectionSequence = 0
+  private readonly clientSessionId = crypto.randomUUID()
+  private controlActivated = false
   private snapshots: SnapshotSample[] = []
   private renderBall: RenderBall | null = null
   private localRenderPoint: CourtPoint | null = null
@@ -66,6 +72,9 @@ export class RoomClient {
   private localRenderPlayerId: string | null = null
   private latencySamples: number[] = []
   private snapshotGapSamples: number[] = []
+  private networkSampleCount = 0
+  private lastNetworkTelemetryAt = 0
+  private lastReportedConnectionQuality: ConnectionQuality | null = null
 
   constructor(private readonly serverUrl: string, private readonly roomCode: string, private readonly identity: RoomIdentity) {
     this.view = {
@@ -87,6 +96,7 @@ export class RoomClient {
 
   connect(): void {
     this.closedByUser = false
+    this.connectionSequence += 1
     this.patch({ status: 'connecting', error: null })
     const socket = new WebSocket(websocketUrl(this.serverUrl, this.roomCode))
     this.socket = socket
@@ -95,6 +105,7 @@ export class RoomClient {
       this.send({
         type: 'hello', version: PROTOCOL_VERSION, guestId: this.identity.guestId,
         displayName: this.identity.displayName, role: this.identity.role ?? 'player', reconnectToken: this.reconnectToken,
+        clientSessionId: this.clientSessionId, reconnectAttempt: Math.max(0, this.connectionSequence - 1),
       })
       this.inputTimer = window.setInterval(() => this.flushInput(), 1000 / 60)
       this.pingTimer = window.setInterval(() => this.send({ type: 'ping', sentAt: Date.now() }), 2000)
@@ -122,10 +133,12 @@ export class RoomClient {
   setTarget(x: number, y: number): void {
     const next = { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
     if (Math.hypot(next.x - this.latestTarget.x, next.y - this.latestTarget.y) > 0.0001) this.targetChangedSinceFlush = true
+    this.controlActivated = true
     this.latestTarget = next
   }
 
   usePal(type: PalType): void { this.pendingPalAction = type; this.flushInput() }
+  reportTelemetry(event: 'control_surface_visible' | 'room_full_visible'): void { this.send({ type: 'clientTelemetry', event }) }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
   rematch(): void { this.send({ type: 'rematch' }) }
 
@@ -141,9 +154,13 @@ export class RoomClient {
 
   private flushInput(): void {
     if (this.socket?.readyState !== WebSocket.OPEN || !this.view.participant || this.view.participant.slot === null) return
+    if (!hasRoomInputToFlush(this.targetChangedSinceFlush, this.pendingPalAction)) return
     this.inputSeq += 1
     if (this.targetChangedSinceFlush) { this.latestTargetSeq = this.inputSeq; this.targetChangedSinceFlush = false }
-    this.send({ type: 'input', seq: this.inputSeq, targetX: this.latestTarget.x, targetY: this.latestTarget.y, palAction: this.pendingPalAction })
+    this.send({
+      type: 'input', seq: this.inputSeq, targetX: this.latestTarget.x, targetY: this.latestTarget.y,
+      palAction: this.pendingPalAction, controlActive: this.controlActivated,
+    })
     this.pendingPalAction = null
   }
 
@@ -266,6 +283,7 @@ export class RoomClient {
   }
 
   private recordLatency(sample: number): void {
+    this.networkSampleCount += 1
     this.latencySamples.push(sample)
     if (this.latencySamples.length > 30) this.latencySamples.shift()
     const sorted = [...this.latencySamples].sort((a, b) => a - b)
@@ -276,6 +294,15 @@ export class RoomClient {
     const gapP95 = gaps.length ? Math.round(percentile(gaps, 0.95)) : null
     const quality: ConnectionQuality = median > 120 || jitter > 45 || (gapP95 ?? 0) > 100 ? 'poor' : median > 70 || jitter > 25 || (gapP95 ?? 0) > 60 ? 'fair' : 'good'
     this.patch({ latencyMs: median, latencyP95Ms: p95, jitterMs: jitter, snapshotGapP95Ms: gapP95, connectionQuality: quality })
+    const now = Date.now()
+    if (this.networkSampleCount >= 5 && (quality !== this.lastReportedConnectionQuality || now - this.lastNetworkTelemetryAt >= 30_000)) {
+      this.lastReportedConnectionQuality = quality
+      this.lastNetworkTelemetryAt = now
+      this.send({
+        type: 'clientTelemetry', event: 'network_sample', latencyMs: median, latencyP95Ms: p95,
+        jitterMs: jitter, snapshotGapP95Ms: gapP95, connectionQuality: quality,
+      })
+    }
   }
 
   private onClose(event: CloseEvent): void {

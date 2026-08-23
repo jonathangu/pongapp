@@ -320,6 +320,7 @@ export class GameRoom {
     return {
       roomCode: this.config.roomCode,
       roomName: this.config.roomName ?? `${this.config.hostName}'s Arena`,
+      supportTraceId: this.config.roomCode,
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
     }

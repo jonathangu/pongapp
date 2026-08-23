@@ -20,7 +20,7 @@ function waitFor(client, predicate, timeoutMs = 10_000) {
   })
 }
 
-async function connect(roomCode, index, reconnect = null) {
+async function connect(roomCode, index, reconnect = null, expectedSlot = index) {
   const name = `Player ${index + 1}`
   const url = new URL(`/api/rooms/${roomCode}/websocket`, serverUrl)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -47,11 +47,14 @@ async function connect(roomCode, index, reconnect = null) {
     displayName: name,
     role: 'player',
     ...(reconnect?.reconnectToken ? { reconnectToken: reconnect.reconnectToken } : {}),
+    clientSessionId: crypto.randomUUID(),
+    reconnectAttempt: reconnect ? 1 : 0,
   }))
   const welcome = await waitFor(client, (message) => message.type === 'welcome')
   invariant(welcome.version === PROTOCOL_VERSION, `${name} received the wrong protocol`)
   invariant(welcome.lobby.roomName === 'Smoke Arena', `${name} received the wrong room name`)
-  invariant(welcome.participant.slot === index, `${name} did not receive slot ${index}`)
+  invariant(/^[A-F0-9]{8}$/.test(welcome.lobby.supportTraceId), `${name} received an invalid support trace`)
+  invariant(welcome.participant.slot === expectedSlot, `${name} did not receive slot ${expectedSlot}`)
   client.playerId = welcome.participant.id
   client.guestId = reconnect?.guestId ?? `smoke-player-${index + 1}`
   client.reconnectToken = welcome.reconnectToken
@@ -86,7 +89,8 @@ try {
   invariant(players.length === 2, `Expected a two-player duel, received ${players.length}`)
   invariant(players.every((player) => !player.isAi), 'Expected exactly two human players')
 
-  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, targetX: 0.2, targetY: 0.62, palAction: 'guard' }))
+  clients[0].socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'control_surface_visible' }))
+  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, targetX: 0.2, targetY: 0.62, palAction: 'guard', controlActive: true }))
   const summoned = await waitFor(
     clients[0],
     (message) => message.type === 'snapshot'
@@ -108,6 +112,14 @@ try {
   latencySamples.sort((a, b) => a - b)
   const medianLatency = Math.round(latencySamples[Math.floor(latencySamples.length / 2)])
   const p95Latency = Math.round(latencySamples[Math.floor((latencySamples.length - 1) * 0.95)])
+  clients[0].socket.send(JSON.stringify({
+    type: 'clientTelemetry', event: 'network_sample', latencyMs: medianLatency, latencyP95Ms: p95Latency,
+    jitterMs: 1, snapshotGapP95Ms: 34, connectionQuality: 'good',
+  }))
+
+  const fullRoomVisitor = await connect(roomCode, 2, null, null)
+  clients.push(fullRoomVisitor)
+  fullRoomVisitor.socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'room_full_visible' }))
 
   const originalHost = clients[0]
   const originalHostClosed = new Promise((resolve) => originalHost.socket.addEventListener('close', resolve, { once: true }))
@@ -116,11 +128,15 @@ try {
   const replaced = await originalHostClosed
   invariant(replaced.code === 4001, `Expected replaced host to close with 4001, received ${replaced.code}`)
   invariant(replacementHost.playerId === originalHost.playerId, 'Replacement host did not reclaim the original seat')
+  replacementHost.socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'control_surface_visible' }))
+  const replacementControlled = waitFor(replacementHost, (message) => message.type === 'snapshot' && message.acknowledgedSeq >= 2)
+  replacementHost.socket.send(JSON.stringify({ type: 'input', seq: 2, targetX: 0.7, targetY: 0.58, palAction: null, controlActive: true }))
+  await replacementControlled
   const reconnectPingAt = Date.now()
   replacementHost.socket.send(JSON.stringify({ type: 'ping', sentAt: reconnectPingAt }))
   await waitFor(replacementHost, (message) => message.type === 'pong' && message.sentAt === reconnectPingAt)
 
-  console.log(`room-smoke ok: ${roomCode} / Smoke Arena, 2 humans auto-started in 2D, Guard summoned at tick ${summoned.serverTick}, duplicate host seat transferred once, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
+  console.log(`room-smoke ok: ${roomCode} / Smoke Arena, 2 humans auto-started, third player shown a full room, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowedOrigin, generateRoomCode, validRoomCode } from '../src/helpers'
+import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, validRoomCode } from '../src/helpers'
 
 describe('room worker helpers', () => {
   it('generates readable six-character room codes', () => {
@@ -21,5 +21,23 @@ describe('room worker helpers', () => {
     expect(allowedOrigin('https://jonathangu.com')).toBe('https://jonathangu.com')
     expect(allowedOrigin('http://127.0.0.1:5173')).toBe('http://127.0.0.1:5173')
     expect(allowedOrigin('https://attacker.example')).toBeNull()
+  })
+
+  it('classifies close codes without persisting client-provided reasons', () => {
+    expect(classifyWebSocketClose(4001)).toBe('replaced')
+    expect(classifyWebSocketClose(1000)).toBe('normal')
+    expect(classifyWebSocketClose(1006)).toBe('abnormal')
+    expect(classifyWebSocketClose(null)).toBe('error')
+    expect(classifyWebSocketClose(4555)).toBe('other')
+  })
+
+  it('deduplicates UI signals and rate-limits network telemetry', () => {
+    const surface = acceptClientTelemetry('control_surface_visible', 0, null, 1_000)
+    expect(surface).toEqual({ accepted: true, uiMask: 1, lastNetworkAt: null })
+    expect(acceptClientTelemetry('control_surface_visible', surface.uiMask, null, 1_001).accepted).toBe(false)
+    const network = acceptClientTelemetry('network_sample', surface.uiMask, null, 2_000)
+    expect(network).toEqual({ accepted: true, uiMask: 1, lastNetworkAt: 2_000 })
+    expect(acceptClientTelemetry('network_sample', 1, 2_000, 10_000).accepted).toBe(false)
+    expect(acceptClientTelemetry('network_sample', 1, 2_000, 17_000).accepted).toBe(true)
   })
 })

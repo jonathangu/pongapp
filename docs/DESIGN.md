@@ -69,6 +69,11 @@ only top/bottom sides and gameplay counters—never room codes, names, player or
 guest IDs, reconnect tokens, or input coordinates. Offline matches remain
 device-local and emit no balance telemetry.
 
+Room support uses indexed `pongapp.room.lifecycle.v2` events correlated by
+random room, match, connection, and page-session IDs. The UI exposes only a
+short opaque support trace. Lifecycle events follow the same privacy boundary
+and additionally reject all free-form client telemetry.
+
 ## Input and explanation
 
 - Pointer/touch maps both axes through the same 180° view transform as drawing.

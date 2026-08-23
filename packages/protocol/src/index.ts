@@ -21,6 +21,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     role: z.enum(['player', 'spectator']).default('player'),
     reconnectToken: z.string().min(16).max(200).optional(),
     accessToken: z.string().min(20).max(4096).optional(),
+    clientSessionId: z.string().uuid().optional(),
+    reconnectAttempt: z.number().int().min(0).max(10).optional(),
   }),
   z.object({
     type: z.literal('input'),
@@ -28,10 +30,20 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
     targetX: z.number().min(0).max(1),
     targetY: z.number().min(0).max(1),
     palAction: palTypeSchema.nullable(),
+    controlActive: z.boolean().optional(),
   }),
   z.object({ type: z.literal('emote'), emote: z.enum(['gg', 'wow', 'nice', 'oops']) }),
   z.object({ type: z.literal('rematch') }),
   z.object({ type: z.literal('ping'), sentAt: z.number() }),
+  z.object({
+    type: z.literal('clientTelemetry'),
+    event: z.enum(['control_surface_visible', 'room_full_visible', 'network_sample']),
+    latencyMs: z.number().int().min(0).max(60_000).optional(),
+    latencyP95Ms: z.number().int().min(0).max(60_000).optional(),
+    jitterMs: z.number().int().min(0).max(60_000).optional(),
+    snapshotGapP95Ms: z.number().int().min(0).max(60_000).nullable().optional(),
+    connectionQuality: z.enum(['good', 'fair', 'poor']).optional(),
+  }).strict(),
 ])
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -49,6 +61,7 @@ export interface RoomParticipant {
 export interface RoomLobby {
   roomCode: string
   roomName: string
+  supportTraceId: string
   participants: RoomParticipant[]
   phase: 'lobby' | 'countdown' | 'playing' | 'finished'
 }

@@ -24,4 +24,19 @@ describe('Pal Duel air-hockey protocol v3', () => {
     }))).toBeNull()
     expect(parseWireMessage('{broken')).toBeNull()
   })
+
+  it('accepts privacy-safe connection diagnostics and rejects free-form telemetry', () => {
+    expect(parseWireMessage(JSON.stringify({
+      type: 'hello', version: PROTOCOL_VERSION,
+      guestId: 'guest-12345678', displayName: 'Player', role: 'player',
+      clientSessionId: '7edbbf48-1cf6-4e72-8847-e37af6082dbf', reconnectAttempt: 2,
+    }))).toMatchObject({ clientSessionId: '7edbbf48-1cf6-4e72-8847-e37af6082dbf', reconnectAttempt: 2 })
+    expect(parseWireMessage(JSON.stringify({
+      type: 'clientTelemetry', event: 'network_sample', latencyMs: 22, latencyP95Ms: 40,
+      jitterMs: 5, snapshotGapP95Ms: 38, connectionQuality: 'good',
+    }))).toMatchObject({ type: 'clientTelemetry', event: 'network_sample', latencyMs: 22 })
+    expect(parseWireMessage(JSON.stringify({
+      type: 'clientTelemetry', event: 'network_sample', note: 'free-form text must never reach logs',
+    }))).toBeNull()
+  })
 })

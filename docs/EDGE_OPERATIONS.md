@@ -21,9 +21,27 @@ pnpm dev:worker
 ROOM_SERVER_URL=http://127.0.0.1:8787 pnpm smoke:room
 ```
 
-The smoke test creates a real Durable Object room, connects two WebSockets,
-starts a two-human match, sends input, observes an acknowledged snapshot, and
-summons a Pal.
+The smoke test creates a real Durable Object room, connects two players, proves
+a third player receives the full-room state, transfers the host seat to a new
+page session exactly once, receives genuine control input there, and samples
+room RTT.
+
+## Logs and support traces
+
+Room lifecycle logs are structured `pongapp.room.lifecycle.v2` objects. They
+are persisted at 100% sampling; high-frequency WebSocket invocation logs are
+disabled. Tail live events with:
+
+```bash
+pnpm --filter @pongapp/room-worker exec wrangler tail pongapp-room \
+  --format=pretty --search pongapp.room.lifecycle.v2
+```
+
+Players may report the eight-character support trace shown on room errors and
+full-room screens. Query persisted logs with `pnpm logs:rooms -- --minutes=1440
+--trace=AB12CD34` after supplying Cloudflare observability credentials. See
+`docs/INCIDENT_SHARED_ROOM_CONTROL_2026-08-22.md` for the field dictionary,
+privacy boundary, RCA, and detection rules.
 
 ## Deploy and verify
 

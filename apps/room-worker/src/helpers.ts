@@ -20,3 +20,30 @@ export function allowedOrigin(origin: string | null): string | null {
 export function validRoomCode(value: string): boolean {
   return /^[A-Z2-9]{6}$/.test(value)
 }
+
+export function classifyWebSocketClose(code: number | null): 'replaced' | 'normal' | 'going_away' | 'abnormal' | 'error' | 'other' {
+  if (code === 4001) return 'replaced'
+  if (code === 1000) return 'normal'
+  if (code === 1001) return 'going_away'
+  if (code === 1006) return 'abnormal'
+  if (code === null) return 'error'
+  return 'other'
+}
+
+export function acceptClientTelemetry(
+  event: 'control_surface_visible' | 'room_full_visible' | 'network_sample',
+  uiMask: number,
+  lastNetworkAt: number | null,
+  now: number,
+): { accepted: boolean; uiMask: number; lastNetworkAt: number | null } {
+  const signalBit = event === 'control_surface_visible' ? 1 : event === 'room_full_visible' ? 2 : 0
+  if (signalBit && (uiMask & signalBit) !== 0) return { accepted: false, uiMask, lastNetworkAt }
+  if (event === 'network_sample' && lastNetworkAt !== null && now - lastNetworkAt < 15_000) {
+    return { accepted: false, uiMask, lastNetworkAt }
+  }
+  return {
+    accepted: true,
+    uiMask: signalBit ? uiMask | signalBit : uiMask,
+    lastNetworkAt: event === 'network_sample' ? now : lastNetworkAt,
+  }
+}

@@ -21,7 +21,7 @@ import {
   type ServerMessage,
   type StoredRoomConfig,
 } from '@pongapp/protocol'
-import { allowedOrigin, generateRoomCode, validRoomCode } from './helpers'
+import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, validRoomCode } from './helpers'
 
 export { allowedOrigin, generateRoomCode, validRoomCode } from './helpers'
 
@@ -43,11 +43,21 @@ interface StoredRoomRecord {
   config: StoredRoomConfig
   participants: InternalParticipant[]
   game: GameState | null
+  telemetryRoomId?: string
+  matchSessionId?: string | null
   updatedAt: number
 }
 
 interface SocketAttachment {
   participantId: string | null
+  connectionId: string
+  clientSessionId: string | null
+  connectedAt: number
+  helloAt: number | null
+  firstInputAt: number | null
+  reconnectAttempt: number
+  telemetryUiMask: number
+  lastNetworkTelemetryAt: number | null
 }
 
 const MAX_BODY_BYTES = 16_384
@@ -141,6 +151,9 @@ export class GameRoom extends DurableObject<Env> {
   private aiMemory: AiControllerMemory = createAiMemory()
   private loop: ReturnType<typeof setInterval> | null = null
   private balanceSummaryLogged = false
+  private telemetryRoomId: string = crypto.randomUUID()
+  private matchSessionId: string | null = null
+  private closedConnectionIds = new Set<string>()
 
   override async fetch(request: Request): Promise<Response> {
     await this.ensureLoaded()
@@ -156,6 +169,7 @@ export class GameRoom extends DurableObject<Env> {
       this.config = { ...parsed.data, roomCode: value.roomCode, createdAt: value.createdAt }
       this.occupied = true
       await this.persist()
+      this.logLifecycle('room_created')
       return new Response('created', { status: 201 })
     }
 
@@ -165,8 +179,20 @@ export class GameRoom extends DurableObject<Env> {
       const pair = new WebSocketPair()
       const client = pair[0]
       const server = pair[1]
+      const connectionId = crypto.randomUUID()
       this.ctx.acceptWebSocket(server)
-      server.serializeAttachment({ participantId: null } satisfies SocketAttachment)
+      server.serializeAttachment({
+        participantId: null,
+        connectionId,
+        clientSessionId: null,
+        connectedAt: Date.now(),
+        helloAt: null,
+        firstInputAt: null,
+        reconnectAttempt: 0,
+        telemetryUiMask: 0,
+        lastNetworkTelemetryAt: null,
+      } satisfies SocketAttachment)
+      this.logLifecycle('socket_opened', { connectionId })
       return new Response(null, { status: 101, webSocket: client })
     }
     return new Response('Not found', { status: 404 })
@@ -177,13 +203,20 @@ export class GameRoom extends DurableObject<Env> {
     const raw = typeof message === 'string' ? message : new TextDecoder().decode(message)
     const parsed = parseWireMessage(raw)
     if (!parsed) {
+      const attachment = socket.deserializeAttachment() as SocketAttachment | null
       try {
         const candidate = JSON.parse(raw) as { type?: unknown; version?: unknown }
         if (candidate.type === 'hello' && candidate.version !== PROTOCOL_VERSION) {
+          this.logLifecycle('protocol_rejected', {
+            connectionId: attachment?.connectionId ?? null,
+            reason: 'version_mismatch',
+            announcedVersion: typeof candidate.version === 'number' && Number.isInteger(candidate.version) ? candidate.version : null,
+          })
           this.send(socket, { type: 'error', code: 'refresh_required', message: 'Pal Duel became air hockey. Refresh to play the new version.', recoverable: false })
           return
         }
       } catch { /* invalid JSON uses the normal message below */ }
+      this.logLifecycle('protocol_rejected', { connectionId: attachment?.connectionId ?? null, reason: 'invalid_message' })
       this.send(socket, { type: 'error', code: 'invalid_message', message: 'That room message was invalid.', recoverable: true })
       return
     }
@@ -194,18 +227,23 @@ export class GameRoom extends DurableObject<Env> {
     const attachment = socket.deserializeAttachment() as SocketAttachment | null
     const participant = attachment?.participantId ? this.participants.get(attachment.participantId) : undefined
     if (!participant) {
+      this.logLifecycle('protocol_rejected', { connectionId: attachment?.connectionId ?? null, reason: 'hello_required' })
       this.send(socket, { type: 'error', code: 'hello_required', message: 'Join the room before sending commands.', recoverable: false })
       return
     }
     await this.handleParticipantMessage(socket, participant, parsed)
   }
 
-  override async webSocketClose(socket: WebSocket): Promise<void> {
-    await this.handleClose(socket)
+  override async webSocketClose(socket: WebSocket, code: number, _reason: string, wasClean: boolean): Promise<void> {
+    await this.handleClose(socket, { code, wasClean, errorType: null })
   }
 
-  override async webSocketError(socket: WebSocket): Promise<void> {
-    await this.handleClose(socket)
+  override async webSocketError(socket: WebSocket, error: unknown): Promise<void> {
+    await this.handleClose(socket, {
+      code: null,
+      wasClean: false,
+      errorType: error instanceof Error ? error.name : typeof error,
+    })
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -215,6 +253,8 @@ export class GameRoom extends DurableObject<Env> {
     this.occupied = Boolean(stored || legacy)
     if (stored?.version === PROTOCOL_VERSION && stored.config) {
       this.config = stored.config
+      this.telemetryRoomId = stored.telemetryRoomId ?? crypto.randomUUID()
+      this.matchSessionId = stored.matchSessionId ?? null
       this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
       this.game = stored.game?.rulesetVersion === 3 ? stored.game : null
       const connectedIds = new Set(this.ctx.getWebSockets().map((socket) =>
@@ -227,20 +267,49 @@ export class GameRoom extends DurableObject<Env> {
       if (this.game && this.game.phase !== 'finished') this.startLoop()
     }
     this.loaded = true
+    if (this.config) this.logLifecycle('room_loaded')
   }
 
-  private async handleClose(socket: WebSocket): Promise<void> {
+  private async handleClose(socket: WebSocket, close: { code: number | null; wasClean: boolean; errorType: string | null }): Promise<void> {
     await this.ensureLoaded()
     const attachment = socket.deserializeAttachment() as SocketAttachment | null
+    const connectionId = attachment?.connectionId ?? 'unknown'
+    if (this.closedConnectionIds.has(connectionId)) return
+    this.closedConnectionIds.add(connectionId)
     const participantId = attachment?.participantId
-    if (!participantId) return
+    if (!participantId) {
+      this.logLifecycle('socket_closed_before_hello', {
+        connectionId,
+        closeCategory: classifyWebSocketClose(close.code),
+        closeCode: close.code,
+        wasClean: close.wasClean,
+        errorType: close.errorType,
+        connectedMs: typeof attachment?.connectedAt === 'number' ? Date.now() - attachment.connectedAt : null,
+      })
+      return
+    }
     const hasReplacement = this.ctx.getWebSockets().some((candidate) => {
       if (candidate === socket) return false
       return (candidate.deserializeAttachment() as SocketAttachment | null)?.participantId === participantId
     })
-    if (hasReplacement) return
     const participant = this.participants.get(participantId)
     if (!participant) return
+    const closeDetail = {
+      connectionId,
+      clientSessionId: attachment?.clientSessionId ?? null,
+      slot: participant.slot,
+      closeCategory: classifyWebSocketClose(close.code),
+      closeCode: close.code,
+      wasClean: close.wasClean,
+      errorType: close.errorType,
+      connectedMs: typeof attachment?.connectedAt === 'number' ? Date.now() - attachment.connectedAt : null,
+      firstInputSeen: typeof attachment?.firstInputAt === 'number',
+      replacementPresent: hasReplacement,
+    }
+    if (hasReplacement) {
+      this.logLifecycle('socket_closed', closeDetail)
+      return
+    }
     participant.connected = false
     participant.disconnectedAt = Date.now()
     const player = this.game?.players[participant.id]
@@ -250,13 +319,7 @@ export class GameRoom extends DurableObject<Env> {
     }
     this.transferHost()
     await this.persist()
-    console.info(JSON.stringify({
-      event: 'pongapp.room.connection.v1',
-      action: 'left',
-      slot: participant.slot,
-      phase: this.lobby().phase,
-      connectedPlayers: [...this.participants.values()].filter((candidate) => candidate.connected && candidate.slot !== null).length,
-    }))
+    this.logLifecycle('socket_closed', closeDetail)
     this.broadcastLobby()
   }
 
@@ -271,6 +334,8 @@ export class GameRoom extends DurableObject<Env> {
 
   private async handleHello(socket: WebSocket, message: Extract<ClientMessage, { type: 'hello' }>): Promise<void> {
     this.cleanupDisconnected()
+    const acceptedAt = Date.now()
+    const initialAttachment = socket.deserializeAttachment() as SocketAttachment
     let participant = [...this.participants.values()].find((candidate) =>
       candidate.guestId === message.guestId
       && Boolean(message.reconnectToken)
@@ -312,19 +377,40 @@ export class GameRoom extends DurableObject<Env> {
       this.participants.set(id, participant)
     }
 
+    const nextAttachment = {
+      ...initialAttachment,
+      participantId: participant.id,
+      clientSessionId: message.clientSessionId ?? null,
+      helloAt: acceptedAt,
+      reconnectAttempt: message.reconnectAttempt ?? 0,
+    } satisfies SocketAttachment
+    // Publish replacement ownership before closing the previous socket so its
+    // close handler can never transiently mark the participant disconnected.
+    socket.serializeAttachment(nextAttachment)
     for (const existingSocket of this.ctx.getWebSockets()) {
       const existing = existingSocket.deserializeAttachment() as SocketAttachment | null
-      if (existingSocket !== socket && existing?.participantId === participant.id) existingSocket.close(4001, 'reconnected elsewhere')
+      if (existingSocket !== socket && existing?.participantId === participant.id) {
+        this.logLifecycle('socket_replaced', {
+          connectionId: existing.connectionId,
+          replacementConnectionId: nextAttachment.connectionId,
+          clientSessionId: existing.clientSessionId,
+          replacementClientSessionId: nextAttachment.clientSessionId,
+          slot: participant.slot,
+        })
+        existingSocket.close(4001, 'reconnected elsewhere')
+      }
     }
-    socket.serializeAttachment({ participantId: participant.id } satisfies SocketAttachment)
     await this.persist()
-    console.info(JSON.stringify({
-      event: 'pongapp.room.connection.v1',
-      action: reconnected ? 'reconnected' : 'joined',
+    this.logLifecycle(reconnected ? 'participant_reconnected' : 'participant_joined', {
+      connectionId: nextAttachment.connectionId,
+      clientSessionId: nextAttachment.clientSessionId,
+      reconnectAttempt: nextAttachment.reconnectAttempt,
+      hadReconnectToken: Boolean(message.reconnectToken),
+      requestedRole: message.role,
+      assignedRole: participant.slot === null ? 'spectator' : 'player',
       slot: participant.slot,
-      phase: this.lobby().phase,
-      connectedPlayers: [...this.participants.values()].filter((candidate) => candidate.connected && candidate.slot !== null).length,
-    }))
+      helloLatencyMs: acceptedAt - nextAttachment.connectedAt,
+    })
     this.send(socket, {
       type: 'welcome',
       version: PROTOCOL_VERSION,
@@ -340,6 +426,17 @@ export class GameRoom extends DurableObject<Env> {
 
   private async handleParticipantMessage(socket: WebSocket, participant: InternalParticipant, message: ClientMessage): Promise<void> {
     if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
+      const attachment = socket.deserializeAttachment() as SocketAttachment | null
+      if (attachment && !attachment.firstInputAt && message.controlActive === true) {
+        attachment.firstInputAt = Date.now()
+        socket.serializeAttachment(attachment)
+        this.logLifecycle('control_input_first', {
+          connectionId: attachment.connectionId,
+          clientSessionId: attachment.clientSessionId,
+          slot: participant.slot,
+          msAfterHello: attachment.helloAt ? attachment.firstInputAt - attachment.helloAt : null,
+        })
+      }
       participant.lastSeq = message.seq
       participant.lastTargetX = message.targetX
       participant.lastTargetY = message.targetY
@@ -350,8 +447,33 @@ export class GameRoom extends DurableObject<Env> {
       }
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
+    } else if (message.type === 'clientTelemetry') {
+      const attachment = socket.deserializeAttachment() as SocketAttachment | null
+      if (!attachment) return
+      const now = Date.now()
+      const decision = acceptClientTelemetry(
+        message.event,
+        attachment.telemetryUiMask ?? 0,
+        attachment.lastNetworkTelemetryAt ?? null,
+        now,
+      )
+      if (!decision.accepted) return
+      attachment.telemetryUiMask = decision.uiMask
+      attachment.lastNetworkTelemetryAt = decision.lastNetworkAt
+      socket.serializeAttachment(attachment)
+      this.logLifecycle(`client_${message.event}`, {
+        connectionId: attachment.connectionId ?? null,
+        clientSessionId: attachment.clientSessionId ?? null,
+        slot: participant.slot,
+        latencyMs: message.latencyMs ?? null,
+        latencyP95Ms: message.latencyP95Ms ?? null,
+        jitterMs: message.jitterMs ?? null,
+        snapshotGapP95Ms: message.snapshotGapP95Ms ?? null,
+        connectionQuality: message.connectionQuality ?? null,
+      })
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
       this.game = restartGame(this.game, Date.now() >>> 0)
+      this.matchSessionId = crypto.randomUUID()
       this.aiMemory = createAiMemory()
       this.balanceSummaryLogged = false
       for (const candidate of this.participants.values()) {
@@ -362,6 +484,7 @@ export class GameRoom extends DurableObject<Env> {
         }
       }
       await this.persist()
+      this.logLifecycle('rematch_started')
       this.startLoop()
       this.broadcastLobby()
       this.broadcastSnapshot()
@@ -376,6 +499,7 @@ export class GameRoom extends DurableObject<Env> {
       .filter((participant) => participant.slot !== null && participant.connected)
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (players.length < 2) return
+    this.matchSessionId = crypto.randomUUID()
     this.game = createGame(buildMatchConfig({
       humanPlayers: players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
       seed: Date.now() >>> 0,
@@ -383,6 +507,9 @@ export class GameRoom extends DurableObject<Env> {
     this.aiMemory = createAiMemory()
     this.balanceSummaryLogged = false
     await this.persist()
+    this.logLifecycle('match_started', {
+      msAfterRoomCreated: this.config ? Date.now() - this.config.createdAt : null,
+    })
     this.startLoop()
     this.broadcastLobby()
     this.broadcastSnapshot()
@@ -405,12 +532,13 @@ export class GameRoom extends DurableObject<Env> {
     if (this.game.phase === 'finished') {
       if (this.loop) clearInterval(this.loop)
       this.loop = null
+      this.logLifecycle('match_finished', { durationSeconds: Math.round(this.game.tick / 6) / 10 })
       this.broadcast({ type: 'result', state: this.game })
       this.broadcastLobby()
     }
   }
 
-  /** Balance records deliberately exclude room codes, names, IDs, tokens, and input coordinates. */
+  /** Balance records exclude room codes, names, player IDs, tokens, and input coordinates. */
   private logBalanceEvents(): void {
     const game = this.game
     if (!game) return
@@ -419,8 +547,9 @@ export class GameRoom extends DurableObject<Env> {
       if (event.type !== 'score') continue
       const defender = game.players[event.againstPlayerId]
       const scorer = game.players[event.scorerId]
-      console.info(JSON.stringify({
+      console.info({
         event: 'pongapp.balance.goal.v1',
+        matchSessionId: this.matchSessionId,
         rulesetVersion: game.rulesetVersion,
         tick: game.tick,
         rallyHits: event.rallyHits,
@@ -429,12 +558,13 @@ export class GameRoom extends DurableObject<Env> {
         defenderCamping: event.defenderCamping,
         goalNumber: Object.values(game.scores).reduce((total, score) => total + score, 0),
         score: players.map((player) => ({ side: player.side, points: game.scores[player.team] ?? 0 })),
-      }))
+      })
     }
     if (game.phase !== 'finished' || this.balanceSummaryLogged) return
     this.balanceSummaryLogged = true
-    console.info(JSON.stringify({
+    console.info({
       event: 'pongapp.balance.match.v1',
+      matchSessionId: this.matchSessionId,
       rulesetVersion: game.rulesetVersion,
       durationSeconds: Math.round(game.tick / 6) / 10,
       overtime: game.overtime,
@@ -454,7 +584,31 @@ export class GameRoom extends DurableObject<Env> {
         openPostShots: player.openPostShots ?? 0,
         bankShots: player.bankShots ?? 0,
       })),
-    }))
+    })
+  }
+
+  /**
+   * Correlation IDs below are random, server-only identifiers. Lifecycle logs
+   * never include room codes, room/player names, guest or participant IDs,
+   * reconnect/access tokens, client text, or input coordinates.
+   */
+  private logLifecycle(action: string, detail: Record<string, string | number | boolean | null | undefined> = {}): void {
+    const participants = [...this.participants.values()]
+    console.info({
+      event: 'pongapp.room.lifecycle.v2',
+      schemaVersion: 2,
+      action,
+      roomSessionId: this.telemetryRoomId,
+      supportTraceId: this.telemetryRoomId.slice(0, 8).toUpperCase(),
+      matchSessionId: this.matchSessionId,
+      phase: this.game?.phase ?? (this.config ? 'lobby' : 'unconfigured'),
+      gameTick: this.game?.tick ?? null,
+      roomAgeMs: this.config ? Math.max(0, Date.now() - this.config.createdAt) : null,
+      connectedPlayers: participants.filter((participant) => participant.connected && participant.slot !== null).length,
+      connectedSpectators: participants.filter((participant) => participant.connected && participant.slot === null).length,
+      reservedPlayerSlots: participants.filter((participant) => participant.slot !== null).length,
+      ...detail,
+    })
   }
 
   private publicParticipant(participant: InternalParticipant): RoomParticipant {
@@ -467,6 +621,7 @@ export class GameRoom extends DurableObject<Env> {
     return {
       roomCode: this.config.roomCode,
       roomName: displayRoomName(this.config),
+      supportTraceId: this.telemetryRoomId.slice(0, 8).toUpperCase(),
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
     }
@@ -508,6 +663,8 @@ export class GameRoom extends DurableObject<Env> {
       config: this.config,
       participants: [...this.participants.values()],
       game: this.game,
+      telemetryRoomId: this.telemetryRoomId,
+      matchSessionId: this.matchSessionId,
       updatedAt: Date.now(),
     } satisfies StoredRoomRecord)
   }

@@ -30,6 +30,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
   const clientRef = useRef<RoomClient | null>(null)
   const renderFallbackRef = useRef<GameState | null>(null)
   const resultRecorded = useRef(false)
+  const reportedTelemetry = useRef(new Set<string>())
 
   useEffect(() => {
     let disposed = false
@@ -80,6 +81,17 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
   const activeRoomName = view.lobby?.roomName ?? createRequest?.roomName ?? (activeRoomCode ? `Room ${activeRoomCode}` : 'Private Pal Duel')
   const inviteUrl = activeRoomCode ? inviteUrlFor(window.location.origin, import.meta.env.BASE_URL, activeRoomCode, true) : null
 
+  useEffect(() => {
+    const event = view.participant?.slot === null
+      ? 'room_full_visible'
+      : view.gameState && participantId && view.lobby?.phase !== 'lobby'
+        ? 'control_surface_visible'
+        : null
+    if (!event || reportedTelemetry.current.has(event)) return
+    reportedTelemetry.current.add(event)
+    clientRef.current?.reportTelemetry(event)
+  }, [participantId, view.gameState?.phase, view.lobby?.phase, view.participant?.slot])
+
   const copyInvite = async () => {
     if (!inviteUrl) return
     try {
@@ -106,7 +118,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
 
   if (view.status === 'error' || (view.status === 'closed' && view.error)) {
     const moved = view.status === 'closed'
-    return <section className="pg-lobby"><div className="pg-lobby-card"><p className="pg-kicker">{moved ? 'Room active elsewhere' : 'Connection error'}</p><h2>{moved ? 'Continue in your other tab' : 'Room unavailable'}</h2><p className={moved ? 'pg-status' : 'pg-status pg-status--error'}>{view.error}</p><button className="pg-primary-button" onClick={exit}>Back home</button></div></section>
+    return <section className="pg-lobby"><div className="pg-lobby-card"><p className="pg-kicker">{moved ? 'Room active elsewhere' : 'Connection error'}</p><h2>{moved ? 'Continue in your other tab' : 'Room unavailable'}</h2><p className={moved ? 'pg-status' : 'pg-status pg-status--error'}>{view.error}</p>{view.lobby?.supportTraceId && <p className="pg-status">Support trace {view.lobby.supportTraceId}</p>}<button className="pg-primary-button" onClick={exit}>Back home</button></div></section>
   }
 
   if (view.participant?.slot === null) {
@@ -123,6 +135,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
             ))}
           </div>
           <p className="pg-status">If this is your duel, continue in the original tab or device. Opening the same link there will reconnect your seat.</p>
+          {view.lobby?.supportTraceId && <p className="pg-status">Support trace {view.lobby.supportTraceId}</p>}
           <button className="pg-primary-button" onClick={exit}>Back home</button>
         </div>
       </section>

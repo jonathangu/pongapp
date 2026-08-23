@@ -4,7 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-22",
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false,
+      "persist": true
+    }
   },
   "durable_objects": {
     "bindings": [
