@@ -344,7 +344,10 @@ export class RoomClient {
   private checkConnectionHealth(): void {
     if (document.visibilityState !== 'visible' || this.socket?.readyState !== WebSocket.OPEN || this.view.status !== 'playing') return
     if (performance.now() - this.lastMessageAt < 2_000) return
-    this.socket.close(4002, 'stale stream')
+    const staleSocket = this.socket
+    this.socket = null
+    staleSocket.close(4002, 'stale stream')
+    this.scheduleReconnect()
   }
 
   private onClose(socket: WebSocket, event: CloseEvent): void {
@@ -359,6 +362,15 @@ export class RoomClient {
       this.patch({ status: 'closed', error: 'This duel moved to another tab or device. Continue playing there.' })
       return
     }
+    this.socket = null
+    this.scheduleReconnect()
+  }
+
+  private scheduleReconnect(): void {
+    window.clearInterval(this.inputTimer)
+    window.clearInterval(this.pingTimer)
+    window.clearInterval(this.healthTimer)
+    window.clearTimeout(this.reconnectTimer)
     if (this.reconnectAttempt >= 4) { this.patch({ status: 'error', error: 'Connection lost. Return home and rejoin the room.' }); return }
     this.reconnectAttempt += 1
     this.patch({ status: 'connecting', error: null })
