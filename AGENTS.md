@@ -27,3 +27,13 @@ PongApp is RackeTapp's fast, beautiful browser side game. Optimize the loop
 Run `pnpm check`. For UI changes, verify the guest AI journey and online lobby
 at phone and desktop sizes. Do not publish if simulation, protocol, or room
 integration tests fail.
+
+For Cloudflare room changes, also run a real local Durable Object smoke test:
+
+```bash
+pnpm dev:worker
+ROOM_SERVER_URL=http://127.0.0.1:8787 pnpm smoke:room
+```
+
+Deploy from this repository with `pnpm deploy:worker`, then run
+`ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev pnpm smoke:room`.

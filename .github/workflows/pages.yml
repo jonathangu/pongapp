@@ -65,8 +65,8 @@ jobs:
         env:
           DEPLOYMENT_ID: ${{ github.sha }}
           PONGAPP_SITE_URL: https://www.jonathangu.com/pongapp/
-          ROOM_SERVER_URL: https://pongapp-room.fly.dev
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
       - name: Verify authoritative production multiplayer
         run: node scripts/room-smoke.mjs
         env:
-          ROOM_SERVER_URL: https://pongapp-room.fly.dev
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev

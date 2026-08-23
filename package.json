@@ -10,11 +10,13 @@
   "scripts": {
     "dev": "pnpm --filter @pongapp/web dev",
     "dev:server": "pnpm --filter @pongapp/room-server dev",
+    "dev:worker": "pnpm --filter @pongapp/room-worker dev",
+    "deploy:worker": "pnpm --filter @pongapp/room-worker run deploy",
     "build": "pnpm -r --workspace-concurrency=1 build",
     "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",
     "smoke:room": "node scripts/room-smoke.mjs",
-    "smoke:prod": "node scripts/production-smoke.mjs && ROOM_SERVER_URL=https://pongapp-room.fly.dev node scripts/room-smoke.mjs",
+    "smoke:prod": "node scripts/production-smoke.mjs && ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev node scripts/room-smoke.mjs",
     "lint": "oxlint .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },

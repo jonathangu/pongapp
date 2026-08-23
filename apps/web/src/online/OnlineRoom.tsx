@@ -146,7 +146,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       settings={effects}
       muted={muted}
       title="Online Pal Duel"
-      subtitle={`${view.roomCode} · live San Francisco arena`}
+      subtitle={`${view.roomCode} · live edge arena`}
       network={{ latencyMs: view.latencyMs, latencyP95Ms: view.latencyP95Ms, jitterMs: view.jitterMs, quality: view.connectionQuality }}
       onRematch={() => { resultRecorded.current = false; clientRef.current?.rematch() }}
     />

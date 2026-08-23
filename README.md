@@ -40,15 +40,21 @@ ROOM_SERVER_URL=http://127.0.0.1:8080 pnpm smoke:room
 ## Hosting
 
 The static client is built at `/pongapp/` and deployed through GitHub Pages to
-`https://www.jonathangu.com/pongapp/`. Online rooms run on one always-on Fly
-Machine in `sjc` at `https://pongapp-room.fly.dev`; snapshots persist to its
-encrypted volume. Override the client endpoint with `VITE_ROOM_SERVER_URL`.
+`https://www.jonathangu.com/pongapp/`. Online rooms run on Cloudflare at
+`https://pongapp-room.pongapp-room-worker.workers.dev`. Each invite gets one
+authoritative Durable Object placed near the player who creates the room; its
+state and WebSocket session stay together at the edge. Override the client
+endpoint with `VITE_ROOM_SERVER_URL`.
 
 ```bash
-fly deploy --ha=false
-ROOM_SERVER_URL=https://pongapp-room.fly.dev pnpm smoke:room
+pnpm deploy:worker
+ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev pnpm smoke:room
 pnpm smoke:prod
 ```
+
+The previous Fly service remains an emergency rollback target. See
+[`docs/EDGE_OPERATIONS.md`](docs/EDGE_OPERATIONS.md) for local testing,
+deployment, verification, and rollback.
 
 PongApp remains standalone. Guest identity and progression are device-local;
 RackeTapp code, accounts, legal flows, and Supabase are not involved.

@@ -12,7 +12,7 @@ type Screen =
   | { type: 'online'; roomCode?: string; request?: CreateRoomRequest }
 
 const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || (import.meta.env.PROD
-  ? 'https://pongapp-room.fly.dev'
+  ? 'https://pongapp-room.pongapp-room-worker.workers.dev'
   : 'http://localhost:8080')
 
 function roomFromHash(): string | undefined {

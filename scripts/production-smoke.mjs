@@ -1,5 +1,5 @@
 const siteUrl = new URL(process.env.PONGAPP_SITE_URL ?? 'https://www.jonathangu.com/pongapp/')
-const roomServerUrl = process.env.ROOM_SERVER_URL ?? 'https://pongapp-room.fly.dev'
+const roomServerUrl = process.env.ROOM_SERVER_URL ?? 'https://pongapp-room.pongapp-room-worker.workers.dev'
 const deploymentId = process.env.DEPLOYMENT_ID ?? Date.now().toString(36)
 
 function invariant(condition, message) {
@@ -24,7 +24,7 @@ async function verifyDeployment() {
   invariant(scriptResponse.ok, `PongApp bundle returned ${scriptResponse.status}`)
   const script = await scriptResponse.text()
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
-  invariant(!script.includes('pongapp-room.pongapp-room-worker.workers.dev'), 'PongApp bundle still targeted the retired Cloudflare room endpoint')
+  invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
 
   const workerResponse = await fetchCurrent('/pongapp/sw.js')
   invariant(workerResponse.ok, `Service-worker retirement script returned ${workerResponse.status}`)
@@ -35,6 +35,7 @@ async function verifyDeployment() {
   invariant(healthResponse.ok, `Room health returned ${healthResponse.status}`)
   const health = await healthResponse.json()
   invariant(health.protocol === 3, `Room server protocol was ${health.protocol}, expected 3`)
+  invariant(health.runtime === 'cloudflare-durable-objects', `Room server runtime was ${health.runtime}, expected Cloudflare Durable Objects`)
   console.log(`production-smoke ok: ${siteUrl.href} -> ${scriptPath} -> ${roomServerUrl}`)
 }
 

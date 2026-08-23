@@ -92,12 +92,20 @@ try {
   const owner = summoned.state.players[clients[0].playerId]
   invariant(owner.palEnergy === 0, `Guard did not spend two energy; player has ${owner.palEnergy}`)
 
-  const sentAt = Date.now()
-  clients[0].socket.send(JSON.stringify({ type: 'ping', sentAt }))
-  const pong = await waitFor(clients[0], (message) => message.type === 'pong' && message.sentAt === sentAt)
-  invariant(pong.serverAt >= sentAt, 'Pong timestamp was invalid')
+  const latencySamples = []
+  for (let index = 0; index < 7; index += 1) {
+    const sentAt = Date.now()
+    const startedAt = performance.now()
+    clients[0].socket.send(JSON.stringify({ type: 'ping', sentAt }))
+    const pong = await waitFor(clients[0], (message) => message.type === 'pong' && message.sentAt === sentAt)
+    invariant(Number.isFinite(pong.serverAt) && Math.abs(pong.serverAt - sentAt) < 60_000, 'Pong timestamp was invalid')
+    latencySamples.push(performance.now() - startedAt)
+  }
+  latencySamples.sort((a, b) => a - b)
+  const medianLatency = Math.round(latencySamples[Math.floor(latencySamples.length / 2)])
+  const p95Latency = Math.round(latencySamples[Math.floor((latencySamples.length - 1) * 0.95)])
 
-  console.log(`room-smoke ok: ${roomCode}, 2 humans auto-started in 2D, Guard summoned at tick ${summoned.serverTick}`)
+  console.log(`room-smoke ok: ${roomCode}, 2 humans auto-started in 2D, Guard summoned at tick ${summoned.serverTick}, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')
