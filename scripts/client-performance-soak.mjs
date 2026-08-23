@@ -164,6 +164,8 @@ try {
     canvasPresent: Boolean(document.querySelector('.pg-canvas-wrap canvas')),
     networkLabel: document.querySelector('.pg-network')?.textContent?.trim() ?? null,
     connectionError: document.querySelector('.pg-status--error')?.textContent?.trim() ?? null,
+    distractionOverlayCount: document.querySelectorAll('.pg-coach, .pg-moment').length,
+    palCoachTextPresent: document.body.textContent?.includes('PAL COACH') ?? false,
   })`)
   console.log(JSON.stringify({
     url: baseUrl,
