@@ -67,7 +67,10 @@ export default function App() {
       humanIds: [profile.id, secondId],
     })
   }
-  const startFriend = () => setScreen({ type: 'online', request: { hostName: profile.name } })
+  const startFriend = () => setScreen({
+    type: 'online',
+    request: { hostName: profile.name, roomName: `${profile.name}'s Arena` },
+  })
   const join = () => {
     const code = normalizeRoomCode(joinCode)
     if (code) setScreen({ type: 'online', roomCode: code })

@@ -77,6 +77,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
   const subscribeState = useCallback((listener: (state: GameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
   const participantId = view.participant?.id
   const activeRoomCode = normalizeRoomCode(view.roomCode || roomCode || view.lobby?.roomCode || '')
+  const activeRoomName = view.lobby?.roomName ?? createRequest?.roomName ?? (activeRoomCode ? `Room ${activeRoomCode}` : 'Private Pal Duel')
   const inviteUrl = activeRoomCode ? inviteUrlFor(window.location.origin, import.meta.env.BASE_URL, activeRoomCode, true) : null
 
   const copyInvite = async () => {
@@ -94,7 +95,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
     if (!inviteUrl) return
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Pal Duel!', text: 'Fight my tiny heroes in instant air hockey', url: inviteUrl })
+        await navigator.share({ title: activeRoomName, text: `Join ${activeRoomName} for an instant Pal Duel`, url: inviteUrl })
         return
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -103,20 +104,41 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
     await copyInvite()
   }
 
-  if (view.status === 'error') {
-    return <section className="pg-lobby"><div className="pg-lobby-card"><p className="pg-kicker">Connection error</p><h2>Room unavailable</h2><p className="pg-status pg-status--error">{view.error}</p><button className="pg-primary-button" onClick={exit}>Back home</button></div></section>
+  if (view.status === 'error' || (view.status === 'closed' && view.error)) {
+    const moved = view.status === 'closed'
+    return <section className="pg-lobby"><div className="pg-lobby-card"><p className="pg-kicker">{moved ? 'Room active elsewhere' : 'Connection error'}</p><h2>{moved ? 'Continue in your other tab' : 'Room unavailable'}</h2><p className={moved ? 'pg-status' : 'pg-status pg-status--error'}>{view.error}</p><button className="pg-primary-button" onClick={exit}>Back home</button></div></section>
+  }
+
+  if (view.participant?.slot === null) {
+    return (
+      <section className="pg-lobby pg-lobby--duel">
+        <header className="pg-match__topbar"><div><strong>{activeRoomName}</strong><span>{activeRoomCode ? `Room ${activeRoomCode}` : ''}</span></div><button onClick={exit}>Exit</button></header>
+        <div className="pg-lobby-card">
+          <p className="pg-kicker">Private room · two players</p>
+          <h2>This duel is full</h2>
+          <p>Both player seats are already connected, so this page cannot control a mallet.</p>
+          <div className="pg-player-list">
+            {(view.lobby?.participants ?? []).filter((participant) => participant.slot !== null).map((participant) => (
+              <div className="pg-player" key={participant.id}><span>{(participant.slot ?? 0) + 1}</span><div><strong>{participant.displayName}</strong><small>{participant.connected ? 'Playing now' : 'Reconnecting…'}</small></div></div>
+            ))}
+          </div>
+          <p className="pg-status">If this is your duel, continue in the original tab or device. Opening the same link there will reconnect your seat.</p>
+          <button className="pg-primary-button" onClick={exit}>Back home</button>
+        </div>
+      </section>
+    )
   }
 
   if (!view.gameState || !participantId || view.lobby?.phase === 'lobby') {
     return (
       <section className="pg-lobby pg-lobby--duel">
-        <header className="pg-match__topbar"><div><strong>Private Pal Duel</strong><span>{activeRoomCode ? `Room ${activeRoomCode}` : 'Creating your invite…'}</span></div><button onClick={exit}>Exit</button></header>
+        <header className="pg-match__topbar"><div><strong>{activeRoomName}</strong><span>{activeRoomCode ? `Room ${activeRoomCode}` : 'Creating your invite…'}</span></div><button onClick={exit}>Exit</button></header>
         <div className="pg-lobby-card">
           {!activeRoomCode ? (
             <><div className="pg-orbit-loader" aria-hidden="true"><i /><i /><i /></div><h2>Opening your duel…</h2><p>The full invite link appears as soon as the room exists.</p></>
           ) : (
             <>
-              <p className="pg-kicker">One link. One rival. Fight.</p>
+              <p className="pg-kicker">{activeRoomName}</p>
               <h2>Invite Player 2</h2>
               <button className="pg-share-button" onClick={() => void shareInvite()}><span>↗</span><strong>{copied ? 'Invite copied!' : 'Share duel link'}</strong><small>Room {activeRoomCode} is already inside it</small></button>
               <div className="pg-player-list">
@@ -145,7 +167,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       localPlayerIds={view.participant?.slot === null ? [] : [participantId]}
       settings={effects}
       muted={muted}
-      title="Online Pal Duel"
+      title={activeRoomName}
       subtitle={`${view.roomCode} · live edge arena`}
       network={{ latencyMs: view.latencyMs, latencyP95Ms: view.latencyP95Ms, jitterMs: view.jitterMs, quality: view.connectionQuality }}
       onRematch={() => { resultRecorded.current = false; clientRef.current?.rematch() }}

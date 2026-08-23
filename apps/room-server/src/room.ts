@@ -319,6 +319,7 @@ export class GameRoom {
   private lobby(): RoomLobby {
     return {
       roomCode: this.config.roomCode,
+      roomName: this.config.roomName ?? `${this.config.hostName}'s Arena`,
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
     }

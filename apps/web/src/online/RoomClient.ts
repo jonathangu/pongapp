@@ -41,6 +41,8 @@ function percentile(sorted: number[], fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * fraction))] ?? 0
 }
 
+export function shouldReconnectAfterClose(code: number): boolean { return code !== 4001 }
+
 export class RoomClient {
   private socket: WebSocket | null = null
   private listeners = new Set<(view: RoomClientView) => void>()
@@ -99,7 +101,7 @@ export class RoomClient {
       this.send({ type: 'ping', sentAt: Date.now() })
     })
     socket.addEventListener('message', (event) => this.onMessage(String(event.data)))
-    socket.addEventListener('close', () => this.onClose())
+    socket.addEventListener('close', (event) => this.onClose(event))
     socket.addEventListener('error', () => this.patch({ status: 'error', error: 'The room connection failed.' }))
   }
 
@@ -276,10 +278,16 @@ export class RoomClient {
     this.patch({ latencyMs: median, latencyP95Ms: p95, jitterMs: jitter, snapshotGapP95Ms: gapP95, connectionQuality: quality })
   }
 
-  private onClose(): void {
+  private onClose(event: CloseEvent): void {
     window.clearInterval(this.inputTimer)
     window.clearInterval(this.pingTimer)
     if (this.closedByUser) return
+    if (!shouldReconnectAfterClose(event.code)) {
+      this.socket = null
+      this.resetRenderState()
+      this.patch({ status: 'closed', error: 'This duel moved to another tab or device. Continue playing there.' })
+      return
+    }
     if (this.reconnectAttempt >= 4) { this.patch({ status: 'error', error: 'Connection lost. Return home and rejoin the room.' }); return }
     this.reconnectAttempt += 1
     window.setTimeout(() => this.connect(), Math.min(4000, 500 * 2 ** this.reconnectAttempt))

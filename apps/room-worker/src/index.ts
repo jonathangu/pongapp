@@ -56,6 +56,10 @@ const SNAPSHOT_EVERY_TICKS = 2
 const ROOM_STORAGE_KEY = 'room-v3'
 const LEGACY_ROOM_STORAGE_KEY = 'room'
 
+function displayRoomName(config: StoredRoomConfig): string {
+  return config.roomName ?? `${config.hostName}'s Arena`
+}
+
 function corsHeaders(request: Request): HeadersInit {
   const origin = allowedOrigin(request.headers.get('origin'))
   return {
@@ -144,7 +148,7 @@ export class GameRoom extends DurableObject<Env> {
     if (url.pathname === '/configure' && request.method === 'POST') {
       if (this.occupied) return new Response('exists', { status: 409 })
       const value = await request.json() as Partial<StoredRoomConfig>
-      const parsed = createRoomRequestSchema.safeParse({ hostName: value.hostName })
+      const parsed = createRoomRequestSchema.safeParse({ hostName: value.hostName, roomName: value.roomName })
       if (!parsed.success || typeof value.roomCode !== 'string' || !validRoomCode(value.roomCode)
         || typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt)) {
         return new Response('invalid', { status: 400 })
@@ -246,6 +250,13 @@ export class GameRoom extends DurableObject<Env> {
     }
     this.transferHost()
     await this.persist()
+    console.info(JSON.stringify({
+      event: 'pongapp.room.connection.v1',
+      action: 'left',
+      slot: participant.slot,
+      phase: this.lobby().phase,
+      connectedPlayers: [...this.participants.values()].filter((candidate) => candidate.connected && candidate.slot !== null).length,
+    }))
     this.broadcastLobby()
   }
 
@@ -265,6 +276,7 @@ export class GameRoom extends DurableObject<Env> {
       && Boolean(message.reconnectToken)
       && candidate.reconnectToken === message.reconnectToken,
     )
+    const reconnected = Boolean(participant)
     if (participant) {
       participant.connected = true
       participant.disconnectedAt = null
@@ -306,6 +318,13 @@ export class GameRoom extends DurableObject<Env> {
     }
     socket.serializeAttachment({ participantId: participant.id } satisfies SocketAttachment)
     await this.persist()
+    console.info(JSON.stringify({
+      event: 'pongapp.room.connection.v1',
+      action: reconnected ? 'reconnected' : 'joined',
+      slot: participant.slot,
+      phase: this.lobby().phase,
+      connectedPlayers: [...this.participants.values()].filter((candidate) => candidate.connected && candidate.slot !== null).length,
+    }))
     this.send(socket, {
       type: 'welcome',
       version: PROTOCOL_VERSION,
@@ -447,6 +466,7 @@ export class GameRoom extends DurableObject<Env> {
     if (!this.config) throw new Error('Room is not configured')
     return {
       roomCode: this.config.roomCode,
+      roomName: displayRoomName(this.config),
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
     }

@@ -7,6 +7,7 @@ const palTypeSchema = z.enum(['guard', 'striker', 'captain'])
 
 export const createRoomRequestSchema = z.object({
   hostName: z.string().trim().min(2).max(16),
+  roomName: z.string().trim().min(2).max(32).optional(),
 }).strict()
 
 export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>
@@ -47,6 +48,7 @@ export interface RoomParticipant {
 
 export interface RoomLobby {
   roomCode: string
+  roomName: string
   participants: RoomParticipant[]
   phase: 'lobby' | 'countdown' | 'playing' | 'finished'
 }
