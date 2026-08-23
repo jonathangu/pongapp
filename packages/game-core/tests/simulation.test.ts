@@ -121,7 +121,7 @@ describe('Pal Duel air-hockey simulation', () => {
       vy: dy / distance * PAL_PROFILE.striker.shotSpeed,
       lastToucherId: 'ai-2',
     })
-    for (let tick = 0; tick < 180 && state.scores['team-1'] === 0; tick += 1) stepGame(state)
+    for (let tick = 0; tick < 240 && state.scores['team-1'] === 0; tick += 1) stepGame(state)
     expect(state.scores['team-1']).toBe(1)
     expect(state.events).toContainEqual(expect.objectContaining({ type: 'score', defenderCamping: true }))
   })
@@ -158,12 +158,15 @@ describe('Pal Duel air-hockey simulation', () => {
     expect(state.events.some((event) => event.type === 'palGrabbed')).toBe(true)
   })
 
-  it('lets the Hook fire a visible tether and reel the puck', () => {
+  it('telegraphs the Hook target before firing its visible tether', () => {
     const state = playing()
     state.players.human!.palEnergy = 3
     const hook = summon(state, 'striker')
     state.balls[0] = puck({ x: hook.x + 0.16, y: hook.y })
     stepGame(state, { human: { targetX: 0.5, targetY: 0.8, palAction: 'striker' } })
+    expect(hook.mode).toBe('chase')
+    expect(state.balls[0]!.tetherPalId).toBeNull()
+    for (let tick = 0; tick < 18; tick += 1) stepGame(state, { human: idle() })
     expect(state.balls[0]!.tetherPalId).toBe(hook.id)
     expect(state.events.some((event) => event.type === 'palTethered')).toBe(true)
   })

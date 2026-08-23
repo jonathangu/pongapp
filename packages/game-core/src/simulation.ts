@@ -219,7 +219,10 @@ function usePalCard(state: GameState, player: PlayerState, type: PalType): void 
     if (!canUsePalCard(state, player, type)) return
     existing.commanded = true
     existing.abilityCooldownTicks = PAL_PROFILE[type].abilityCooldownTicks
-    if (existing.mode !== 'carry') existing.mode = 'chase'
+    if (existing.mode !== 'carry') {
+      existing.mode = 'chase'
+      if (type === 'striker') existing.stateTicks = 19
+    }
     state.events.push({ type: 'palCommanded', playerId: player.id, palId: existing.id, palType: existing.type })
     return
   }
@@ -508,9 +511,22 @@ function updateTether(state: GameState, pal: PalState, ball: BallState): void {
 }
 
 function attemptHook(state: GameState, pal: PalState, ball: BallState): void {
-  if (ball.carrierPalId || ball.tetherPalId || (!pal.commanded && pal.abilityCooldownTicks > 0)) return
+  if (ball.carrierPalId || ball.tetherPalId || (!pal.commanded && pal.abilityCooldownTicks > 0)) {
+    if (pal.mode === 'chase') { pal.mode = 'patrol'; pal.stateTicks = 0 }
+    return
+  }
   const distance = physicalDelta(state, pal.x, pal.y, ball.x, ball.y).distance
-  if (distance > PAL_PROFILE.striker.hookRange) return
+  if (distance > PAL_PROFILE.striker.hookRange) {
+    if (pal.mode === 'chase') { pal.mode = 'patrol'; pal.stateTicks = 0 }
+    return
+  }
+  if (pal.mode !== 'chase') {
+    pal.mode = 'chase'
+    pal.stateTicks = 18
+    return
+  }
+  pal.stateTicks -= 1
+  if (pal.stateTicks > 0) return
   ball.tetherPalId = pal.id
   pal.mode = 'tether'
   pal.commanded = false
@@ -541,8 +557,9 @@ function updatePals(state: GameState): void {
       pal.carryTicks += 1
     }
     const target = palTarget(state, pal)
-    const speedBoost = pal.commanded ? 1.42 : pal.hasStar ? 1.16 : 1
-    const moved = movePoint(state, pal, target, PAL_PROFILE[pal.type].moveSpeed * speedBoost * TICK_SECONDS)
+    const speedBoost = pal.commanded ? 1.18 : pal.hasStar ? 1.1 : 1
+    const telegraphingHook = pal.type === 'striker' && pal.mode === 'chase' && pal.stateTicks > 0
+    const moved = movePoint(state, pal, target, PAL_PROFILE[pal.type].moveSpeed * speedBoost * (telegraphingHook ? 0 : 1) * TICK_SECONDS)
     pal.x = clamp(moved.x, RAIL_INSET + pal.radius, 1 - RAIL_INSET - pal.radius)
     pal.y = clamp(moved.y, RAIL_INSET + pal.radius, 1 - RAIL_INSET - pal.radius)
     pal.vx = moved.vx

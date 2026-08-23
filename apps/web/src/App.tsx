@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { buildMatchConfig, type AiDifficulty, type GameState, type MatchConfig } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
 import { LocalMatch } from './game/LocalMatch'
+import { PAL_SPRITE_URLS } from './game/palAssets'
 import { OnlineRoom } from './online/OnlineRoom'
 import { normalizeRoomCode, pongHomeUrlFor } from './online/invite'
 import { loadProfile, loadSettings, recordResult, saveProfile, saveSettings, type AppSettings, type GuestProfile } from './store'
@@ -25,7 +26,7 @@ function Logo() {
 }
 
 function PalPreview({ kind }: { kind: 'guard' | 'striker' | 'captain' }) {
-  return <span className={`pg-pal-preview pg-pal-preview--${kind}`} aria-hidden="true"><i /><b>{kind === 'captain' ? '♛' : kind === 'striker' ? '〰➤' : '◖●◗'}</b><i /></span>
+  return <span className={`pg-pal-preview pg-pal-preview--${kind}`} aria-hidden="true"><img src={PAL_SPRITE_URLS[kind]} alt="" /></span>
 }
 
 export default function App() {
@@ -94,10 +95,10 @@ export default function App() {
           <div className="pg-hero__copy">
             <p className="pg-kicker">A RackeTapp side game</p>
             <h1>SUMMON.<br/><span>RETURN.</span> WIN.</h1>
-            <p className="pg-hero__tagline">Air hockey became a tiny-hero duel. Drag your round mallet anywhere, call persistent Pals, and command their wild signature moves.</p>
+            <p className="pg-hero__tagline">Air hockey became a hero duel. Your mallet follows ahead of your thumb, every Pal shows its intent, and one private link starts a live match with a friend.</p>
             <div className="pg-launch-grid pg-launch-grid--duel">
-              <button className="pg-launch pg-launch--primary" onClick={startAi}><span className="pg-launch__icon">▶</span><span><strong>Quick Duel</strong><small>Play the AI now</small></span></button>
-              <button className="pg-launch pg-launch--friend" onClick={startFriend}><span className="pg-launch__icon">↗</span><span><strong>Invite Friend</strong><small>One link · instant 1v1</small></span></button>
+              <button className="pg-launch pg-launch--primary pg-launch--friend" onClick={startFriend}><span className="pg-launch__icon">↗</span><span><strong>Play a Friend</strong><small>One private link · instant 1v1</small></span></button>
+              <button className="pg-launch" onClick={startAi}><span className="pg-launch__icon">▶</span><span><strong>Practice Now</strong><small>Warm up against the AI</small></span></button>
               <button className="pg-launch" onClick={startLocal}><span className="pg-launch__icon">↕</span><span><strong>Same Phone</strong><small>Bottom versus top</small></span></button>
               <button className="pg-launch" onClick={() => setJoinOpen((open) => !open)}><span className="pg-launch__icon">#</span><span><strong>Join Room</strong><small>Use a backup code</small></span></button>
             </div>

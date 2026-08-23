@@ -42,10 +42,10 @@ export interface PalProfile {
 }
 
 export const PAL_PROFILE: Record<ActivePalType, PalProfile> = {
-  guard: { cost: 2, radius: 0.042, health: 4, moveSpeed: 0.72, abilityCooldownTicks: 90, carryTicks: 25, shotSpeed: 0.92, hookRange: 0 },
-  striker: { cost: 3, radius: 0.034, health: 3, moveSpeed: 0.84, abilityCooldownTicks: 150, carryTicks: 34, shotSpeed: 1.16, hookRange: 0.3 },
-  captain: { cost: 6, radius: 0.05, health: 5, moveSpeed: 0.8, abilityCooldownTicks: 180, carryTicks: 42, shotSpeed: 1.34, hookRange: 0 },
-  hatchling: { cost: 0, radius: 0.026, health: 2, moveSpeed: 0.78, abilityCooldownTicks: 90, carryTicks: 18, shotSpeed: 0.84, hookRange: 0 },
+  guard: { cost: 2, radius: 0.042, health: 4, moveSpeed: 0.62, abilityCooldownTicks: 105, carryTicks: 30, shotSpeed: 0.88, hookRange: 0 },
+  striker: { cost: 3, radius: 0.034, health: 3, moveSpeed: 0.69, abilityCooldownTicks: 180, carryTicks: 40, shotSpeed: 1.16, hookRange: 0.3 },
+  captain: { cost: 6, radius: 0.05, health: 5, moveSpeed: 0.66, abilityCooldownTicks: 210, carryTicks: 50, shotSpeed: 1.22, hookRange: 0 },
+  hatchling: { cost: 0, radius: 0.026, health: 2, moveSpeed: 0.64, abilityCooldownTicks: 110, carryTicks: 24, shotSpeed: 0.8, hookRange: 0 },
 }
 
 export const PAL_COST: Record<PalType, number> = {

@@ -3,6 +3,7 @@ import type { GameState, PalType } from '@pongapp/game-core'
 import { seatIdentity } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
 import { GameCourt } from '../game/GameCourt'
+import { PAL_SPRITE_URLS } from '../game/palAssets'
 import type { CourtEffectsSettings } from '../game/PixiCourt'
 import { inviteUrlFor, normalizeRoomCode, pongHomeUrlFor } from './invite'
 import { RoomClient, type RoomClientView } from './RoomClient'
@@ -26,6 +27,7 @@ const initialView: RoomClientView = {
 export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effects, muted, onExit, onResult }: Props) {
   const [view, setView] = useState(initialView)
   const [copied, setCopied] = useState(false)
+  const [inviteShared, setInviteShared] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
   const clientRef = useRef<RoomClient | null>(null)
   const renderFallbackRef = useRef<GameState | null>(null)
@@ -80,6 +82,11 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
   const activeRoomCode = normalizeRoomCode(view.roomCode || roomCode || view.lobby?.roomCode || '')
   const activeRoomName = view.lobby?.roomName ?? createRequest?.roomName ?? (activeRoomCode ? `Room ${activeRoomCode}` : 'Private Pal Duel')
   const inviteUrl = activeRoomCode ? inviteUrlFor(window.location.origin, import.meta.env.BASE_URL, activeRoomCode, true) : null
+  const seatedPlayers = view.lobby?.participants.filter((participant) => participant.slot !== null) ?? []
+  const isHost = view.participant?.slot === 0 || (Boolean(createRequest) && view.participant === null)
+  const edgeLabel = view.latencyMs === null
+    ? view.status === 'connecting' ? 'Connecting to the edge…' : 'Edge room starting…'
+    : `${view.latencyMs}ms round trip · ${view.connectionQuality === 'good' ? 'great' : view.connectionQuality}`
 
   useEffect(() => {
     const event = view.participant?.slot === null
@@ -98,6 +105,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       await navigator.clipboard.writeText(inviteUrl)
       setInviteError(null)
       setCopied(true)
+      setInviteShared(true)
       window.setTimeout(() => setCopied(false), 1800)
     } catch {
       setInviteError('Clipboard access was blocked. Use Share and send this page.')
@@ -108,6 +116,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
     if (navigator.share) {
       try {
         await navigator.share({ title: activeRoomName, text: `Join ${activeRoomName} for an instant Pal Duel`, url: inviteUrl })
+        setInviteShared(true)
         return
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -151,18 +160,25 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
             <><div className="pg-orbit-loader" aria-hidden="true"><i /><i /><i /></div><h2>Opening your duel…</h2><p>The full invite link appears as soon as the room exists.</p></>
           ) : (
             <>
-              <p className="pg-kicker">{activeRoomName}</p>
-              <h2>Invite Player 2</h2>
-              <button className="pg-share-button" onClick={() => void shareInvite()}><span>↗</span><strong>{copied ? 'Invite copied!' : 'Share duel link'}</strong><small>Room {activeRoomCode} is already inside it</small></button>
+              <div className="pg-lobby-pals" aria-hidden="true"><img src={PAL_SPRITE_URLS.guard} alt=""/><img src={PAL_SPRITE_URLS.captain} alt=""/><img src={PAL_SPRITE_URLS.striker} alt=""/></div>
+              <p className="pg-kicker">Private 1v1 · {activeRoomName}</p>
+              <h2>{isHost ? 'Send one link. Then play.' : `You're in ${activeRoomName}`}</h2>
+              <div className="pg-room-progress" aria-label="Room connection progress">
+                <span className="is-done"><i>✓</i><small>Room ready</small></span><b />
+                <span className={inviteShared ? 'is-done' : 'is-active'}><i>{inviteShared ? '✓' : '2'}</i><small>{inviteShared ? 'Link sent' : 'Send link'}</small></span><b />
+                <span className={seatedPlayers.length >= 2 ? 'is-done' : ''}><i>{seatedPlayers.length >= 2 ? '✓' : '3'}</i><small>Friend joins</small></span>
+              </div>
+              <p className={`pg-edge-pill pg-edge-pill--${view.connectionQuality}`}><i />{edgeLabel}</p>
+              {isHost && <button className="pg-share-button" onClick={() => void shareInvite()}><span>↗</span><strong>{copied ? 'Invite copied!' : 'Share private match'}</strong><small>Your friend taps once—no account or code entry</small></button>}
+              {isHost && inviteUrl && <div className="pg-invite-link"><input readOnly value={inviteUrl} aria-label="Private match invite link" onFocus={(event) => event.currentTarget.select()} /><button onClick={() => void copyInvite()}>{copied ? 'Copied' : 'Copy'}</button></div>}
               <div className="pg-player-list">
-                {(view.lobby?.participants ?? []).filter((participant) => participant.slot !== null).map((participant) => {
+                {seatedPlayers.map((participant) => {
                   const seat = seatIdentity(participant.slot ?? 0)
                   return <div className="pg-player" key={participant.id}><span className={`pg-player__dot pg-seat-mark--${seat.pattern}`} style={{ color: seat.hex }} /><div><strong>{participant.id === participantId ? 'You' : participant.displayName}</strong><small>{participant.connected ? participant.id === participantId ? 'Ready automatically' : 'Connected — starting now' : 'Reconnecting…'}</small></div></div>
                 })}
-                {(view.lobby?.participants.filter((participant) => participant.slot !== null).length ?? 0) < 2 && <div className="pg-player pg-player--empty"><span>2</span><div><strong>Waiting for your rival</strong><small>They tap the link once. No account and no room code entry.</small></div></div>}
+                {seatedPlayers.length < 2 && <div className="pg-player pg-player--empty"><span>2</span><div><strong>Waiting for your friend</strong><small>Keep this page open. The match starts automatically when they arrive.</small></div></div>}
               </div>
               {inviteError && <p className="pg-status pg-status--error">{inviteError}</p>}
-              <button className="pg-text-button" onClick={() => void copyInvite()}>{copied ? 'Copied' : 'Copy instead'}</button>
             </>
           )}
         </div>
@@ -181,7 +197,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       settings={effects}
       muted={muted}
       title={activeRoomName}
-      subtitle={`${view.roomCode} · live edge arena`}
+      subtitle={`Room ${view.roomCode} · private edge match`}
       network={{ latencyMs: view.latencyMs, latencyP95Ms: view.latencyP95Ms, jitterMs: view.jitterMs, quality: view.connectionQuality }}
       onRematch={() => { resultRecorded.current = false; clientRef.current?.rematch() }}
     />

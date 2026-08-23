@@ -45,6 +45,11 @@ export function shouldReconnectAfterClose(code: number): boolean { return code !
 export function hasRoomInputToFlush(targetChanged: boolean, pendingPalAction: PalType | null): boolean {
   return targetChanged || pendingPalAction !== null
 }
+export function remoteInterpolationDelayTicks(quality: ConnectionQuality, snapshotGapP95Ms: number | null): number {
+  if (quality === 'poor' || (snapshotGapP95Ms ?? 0) > 90) return 4
+  if (quality === 'fair' || (snapshotGapP95Ms ?? 0) > 48) return 2.5
+  return 1.5
+}
 
 export class RoomClient {
   private socket: WebSocket | null = null
@@ -204,7 +209,8 @@ export class RoomClient {
     const localId = this.view.participant?.id
     const latest = this.snapshots.at(-1)
     if (!latest || this.snapshots.length < 2) return
-    const renderTick = latest.state.tick + (now - latest.receivedAt) / 1000 * TICK_RATE - 3
+    const renderTick = latest.state.tick + (now - latest.receivedAt) / 1000 * TICK_RATE
+      - remoteInterpolationDelayTicks(this.view.connectionQuality, this.view.snapshotGapP95Ms)
     let before = this.snapshots[0]!
     let after = latest
     for (let index = 0; index < this.snapshots.length - 1; index += 1) {

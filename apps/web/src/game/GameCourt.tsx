@@ -14,7 +14,8 @@ import {
   type PlayerState,
 } from '@pongapp/game-core'
 import { GameAudio } from './audio'
-import { screenPointToWorld, screenVectorToWorld, type CourtPoint } from './perspective'
+import { PAL_SPRITE_URLS } from './palAssets'
+import { screenPointToWorld, screenVectorToWorld, visiblePointerTarget, type CourtPoint } from './perspective'
 import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
 
 interface NetworkStatus {
@@ -64,9 +65,7 @@ function resultLabel(state: GameState, player: PlayerState | undefined): string 
 }
 
 function PalGlyph({ type }: { type: PalType }) {
-  if (type === 'guard') return <span aria-hidden="true">◖●◗</span>
-  if (type === 'striker') return <span aria-hidden="true">〰➤</span>
-  return <span aria-hidden="true">♛</span>
+  return <img src={PAL_SPRITE_URLS[type]} alt="" aria-hidden="true" />
 }
 
 function EnergyMeter({ player, flipped = false }: { player: PlayerState; flipped?: boolean }) {
@@ -102,7 +101,7 @@ function PalTray({ state, player, onAction, top = false }: { state: GameState; p
             >
               <span className="pg-pal-card__glyph"><PalGlyph type={type} /></span>
               <span className="pg-pal-card__copy">
-                <strong>{active ? `GO, ${PAL_CARD_LABEL[type]}!` : PAL_CARD_LABEL[type]}</strong>
+                <strong>{PAL_CARD_LABEL[type]}</strong>
                 <small>{active ? `${hearts} · command` : PAL_SHORT_EFFECT[type]}</small>
               </span>
               <span className="pg-pal-card__cost">{active ? 'GO!' : <>{PAL_PROFILE[type].cost}<i>✦</i></>}</span>
@@ -143,7 +142,7 @@ export function GameCourt(props: Props) {
   const [state, setState] = useState(() => props.getState())
   const [moment, setMoment] = useState<string | null>(null)
   const [coach, setCoach] = useState<string | null>(() => {
-    try { return localStorage.getItem('pongapp.air-hockey-tutorial.v1') ? null : 'YOU are the round mallet at the bottom. Drag it anywhere—up, down, left, or right.' } catch { return null }
+    try { return localStorage.getItem('pongapp.air-hockey-tutorial.v1') ? null : 'YOU are the glowing round mallet. On touch, it leads your thumb so you can always see it.' } catch { return null }
   })
   const momentTimer = useRef(0)
   const coachTimer = useRef(0)
@@ -258,22 +257,25 @@ export function GameCourt(props: Props) {
 
   const targetFromPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
-    const screen = {
+    const finger = {
       x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
       y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
     }
     let playerId = pointerPlayers.current.get(event.pointerId)
     if (!playerId) {
-      const candidate = localPlayers.length > 1 && screen.y < 0.5
+      const candidate = localPlayers.length > 1 && finger.y < 0.5
         ? localPlayers.find((player) => player.side === (viewSide === 'bottom' ? 'top' : 'bottom'))
         : primaryPlayer
       playerId = candidate?.id
       if (playerId) pointerPlayers.current.set(event.pointerId, playerId)
     }
     if (!playerId) return
-    const world = screenPointToWorld(screen, viewSide)
+    const player = localPlayers.find((candidate) => candidate.id === playerId)
+    const target = visiblePointerTarget(finger, player?.side ?? viewSide, viewSide, rect.height, event.pointerType === 'touch')
+    const world = screenPointToWorld(target, viewSide)
     desired.current[playerId] = world
     props.onTarget(playerId, world.x, world.y)
+    if (event.pointerType === 'touch') rendererRef.current?.setControlPointer(event.pointerId, finger, target, player?.color ?? 0xdfff68)
   }, [localPlayers, primaryPlayer, props.onTarget, viewSide])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -281,7 +283,10 @@ export function GameCourt(props: Props) {
     event.currentTarget.setPointerCapture(event.pointerId)
     targetFromPointer(event)
   }
-  const releasePointer = (event: React.PointerEvent<HTMLDivElement>) => pointerPlayers.current.delete(event.pointerId)
+  const releasePointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    pointerPlayers.current.delete(event.pointerId)
+    rendererRef.current?.clearControlPointer(event.pointerId)
+  }
 
   const teams = Object.values(state.players).map((player) => ({
     player,
@@ -312,9 +317,9 @@ export function GameCourt(props: Props) {
         </div>
         <div className={`pg-match-clock${state.overtime ? ' is-overtime' : ''}`}>{secondsLabel(state)}</div>
         <div className={`pg-rally-chip${state.rallyHits >= 8 ? ' is-hot' : ''}`}><span>RALLY</span><b>{state.rallyHits}</b></div>
-        {props.network && props.network.quality !== 'good' && (
+        {props.network && (
           <div className={`pg-network pg-network--${props.network.quality}`} title={`Median ${props.network.latencyMs ?? '—'}ms · p95 ${props.network.latencyP95Ms ?? '—'}ms · jitter ${props.network.jitterMs ?? '—'}ms`}>
-            {props.network.quality === 'poor' ? 'Connection struggling' : `${props.network.latencyMs ?? '—'}ms`}
+            <i />{props.network.quality === 'poor' ? 'Connection struggling' : props.network.latencyMs === null ? 'Edge connecting' : `${props.network.latencyMs}ms RTT`}
           </div>
         )}
       </div>

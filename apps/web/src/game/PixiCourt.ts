@@ -1,4 +1,4 @@
-import { Application, BlurFilter, Container, Graphics, Rectangle } from 'pixi.js'
+import { Application, Assets, BlurFilter, Container, Graphics, Rectangle, Sprite, Texture } from 'pixi.js'
 import {
   BALL_SPEED_CAP,
   BALL_START_SPEED,
@@ -9,6 +9,7 @@ import {
   PAL_IDENTITIES,
   RAIL_INSET,
   seatIdentityForColor,
+  type ActivePalType,
   type BallState,
   type GameEvent,
   type GameState,
@@ -16,6 +17,7 @@ import {
   type PlayerState,
   type Side,
 } from '@pongapp/game-core'
+import { PAL_SPRITE_URLS } from './palAssets'
 
 export interface CourtEffectsSettings {
   reducedMotion: boolean
@@ -26,6 +28,7 @@ export interface CourtEffectsSettings {
 interface TrailPoint { x: number; y: number; life: number; color: number }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; size: number; color: number }
 interface Wave { x: number; y: number; life: number; color: number; reach: number }
+interface ControlPointer { fingerX: number; fingerY: number; targetX: number; targetY: number; color: number }
 
 const DENSITY = {
   low: { particles: 0.35, trail: 3, bloom: 0 },
@@ -42,7 +45,10 @@ export class PixiCourt {
   private readonly trailLayer = new Graphics()
   private readonly bloomLayer = new Graphics()
   private readonly actorLayer = new Graphics()
+  private readonly palSpriteLayer = new Container()
+  private readonly puckLayer = new Graphics()
   private readonly effectsLayer = new Graphics()
+  private readonly controlLayer = new Graphics()
   private bloomFilter: BlurFilter | null = null
   private resizeObserver: ResizeObserver | null = null
   private settings: CourtEffectsSettings
@@ -55,12 +61,17 @@ export class PixiCourt {
   private trails = new Map<string, TrailPoint[]>()
   private particles: Particle[] = []
   private waves: Wave[] = []
+  private palTextures = new Map<ActivePalType, Texture>()
+  private palSprites = new Map<string, Sprite>()
+  private controlPointers = new Map<number, ControlPointer>()
+  private destroyed = false
 
   constructor(settings: CourtEffectsSettings, private readonly focusPlayerIds: string[] = [], private readonly viewSide: Side = 'bottom') {
     this.settings = settings
   }
 
   async mount(element: HTMLElement): Promise<void> {
+    this.destroyed = false
     await this.app.init({
       backgroundAlpha: 0,
       antialias: true,
@@ -74,8 +85,14 @@ export class PixiCourt {
     this.trailLayer.blendMode = 'add'
     this.bloomLayer.blendMode = 'add'
     this.effectsLayer.blendMode = 'add'
-    this.stage.addChild(this.staticLayer, this.trailLayer, this.bloomLayer, this.actorLayer, this.effectsLayer)
+    this.stage.addChild(this.staticLayer, this.trailLayer, this.bloomLayer, this.actorLayer, this.palSpriteLayer, this.puckLayer, this.effectsLayer, this.controlLayer)
     this.applyDensity()
+    void Promise.all((Object.entries(PAL_SPRITE_URLS) as [ActivePalType, string][]).map(async ([type, url]) => {
+      try {
+        const texture = await Assets.load<Texture>(url)
+        if (!this.destroyed) this.palTextures.set(type, texture)
+      } catch { /* The procedural fallback remains playable if an asset cannot load. */ }
+    }))
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => {
         this.app.resize()
@@ -113,8 +130,15 @@ export class PixiCourt {
     this.drawTrail(state, deltaSeconds)
     this.drawActors(state)
     this.drawEffects(deltaSeconds)
+    this.drawControlPointers()
     this.app.render()
   }
+
+  setControlPointer(pointerId: number, finger: { x: number; y: number }, target: { x: number; y: number }, color: number): void {
+    this.controlPointers.set(pointerId, { fingerX: finger.x, fingerY: finger.y, targetX: target.x, targetY: target.y, color })
+  }
+
+  clearControlPointer(pointerId: number): void { this.controlPointers.delete(pointerId) }
 
   onEvents(events: GameEvent[], state: GameState): void {
     for (const event of events) {
@@ -173,9 +197,12 @@ export class PixiCourt {
   }
 
   destroy(): void {
+    this.destroyed = true
     this.resizeObserver?.disconnect()
     this.bloomFilter?.destroy()
-    this.app.destroy(true, { children: true, texture: true })
+    this.controlPointers.clear()
+    this.palSprites.clear()
+    this.app.destroy(true, { children: true })
   }
 
   private get density() { return DENSITY[this.settings.effectDensity] }
@@ -288,10 +315,12 @@ export class PixiCourt {
   private drawActors(state: GameState): void {
     const g = this.actorLayer
     g.clear()
+    this.puckLayer.clear()
     if (state.powerStar) this.drawPowerStar(g, state.powerStar.x, state.powerStar.y)
     for (const player of Object.values(state.players)) this.drawMallet(g, player)
     for (const pal of state.pals) this.drawPal(g, pal, state)
-    for (const ball of state.balls) this.drawPuck(g, ball, state)
+    this.syncPalSprites(state)
+    for (const ball of state.balls) this.drawPuck(this.puckLayer, ball, state)
   }
 
   private drawMallet(g: Graphics, player: PlayerState): void {
@@ -305,7 +334,14 @@ export class PixiCourt {
     }
     g.ellipse(point.x, point.y + radius * 0.34, radius * 1.02, radius * 0.66).fill({ color: 0x020806, alpha: 0.5 })
     if (this.focusPlayerIds.includes(player.id)) {
-      g.circle(point.x, point.y, radius * (1.35 + Math.sin(this.clock * 5) * 0.04)).stroke({ color: COURT_PALETTE.paper.color, width: 2, alpha: 0.55 })
+      const focusRadius = radius * (1.46 + Math.sin(this.clock * 5) * 0.045)
+      g.circle(point.x, point.y, focusRadius * 1.12).fill({ color: player.color, alpha: 0.12 })
+      g.circle(point.x, point.y, focusRadius).stroke({ color: COURT_PALETTE.paper.color, width: 3, alpha: 0.92 })
+      g.poly([
+        point.x - radius * 0.28, point.y + radius * 1.7,
+        point.x + radius * 0.28, point.y + radius * 1.7,
+        point.x, point.y + radius * 1.38,
+      ]).fill({ color: COURT_PALETTE.paper.color, alpha: 0.9 })
     }
     g.circle(point.x, point.y, radius).fill(player.color).stroke({ color: 0xfffdf7, width: 2.5, alpha: 0.7 })
     g.circle(point.x, point.y, radius * 0.58).fill({ color: 0x0b1611, alpha: 0.3 }).stroke({ color: 0xffffff, width: 1.2, alpha: 0.28 })
@@ -329,39 +365,49 @@ export class PixiCourt {
     const stunned = pal.mode === 'stunned'
     const pulse = 1 + Math.sin(this.clock * 7 + pal.spawnedAtTick) * 0.035
     const alpha = spawning ? 0.42 + clamp01(pal.stateTicks / 20) * 0.5 : 1
+    const hasSprite = this.palTextures.has(pal.type)
+    const visualRadius = radius * (pal.type === 'hatchling' ? 1.42 : 1.7)
 
-    if (spawning || pal.commanded) {
-      g.circle(point.x, point.y, radius * (1.45 + Math.sin(this.clock * 8) * 0.12)).stroke({ color: identity.color, width: 2.2, alpha: spawning ? 0.68 : 0.9 })
+    this.drawPalIntent(g, pal, state, radius)
+
+    if (spawning || pal.commanded || pal.mode === 'chase') {
+      g.circle(point.x, point.y, visualRadius * (1.05 + Math.sin(this.clock * 8) * 0.08)).stroke({ color: identity.color, width: 2.5, alpha: spawning ? 0.68 : 0.9 })
     }
     if (pal.hasStar) {
-      g.circle(point.x, point.y, radius * (1.65 + Math.sin(this.clock * 10) * 0.13)).stroke({ color: 0xffef72, width: 3, alpha: 0.88 })
+      g.circle(point.x, point.y, visualRadius * (1.08 + Math.sin(this.clock * 10) * 0.09)).stroke({ color: 0xffef72, width: 3, alpha: 0.88 })
       for (let index = 0; index < 4; index += 1) {
         const angle = this.clock * 2.4 + index * Math.PI / 2
-        g.circle(point.x + Math.cos(angle) * radius * 1.55, point.y + Math.sin(angle) * radius * 1.55, radius * 0.13).fill(0xffef72)
+        g.circle(point.x + Math.cos(angle) * visualRadius, point.y + Math.sin(angle) * visualRadius, radius * 0.13).fill(0xffef72)
       }
     }
 
-    g.ellipse(point.x, point.y + radius * 0.5, radius * 1.02, radius * 0.48).fill({ color: 0x020806, alpha: 0.42 })
-    if (pal.type === 'guard') this.drawGuard(g, point.x, point.y, radius * pulse, identity.color, owner?.color, alpha)
-    else if (pal.type === 'striker') this.drawHook(g, point.x, point.y, radius * pulse, identity.color, owner?.color, alpha)
-    else if (pal.type === 'captain') this.drawCaptain(g, point.x, point.y, radius * pulse, identity.color, owner?.color, alpha)
-    else this.drawHatchling(g, point.x, point.y, radius * pulse, owner?.color, alpha)
+    g.ellipse(point.x, point.y + radius * 0.72, visualRadius * 0.82, radius * 0.5).fill({ color: 0x020806, alpha: 0.46 })
+    g.circle(point.x, point.y, visualRadius * 0.78)
+      .fill({ color: owner?.color ?? identity.color, alpha: 0.09 })
+      .stroke({ color: owner?.color ?? identity.color, width: 2.8, alpha: 0.78 })
+    if (!hasSprite) {
+      if (pal.type === 'guard') this.drawGuard(g, point.x, point.y, radius * pulse, identity.color, owner?.color, alpha)
+      else if (pal.type === 'striker') this.drawHook(g, point.x, point.y, radius * pulse, identity.color, owner?.color, alpha)
+      else if (pal.type === 'captain') this.drawCaptain(g, point.x, point.y, radius * pulse, identity.color, owner?.color, alpha)
+      else this.drawHatchling(g, point.x, point.y, radius * pulse, owner?.color, alpha)
+    }
 
     const ball = state.balls[0]
-    const target = ball ? this.worldPoint(ball.x, ball.y) : point
-    const lookX = Math.sign(target.x - point.x) * radius * 0.08
-    const lookY = Math.sign(target.y - point.y) * radius * 0.05
-    for (const offset of [-0.28, 0.28]) {
-      g.circle(point.x + offset * radius, point.y - radius * 0.08, radius * 0.17).fill({ color: COURT_PALETTE.paper.color, alpha })
-      g.circle(point.x + offset * radius + lookX, point.y - radius * 0.08 + lookY, radius * 0.075).fill({ color: COURT_PALETTE.ink.color, alpha })
+    if (!hasSprite) {
+      const target = ball ? this.worldPoint(ball.x, ball.y) : point
+      const lookX = Math.sign(target.x - point.x) * radius * 0.08
+      const lookY = Math.sign(target.y - point.y) * radius * 0.05
+      for (const offset of [-0.28, 0.28]) {
+        g.circle(point.x + offset * radius, point.y - radius * 0.08, radius * 0.17).fill({ color: COURT_PALETTE.paper.color, alpha })
+        g.circle(point.x + offset * radius + lookX, point.y - radius * 0.08 + lookY, radius * 0.075).fill({ color: COURT_PALETTE.ink.color, alpha })
+      }
     }
     if (stunned) {
-      g.moveTo(point.x - radius * 0.34, point.y + radius * 0.34).lineTo(point.x + radius * 0.34, point.y + radius * 0.34).stroke({ color: COURT_PALETTE.ink.color, width: 2, alpha })
       for (let index = 0; index < 3; index += 1) {
         const angle = this.clock * 4 + index * Math.PI * 2 / 3
-        this.starShape(g, point.x + Math.cos(angle) * radius * 1.1, point.y - radius * 0.9 + Math.sin(angle) * radius * 0.26, radius * 0.18, 0xffef72, 1)
+        this.starShape(g, point.x + Math.cos(angle) * visualRadius * 0.8, point.y - visualRadius * 0.75 + Math.sin(angle) * radius * 0.26, radius * 0.18, 0xffef72, 1)
       }
-    } else {
+    } else if (!hasSprite) {
       const mouthX = point.x + Math.cos(0.15) * radius * 0.28
       const mouthY = point.y + radius * 0.18 + Math.sin(0.15) * radius * 0.28
       g.moveTo(mouthX, mouthY).arc(point.x, point.y + radius * 0.18, radius * 0.28, 0.15, Math.PI - 0.15).stroke({ color: COURT_PALETTE.ink.color, width: 1.5, alpha: 0.75 })
@@ -371,7 +417,7 @@ export class PixiCourt {
       const spacing = radius * 0.42
       const start = point.x - (pal.maxHealth - 1) * spacing / 2
       for (let index = 0; index < pal.maxHealth; index += 1) {
-        g.circle(start + index * spacing, point.y - radius * 1.42, radius * 0.1)
+        g.circle(start + index * spacing, point.y - visualRadius * 1.05, radius * 0.1)
           .fill({ color: index < pal.health ? 0xffef72 : 0x20352b, alpha: index < pal.health ? 1 : 0.7 })
       }
     }
@@ -385,6 +431,56 @@ export class PixiCourt {
         const t = index / 5
         g.circle(point.x + (puck.x - point.x) * t, point.y + (puck.y - point.y) * t, radius * 0.08).fill({ color: 0xffe0c8, alpha: 0.72 })
       }
+    }
+  }
+
+  private drawPalIntent(g: Graphics, pal: PalState, state: GameState, radius: number): void {
+    const ball = state.balls[0]
+    const shouldTrackPuck = Boolean(ball && (pal.commanded || pal.mode === 'chase' || pal.mode === 'tether'))
+    const shouldShowShot = pal.mode === 'carry'
+    if (!shouldTrackPuck && !shouldShowShot) return
+    const from = this.worldPoint(pal.x, pal.y)
+    const destination = shouldShowShot
+      ? this.worldPoint(0.5, pal.side === 'top' ? 0.985 : 0.015)
+      : this.worldPoint(ball!.x, ball!.y)
+    const color = shouldShowShot ? 0xffef72 : PAL_IDENTITIES[pal.type].color
+    for (let index = 1; index <= 5; index += 1) {
+      const amount = (index / 6 + this.clock * 0.55) % 1
+      g.circle(from.x + (destination.x - from.x) * amount, from.y + (destination.y - from.y) * amount, Math.max(1.5, radius * 0.085))
+        .fill({ color, alpha: 0.28 + amount * 0.48 })
+    }
+    g.circle(destination.x, destination.y, radius * 0.42).stroke({ color, width: 1.8, alpha: 0.55 })
+  }
+
+  private syncPalSprites(state: GameState): void {
+    const activeIds = new Set(state.pals.map((pal) => pal.id))
+    for (const [id, sprite] of this.palSprites) {
+      if (activeIds.has(id)) continue
+      sprite.destroy()
+      this.palSprites.delete(id)
+    }
+    for (const pal of state.pals) {
+      const texture = this.palTextures.get(pal.type)
+      if (!texture) continue
+      let sprite = this.palSprites.get(pal.id)
+      if (!sprite) {
+        sprite = new Sprite(texture)
+        sprite.anchor.set(0.5)
+        this.palSpriteLayer.addChild(sprite)
+        this.palSprites.set(pal.id, sprite)
+      } else if (sprite.texture !== texture) sprite.texture = texture
+      const point = this.worldPoint(pal.x, pal.y)
+      const radius = Math.max(pal.type === 'hatchling' ? 7 : 10, pal.radius * this.width)
+      const sizeMultiplier = pal.type === 'captain' ? 3.7 : pal.type === 'guard' ? 3.55 : pal.type === 'striker' ? 3.45 : 3.2
+      const pulse = 1 + Math.sin(this.clock * 7 + pal.spawnedAtTick) * 0.035
+      const size = radius * sizeMultiplier * pulse
+      sprite.position.set(point.x, point.y)
+      sprite.width = size
+      sprite.height = size
+      sprite.alpha = pal.mode === 'spawning' ? 0.42 + clamp01(pal.stateTicks / 20) * 0.5 : 1
+      sprite.tint = pal.mode === 'stunned' ? 0xb8c8bd : 0xffffff
+      const screenVx = this.viewSide === 'top' ? -pal.vx : pal.vx
+      sprite.rotation = Math.max(-0.1, Math.min(0.1, screenVx * 0.09))
     }
   }
 
@@ -465,6 +561,23 @@ export class PixiCourt {
       g.circle(point.x * this.width, point.y * this.height, particle.size * this.unit() * clamp01(particle.life)).fill({ color: particle.color, alpha: clamp01(particle.life) })
     }
     this.particles = this.particles.filter((particle) => particle.life > 0)
+  }
+
+  private drawControlPointers(): void {
+    const g = this.controlLayer
+    g.clear()
+    for (const pointer of this.controlPointers.values()) {
+      const finger = { x: pointer.fingerX * this.width, y: pointer.fingerY * this.height }
+      const target = { x: pointer.targetX * this.width, y: pointer.targetY * this.height }
+      g.moveTo(finger.x, finger.y).lineTo(target.x, target.y)
+        .stroke({ color: pointer.color, width: 3, alpha: 0.5 })
+      g.circle(finger.x, finger.y, Math.max(17, this.width * 0.048))
+        .stroke({ color: COURT_PALETTE.paper.color, width: 2, alpha: 0.28 })
+      g.circle(target.x, target.y, Math.max(20, this.width * 0.058))
+        .fill({ color: pointer.color, alpha: 0.11 })
+        .stroke({ color: COURT_PALETTE.paper.color, width: 2.5, alpha: 0.86 })
+      g.circle(target.x, target.y, Math.max(4, this.width * 0.012)).fill({ color: pointer.color, alpha: 0.95 })
+    }
   }
 
   private wave(x: number, y: number, color: number, reach: number): void {

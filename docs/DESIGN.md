@@ -10,8 +10,8 @@ actors, while the forest air-hockey table remains quiet furniture. Effects may
 celebrate contact but must never conceal the puck or resemble unexplained lines.
 
 The phone layout is an immersive 9:16 arena with a thin score strip above and
-the three-card Pal tray below. Primary menu actions use a compact two-column
-grid so Quick Duel and Invite Friend remain visible without scrolling.
+the three-card Pal tray below. Play a Friend is the dominant menu action; AI,
+same-phone, and room-code entry remain visible as secondary choices.
 
 ## One palette, distinct silhouettes
 
@@ -27,9 +27,11 @@ Pals communicate role before decoration:
 - Captain is large, lime, crowned, caped, and allowed across midfield.
 - Hatchlings are tiny pale scrappers with pointed ears.
 
-Every Pal has eyes that track the puck, a mouth, feet or side gear, health pips,
-a spawn ring, stun stars, a command pulse, and a gold Star aura when powered.
-Possession, damage, stun, tether, knockout, and power use must read without text.
+Every Pal has a generated high-resolution character skin over a procedural
+owner-colour base, plus health pips, a spawn ring, stun stars, a command pulse,
+and a gold Star aura when powered. Command, Hook wind-up, and possession draw a
+short intent trail toward the puck or target goal. Possession, damage, stun,
+tether, knockout, and power use must read without text.
 
 ## Simulation truth
 
@@ -46,8 +48,10 @@ authoritative hitstop.
 
 ## Online smoothness
 
-The client sends 2D targets at 60Hz and previews its own mallet immediately.
-Remote mallets and Pals play through a roughly 50ms snapshot buffer. The puck
+The client can flush changed 2D targets at 60Hz, sends no idle target traffic,
+and previews its own mallet immediately. Remote mallets and Pals use an adaptive
+25–67ms snapshot buffer: stable edge connections use the shortest buffer and
+noisier connections trade a little delay for continuity. The puck
 continues between snapshots, blends small corrections, and snaps after a large
 error, possession change, serve, or score. Connection quality uses rolling
 median, p95, jitter, and snapshot-gap p95 rather than one noisy ping.
@@ -77,6 +81,8 @@ and additionally reject all free-form client telemetry.
 ## Input and explanation
 
 - Pointer/touch maps both axes through the same 180° view transform as drawing.
+- A touch target leads 48–80px toward centre court and draws a finger-to-target
+  tether, so the local mallet is never hidden underneath the player's thumb.
 - Arrow keys or WASD move in two axes; number keys 1/2/3 use the Pal cards.
 - Same-phone play owns a pointer independently per half and rotates the top tray.
 - Tapping an inactive card summons; tapping its lit active card commands.
@@ -89,7 +95,8 @@ Pixi effects.
 
 ## Asset policy
 
-Competitive actors remain code-drawn so hitboxes, state, colour, performance,
-and animation stay deterministic. Raster generation is appropriate for social
-or promotional art, not live actors. A new runtime or asset tool is adopted only
-when it materially improves the shipped game at phone frame rates.
+Competitive hitboxes, owner identity, state indicators, and fallback actors
+remain code-drawn. Generated 512×512 transparent Pal skins are a visual layer
+only; they cannot change radii or gameplay power. The four optimized PNGs total
+under 750KB, load once through Pixi's asset cache, and retain the procedural
+fallback if loading fails.
