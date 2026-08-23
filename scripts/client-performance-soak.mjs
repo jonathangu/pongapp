@@ -183,5 +183,14 @@ try {
 } finally {
   peerSocket?.close(1000, 'soak complete')
   socket.close()
+  const chromeExited = chrome.exitCode === null
+    ? new Promise((resolve) => chrome.once('exit', resolve))
+    : Promise.resolve()
   chrome.kill('SIGTERM')
+  await Promise.race([chromeExited, sleep(1_000)])
+  if (chrome.exitCode === null) chrome.kill('SIGKILL')
 }
+
+// Node's built-in WebSocket can retain its close timer after Chrome is gone.
+// Reaching this line means the soak completed and printed its result.
+process.exit(0)
