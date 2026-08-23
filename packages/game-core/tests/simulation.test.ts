@@ -4,6 +4,7 @@ import {
   DEFAULT_TIME_LIMIT_TICKS,
   DUEL_COURT_LENGTH_SCALE,
   GOAL_WIDTH,
+  MALLET_RADIUS,
   PAL_ENERGY_MAX,
   PAL_ENERGY_REGEN_TICKS,
   PAL_PROFILE,
@@ -50,7 +51,8 @@ describe('Pal Duel air-hockey simulation', () => {
     expect(state.config.scoreToWin).toBe(5)
     expect(state.config.timeLimitTicks).toBe(DEFAULT_TIME_LIMIT_TICKS)
     expect(state.config.courtLengthScale).toBe(DUEL_COURT_LENGTH_SCALE)
-    expect(state.players.human).toMatchObject({ x: 0.5, y: 0.82, vx: 0, vy: 0 })
+    expect(MALLET_RADIUS).toBe(0.078)
+    expect(state.players.human).toMatchObject({ x: 0.5, y: 0.82, vx: 0, vy: 0, radius: MALLET_RADIUS })
     expect(state.players['ai-2']).toMatchObject({ x: 0.5, y: 0.18 })
   })
 
@@ -76,7 +78,7 @@ describe('Pal Duel air-hockey simulation', () => {
   })
 
   it('bounces on end rails outside the goal and scores through the opening', () => {
-    expect(GOAL_WIDTH).toBe(0.4)
+    expect(GOAL_WIDTH).toBe(0.45)
     const rail = playing()
     rail.balls[0] = puck({ x: 0.5 - GOAL_WIDTH, y: 0.025, vy: -0.8 })
     stepGame(rail)
@@ -129,6 +131,7 @@ describe('Pal Duel air-hockey simulation', () => {
   it('regenerates one of six energy pips every five active seconds', () => {
     const state = playing()
     const human = state.players.human!
+    state.balls = []
     human.palEnergy = 0
     for (let tick = 0; tick < PAL_ENERGY_REGEN_TICKS - 1; tick += 1) stepGame(state, { human: idle() })
     expect(human.palEnergy).toBe(0)

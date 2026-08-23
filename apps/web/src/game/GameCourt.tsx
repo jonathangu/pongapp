@@ -214,8 +214,12 @@ export function GameCourt(props: Props) {
       setState(next)
     }
     rendererRef.current?.onEvents(next.events, next)
-    for (const event of next.events) audio.play(event)
-  }), [audio, props.subscribe])
+    for (const event of next.events) {
+      const localHit = event.type === 'hit' && props.localPlayerIds.includes(event.playerId)
+      audio.play(event, localHit)
+      if (localHit) navigator.vibrate?.(event.clean ? 28 : 18)
+    }
+  }), [audio, props.localPlayerIds.join('\u001f'), props.subscribe])
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {

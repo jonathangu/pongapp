@@ -333,7 +333,9 @@ export function goalAttackAim(
   const speed = Math.max(PUCK_START_SPEED, PAL_PROFILE.captain.shotSpeed)
   const travelTime = Math.abs((targetY - shooterY) * state.config.courtLengthScale) / speed
   const predictedDefenderX = clamp((defender?.x ?? 0.5) + (defender?.vx ?? 0) * Math.min(0.35, travelTime), RAIL_INSET, 1 - RAIL_INSET)
-  const postInset = BALL_RADIUS + 0.018
+  // Keep enough puck clearance while using the full open post against the
+  // larger mallet; otherwise a centred goalie can intercept every bank lane.
+  const postInset = BALL_RADIUS + 0.008
   const leftPost = 0.5 - goalHalfWidth + postInset
   const rightPost = 0.5 + goalHalfWidth - postInset
   const leftSpace = Math.abs(leftPost - predictedDefenderX)
@@ -345,7 +347,9 @@ export function goalAttackAim(
   if (!bank) return { x: targetX, y: targetY, targetX, bankX: null, bankY: null, shot: 'openPost' }
   // A bank must enter the opening at the front rail. Aiming at the back of the
   // net reaches the post too late and clips the end rail before it can score.
-  const mouthY = attackerSide === 'top' ? 1 - RAIL_INSET : RAIL_INSET
+  const mouthY = attackerSide === 'top'
+    ? 1 - RAIL_INSET - BALL_RADIUS
+    : RAIL_INSET + BALL_RADIUS
   const wallX = targetX < 0.5 ? RAIL_INSET + BALL_RADIUS : 1 - RAIL_INSET - BALL_RADIUS
   const virtualX = wallX * 2 - targetX
   const bankDenominator = virtualX - shooterX

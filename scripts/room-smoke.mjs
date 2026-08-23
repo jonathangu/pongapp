@@ -1,5 +1,6 @@
 const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
 const PROTOCOL_VERSION = 3
+const EXPECTED_MALLET_RADIUS = 0.078
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)
@@ -88,6 +89,7 @@ try {
   const players = Object.values(snapshot.state.players)
   invariant(players.length === 2, `Expected a two-player duel, received ${players.length}`)
   invariant(players.every((player) => !player.isAi), 'Expected exactly two human players')
+  invariant(players.every((player) => player.radius === EXPECTED_MALLET_RADIUS), `Expected ${EXPECTED_MALLET_RADIUS} mallet radius from the authoritative server`)
 
   clients[0].socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'control_surface_visible' }))
   clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, targetX: 0.2, targetY: 0.62, palAction: 'guard', controlActive: true }))
@@ -136,7 +138,7 @@ try {
   replacementHost.socket.send(JSON.stringify({ type: 'ping', sentAt: reconnectPingAt }))
   await waitFor(replacementHost, (message) => message.type === 'pong' && message.sentAt === reconnectPingAt)
 
-  console.log(`room-smoke ok: ${roomCode} / Smoke Arena, 2 humans auto-started, third player shown a full room, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
+  console.log(`room-smoke ok: ${roomCode} / Smoke Arena, ${EXPECTED_MALLET_RADIUS} mallets, 2 humans auto-started, third player shown a full room, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')

@@ -38,6 +38,7 @@ export interface CourtPerformanceSample {
 interface TrailPoint { x: number; y: number; life: number; color: number }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; size: number; color: number }
 interface Wave { x: number; y: number; life: number; color: number; reach: number }
+interface MalletImpact { life: number; color: number; clean: boolean; focused: boolean }
 interface ControlPointer { fingerX: number; fingerY: number; targetX: number; targetY: number; color: number }
 
 const DENSITY = {
@@ -71,6 +72,7 @@ export class PixiCourt {
   private trails = new Map<string, TrailPoint[]>()
   private particles: Particle[] = []
   private waves: Wave[] = []
+  private malletImpacts = new Map<string, MalletImpact>()
   private palTextures = new Map<ActivePalType, Texture>()
   private palSprites = new Map<string, Sprite>()
   private controlPointers = new Map<number, ControlPointer>()
@@ -146,6 +148,10 @@ export class PixiCourt {
     this.height = this.app.screen.height
     if (this.width <= 0 || this.height <= 0) return
     this.clock += deltaSeconds
+    for (const [playerId, impact] of this.malletImpacts) {
+      impact.life -= deltaSeconds * 3.8
+      if (impact.life <= 0) this.malletImpacts.delete(playerId)
+    }
     const layoutKey = `${Math.round(this.width)}x${Math.round(this.height)}`
     if (layoutKey !== this.layoutKey) {
       this.layoutKey = layoutKey
@@ -173,9 +179,12 @@ export class PixiCourt {
     for (const event of events) {
       if (event.type === 'hit') {
         const player = state.players[event.playerId]
-        this.burst(event.x, event.y, player?.color ?? COURT_PALETTE.paper.color, event.clean ? 22 : 10, event.clean ? 0.44 : 0.25)
-        this.wave(event.x, event.y, player?.color ?? COURT_PALETTE.paper.color, event.clean ? 0.2 : 0.1)
-        this.shake(event.clean ? 0.36 : 0.1)
+        const color = player?.color ?? COURT_PALETTE.paper.color
+        const focused = this.focusPlayerIds.includes(event.playerId)
+        this.malletImpacts.set(event.playerId, { life: 1, color, clean: event.clean, focused })
+        this.burst(event.x, event.y, color, focused ? event.clean ? 34 : 24 : event.clean ? 22 : 10, focused ? 0.5 : event.clean ? 0.44 : 0.25)
+        this.wave(event.x, event.y, color, focused ? event.clean ? 0.32 : 0.24 : event.clean ? 0.2 : 0.1)
+        this.shake(focused ? event.clean ? 0.48 : 0.28 : event.clean ? 0.36 : 0.1)
       } else if (event.type === 'palSummoned') {
         const color = PAL_IDENTITIES[event.pal.type].color
         this.wave(event.pal.x, event.pal.y, color, event.pal.type === 'captain' ? 0.34 : 0.2)
@@ -230,6 +239,7 @@ export class PixiCourt {
     this.resizeObserver?.disconnect()
     this.bloomFilter?.destroy()
     this.controlPointers.clear()
+    this.malletImpacts.clear()
     this.palSprites.clear()
     this.app.destroy(true, { children: true })
   }
@@ -354,7 +364,8 @@ export class PixiCourt {
 
   private drawMallet(g: Graphics, player: PlayerState): void {
     const point = this.worldPoint(player.x, player.y)
-    const radius = Math.max(14, player.radius * this.width)
+    const impact = this.malletImpacts.get(player.id)
+    const radius = Math.max(14, player.radius * this.width) * (1 + (impact?.focused ? impact.life * 0.12 : 0))
     const identity = seatIdentityForColor(player.color)
     const speed = Math.hypot(player.vx, player.vy)
     if (speed > 0.08) {
@@ -362,6 +373,24 @@ export class PixiCourt {
       g.circle(point.x + tail.x * radius * 0.22, point.y + tail.y * radius * 0.22, radius * 1.18).fill({ color: player.color, alpha: 0.12 })
     }
     g.ellipse(point.x, point.y + radius * 0.34, radius * 1.02, radius * 0.66).fill({ color: 0x020806, alpha: 0.5 })
+    if (impact) {
+      const progress = 1 - clamp01(impact.life)
+      const reach = impact.focused ? impact.clean ? 1.25 : 0.95 : 0.58
+      const ringRadius = radius * (1.08 + progress * reach)
+      g.circle(point.x, point.y, radius * 1.08).fill({ color: COURT_PALETTE.paper.color, alpha: impact.life * (impact.focused ? 0.42 : 0.2) })
+      g.circle(point.x, point.y, ringRadius).stroke({ color: COURT_PALETTE.paper.color, width: impact.focused ? 5 : 2.5, alpha: impact.life * 0.95 })
+      g.circle(point.x, point.y, ringRadius * 1.08).stroke({ color: impact.color, width: impact.focused ? 3 : 1.5, alpha: impact.life * 0.72 })
+      if (impact.focused) {
+        for (let index = 0; index < 8; index += 1) {
+          const angle = index * Math.PI / 4
+          const inner = radius * (1.25 + progress * 0.3)
+          const outer = inner + radius * (impact.clean ? 0.58 : 0.38)
+          g.moveTo(point.x + Math.cos(angle) * inner, point.y + Math.sin(angle) * inner)
+            .lineTo(point.x + Math.cos(angle) * outer, point.y + Math.sin(angle) * outer)
+            .stroke({ color: COURT_PALETTE.paper.color, width: impact.clean ? 3.5 : 2.5, alpha: impact.life * 0.9 })
+        }
+      }
+    }
     if (this.focusPlayerIds.includes(player.id)) {
       const focusRadius = radius * (1.46 + Math.sin(this.clock * 5) * 0.045)
       g.circle(point.x, point.y, focusRadius * 1.12).fill({ color: player.color, alpha: 0.12 })

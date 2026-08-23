@@ -32,7 +32,7 @@ export class GameAudio {
     if (context && context.state !== 'closed') await context.close()
   }
 
-  play(event: GameEvent): void {
+  play(event: GameEvent, emphasize = false): void {
     if (this.muted || !this.context || !this.master) return
 
     if (event.type === 'countdown') {
@@ -44,6 +44,11 @@ export class GameAudio {
       const energy = Math.min(1, Math.max(0, event.speed / 1.42))
       this.noise(0.035, 0.018 + energy * 0.032, 2100 + energy * 2400)
       this.tone(event.clean ? 180 : 250 + energy * 190, event.clean ? 0.13 : 0.055, event.clean ? 0.09 : 0.045, event.clean ? 'square' : 'triangle')
+      if (emphasize) {
+        this.noise(0.055, 0.065, 4800)
+        this.tone(118, 0.12, 0.11, 'square', 0, 72)
+        this.tone(1080, 0.055, 0.055, 'triangle', 0.012, 1560)
+      }
       if (event.clean) {
         this.tone(760, 0.12, 0.07, 'sine', 0.012, 1180)
         this.tone(1520, 0.07, 0.035, 'sine', 0.02)
