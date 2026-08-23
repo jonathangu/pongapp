@@ -198,7 +198,8 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, effec
       muted={muted}
       title={activeRoomName}
       subtitle={`Room ${view.roomCode} · private edge match`}
-      network={{ latencyMs: view.latencyMs, latencyP95Ms: view.latencyP95Ms, jitterMs: view.jitterMs, quality: view.connectionQuality }}
+      network={{ latencyMs: view.latencyMs, latencyP95Ms: view.latencyP95Ms, jitterMs: view.jitterMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting' }}
+      onPerformanceSample={(sample) => clientRef.current?.reportPerformance(sample)}
       onRematch={() => { resultRecorded.current = false; clientRef.current?.rematch() }}
     />
   )

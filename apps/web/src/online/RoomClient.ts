@@ -9,6 +9,7 @@ import {
 } from '@pongapp/protocol'
 import { advanceLocalMalletPreview, ballPredictionEnabled, interpolatePoint, worldPredictionEnabled } from '../game/prediction'
 import type { CourtPoint } from '../game/perspective'
+import { cloneGameStateSnapshot } from '../game/stateSnapshot'
 
 export type RoomClientStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
 export type ConnectionQuality = 'good' | 'fair' | 'poor'
@@ -28,6 +29,15 @@ export interface RoomClientView {
 }
 
 export interface RoomIdentity { guestId: string; displayName: string; role?: 'player' | 'spectator' }
+export interface ClientPerformanceSample {
+  frameGapP95Ms: number
+  maxFrameGapMs: number
+  renderP95Ms: number
+  longFrameCount: number
+  freezeCount: number
+  rendererResolution: number
+  renderQuality: 'full' | 'adaptive'
+}
 interface SnapshotSample { state: GameState; receivedAt: number }
 interface RenderBall extends BallState { renderedAt: number }
 
@@ -65,6 +75,9 @@ export class RoomClient {
   private pendingPalAction: PalType | null = null
   private inputTimer = 0
   private pingTimer = 0
+  private healthTimer = 0
+  private reconnectTimer = 0
+  private lastMessageAt = 0
   private closedByUser = false
   private reconnectAttempt = 0
   private connectionSequence = 0
@@ -106,19 +119,27 @@ export class RoomClient {
     const socket = new WebSocket(websocketUrl(this.serverUrl, this.roomCode))
     this.socket = socket
     socket.addEventListener('open', () => {
-      this.reconnectAttempt = 0
+      if (socket !== this.socket) return
+      this.lastMessageAt = performance.now()
       this.send({
         type: 'hello', version: PROTOCOL_VERSION, guestId: this.identity.guestId,
         displayName: this.identity.displayName, role: this.identity.role ?? 'player', reconnectToken: this.reconnectToken,
         clientSessionId: this.clientSessionId, reconnectAttempt: Math.max(0, this.connectionSequence - 1),
       })
-      this.inputTimer = window.setInterval(() => this.flushInput(), 1000 / 60)
+      this.inputTimer = window.setInterval(() => this.flushInput(), 1000 / 30)
       this.pingTimer = window.setInterval(() => this.send({ type: 'ping', sentAt: Date.now() }), 2000)
+      this.healthTimer = window.setInterval(() => this.checkConnectionHealth(), 500)
       this.send({ type: 'ping', sentAt: Date.now() })
     })
-    socket.addEventListener('message', (event) => this.onMessage(String(event.data)))
-    socket.addEventListener('close', (event) => this.onClose(event))
-    socket.addEventListener('error', () => this.patch({ status: 'error', error: 'The room connection failed.' }))
+    socket.addEventListener('message', (event) => {
+      if (socket !== this.socket) return
+      this.lastMessageAt = performance.now()
+      this.onMessage(String(event.data))
+    })
+    socket.addEventListener('close', (event) => this.onClose(socket, event))
+    socket.addEventListener('error', () => {
+      if (socket === this.socket) this.patch({ status: 'connecting', error: null })
+    })
   }
 
   subscribe(listener: (view: RoomClientView) => void): () => void { this.listeners.add(listener); listener(this.view); return () => this.listeners.delete(listener) }
@@ -127,7 +148,7 @@ export class RoomClient {
   getRenderState(): GameState {
     const source = this.view.gameState
     if (!source) throw new Error('No game snapshot is available.')
-    const clone = structuredClone(source)
+    const clone = cloneGameStateSnapshot(source)
     const now = performance.now()
     this.renderRemoteActors(clone, now)
     this.renderLocalMallet(clone, now)
@@ -144,6 +165,9 @@ export class RoomClient {
 
   usePal(type: PalType): void { this.pendingPalAction = type; this.flushInput() }
   reportTelemetry(event: 'control_surface_visible' | 'room_full_visible'): void { this.send({ type: 'clientTelemetry', event }) }
+  reportPerformance(sample: ClientPerformanceSample): void {
+    this.send({ type: 'clientTelemetry', event: 'performance_sample', ...sample })
+  }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
   rematch(): void { this.send({ type: 'rematch' }) }
 
@@ -151,6 +175,8 @@ export class RoomClient {
     this.closedByUser = true
     window.clearInterval(this.inputTimer)
     window.clearInterval(this.pingTimer)
+    window.clearInterval(this.healthTimer)
+    window.clearTimeout(this.reconnectTimer)
     this.socket?.close(1000, 'player left')
     this.socket = null
     this.resetRenderState()
@@ -159,6 +185,7 @@ export class RoomClient {
 
   private flushInput(): void {
     if (this.socket?.readyState !== WebSocket.OPEN || !this.view.participant || this.view.participant.slot === null) return
+    if (this.socket.bufferedAmount > 4_096) return
     if (!hasRoomInputToFlush(this.targetChangedSinceFlush, this.pendingPalAction)) return
     this.inputSeq += 1
     if (this.targetChangedSinceFlush) { this.latestTargetSeq = this.inputSeq; this.targetChangedSinceFlush = false }
@@ -175,6 +202,7 @@ export class RoomClient {
     let message: ServerMessage
     try { message = JSON.parse(raw) as ServerMessage } catch { return }
     if (message.type === 'welcome') {
+      this.reconnectAttempt = 0
       this.reconnectToken = message.reconnectToken
       try { localStorage.setItem(`pongapp.room.${this.roomCode}.token`, message.reconnectToken) } catch { /* no storage */ }
       this.patch({ participant: message.participant, lobby: message.lobby, status: message.lobby.phase === 'lobby' ? 'lobby' : 'playing' })
@@ -193,13 +221,15 @@ export class RoomClient {
         this.snapshotGapSamples.push(now - previousReceipt)
         if (this.snapshotGapSamples.length > 60) this.snapshotGapSamples.shift()
       }
-      this.snapshots.push({ state: structuredClone(gameState), receivedAt: now })
+      this.snapshots.push({ state: gameState, receivedAt: now })
       if (this.snapshots.length > 5) this.snapshots.shift()
       const localId = this.view.participant?.id
       const local = localId ? gameState.players[localId] : undefined
       const previousTick = this.view.gameState?.tick
       if (local && (this.localRenderPlayerId !== local.id || previousTick === undefined || gameState.tick < previousTick)) this.resetLocalPreview(local.id, { x: local.x, y: local.y })
-      this.patch({ gameState, status: 'playing' })
+      const shouldNotifyView = message.type === 'result' || this.view.gameState === null
+      this.view = { ...this.view, gameState, status: 'playing' }
+      if (shouldNotifyView) for (const listener of this.listeners) listener(this.view)
       for (const listener of this.stateListeners) listener(gameState)
     } else if (message.type === 'pong') this.recordLatency(Math.max(0, Date.now() - message.sentAt))
     else if (message.type === 'error') this.patch({ status: message.recoverable ? this.view.status : 'error', error: message.message })
@@ -311,9 +341,17 @@ export class RoomClient {
     }
   }
 
-  private onClose(event: CloseEvent): void {
+  private checkConnectionHealth(): void {
+    if (document.visibilityState !== 'visible' || this.socket?.readyState !== WebSocket.OPEN || this.view.status !== 'playing') return
+    if (performance.now() - this.lastMessageAt < 2_000) return
+    this.socket.close(4002, 'stale stream')
+  }
+
+  private onClose(socket: WebSocket, event: CloseEvent): void {
+    if (socket !== this.socket) return
     window.clearInterval(this.inputTimer)
     window.clearInterval(this.pingTimer)
+    window.clearInterval(this.healthTimer)
     if (this.closedByUser) return
     if (!shouldReconnectAfterClose(event.code)) {
       this.socket = null
@@ -323,7 +361,8 @@ export class RoomClient {
     }
     if (this.reconnectAttempt >= 4) { this.patch({ status: 'error', error: 'Connection lost. Return home and rejoin the room.' }); return }
     this.reconnectAttempt += 1
-    window.setTimeout(() => this.connect(), Math.min(4000, 500 * 2 ** this.reconnectAttempt))
+    this.patch({ status: 'connecting', error: null })
+    this.reconnectTimer = window.setTimeout(() => this.connect(), Math.min(2_000, 250 * 2 ** (this.reconnectAttempt - 1)))
   }
 
   private resetLocalPreview(playerId: string | null = null, point: CourtPoint | null = null): void {

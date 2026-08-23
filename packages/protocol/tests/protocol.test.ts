@@ -38,5 +38,10 @@ describe('Pal Duel air-hockey protocol v3', () => {
     expect(parseWireMessage(JSON.stringify({
       type: 'clientTelemetry', event: 'network_sample', note: 'free-form text must never reach logs',
     }))).toBeNull()
+    expect(parseWireMessage(JSON.stringify({
+      type: 'clientTelemetry', event: 'performance_sample', frameGapP95Ms: 24,
+      maxFrameGapMs: 91, renderP95Ms: 8, longFrameCount: 2, freezeCount: 0,
+      rendererResolution: 1.5, renderQuality: 'full',
+    }))).toMatchObject({ event: 'performance_sample', rendererResolution: 1.5 })
   })
 })

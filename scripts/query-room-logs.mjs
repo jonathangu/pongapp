@@ -18,9 +18,11 @@ const body = {
   queryId: `pongapp-room-rca-${now}`,
   timeframe: { from: now - minutes * 60_000, to: now },
   view: 'events',
-  datasets: ['cloudflare-workers'],
-  needle: { value: trace ?? 'pongapp.room.lifecycle.v2', matchCase: false },
-  limit: 500,
+  parameters: {
+    datasets: ['cloudflare-workers'],
+    needle: { value: trace ?? 'pongapp.room.lifecycle.v2', matchCase: false },
+  },
+  limit: 2_000,
   dry: true,
 }
 const headers = { 'content-type': 'application/json' }
@@ -47,6 +49,8 @@ const safeFields = [
   'closeCategory', 'closeCode', 'wasClean', 'errorType', 'connectedMs', 'firstInputSeen',
   'replacementPresent', 'msAfterHello', 'latencyMs', 'latencyP95Ms', 'jitterMs',
   'snapshotGapP95Ms', 'connectionQuality', 'reason', 'announcedVersion', 'durationSeconds',
+  'frameGapP95Ms', 'maxFrameGapMs', 'renderP95Ms', 'longFrameCount', 'freezeCount',
+  'rendererResolution', 'renderQuality',
 ]
 
 function recordFromSource(source) {
@@ -56,7 +60,9 @@ function recordFromSource(source) {
 }
 
 const rows = []
-for (const event of payload.result?.events ?? []) {
+const eventsResult = payload.result?.events
+const events = Array.isArray(eventsResult) ? eventsResult : eventsResult?.events ?? []
+for (const event of events) {
   const record = recordFromSource(event.source)
   if (!record || record.event !== 'pongapp.room.lifecycle.v2') continue
   const row = { timestamp: new Date(event.timestamp).toISOString() }

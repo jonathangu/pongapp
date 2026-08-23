@@ -17,6 +17,7 @@
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",
     "smoke:room": "node scripts/room-smoke.mjs",
     "smoke:prod": "node scripts/production-smoke.mjs && ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev node scripts/room-smoke.mjs",
+    "perf:client": "node scripts/client-performance-soak.mjs",
     "logs:rooms": "node scripts/query-room-logs.mjs",
     "lint": "oxlint .",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"

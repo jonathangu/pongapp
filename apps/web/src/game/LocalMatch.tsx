@@ -13,6 +13,7 @@ import {
 import { GameCourt } from './GameCourt'
 import { screenVectorToWorld, type CourtPoint } from './perspective'
 import type { CourtEffectsSettings } from './PixiCourt'
+import { cloneGameStateSnapshot } from './stateSnapshot'
 
 interface Props {
   config: MatchConfig
@@ -77,7 +78,7 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
           onResult(state)
         }
         if (state.tick % 2 === 0 || state.events.length > 0) {
-          const view = structuredClone(state)
+          const view = cloneGameStateSnapshot(state)
           for (const listener of listeners.current) listener(view)
         }
         accumulator -= frameDuration
@@ -103,7 +104,7 @@ export function LocalMatch({ config, humanPlayerIds, effects, muted, onExit, onR
     stateRef.current = restartGame(stateRef.current)
     aiMemory.current = createAiMemory()
     resultRecorded.current = false
-    const view = structuredClone(stateRef.current)
+    const view = cloneGameStateSnapshot(stateRef.current)
     for (const listener of listeners.current) listener(view)
   }, [])
 

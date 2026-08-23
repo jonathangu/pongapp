@@ -25,6 +25,16 @@ export interface CourtEffectsSettings {
   effectDensity: 'low' | 'standard' | 'high'
 }
 
+export interface CourtPerformanceSample {
+  frameGapP95Ms: number
+  maxFrameGapMs: number
+  renderP95Ms: number
+  longFrameCount: number
+  freezeCount: number
+  rendererResolution: number
+  renderQuality: 'full' | 'adaptive'
+}
+
 interface TrailPoint { x: number; y: number; life: number; color: number }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; size: number; color: number }
 interface Wave { x: number; y: number; life: number; color: number; reach: number }
@@ -32,7 +42,7 @@ interface ControlPointer { fingerX: number; fingerY: number; targetX: number; ta
 
 const DENSITY = {
   low: { particles: 0.35, trail: 3, bloom: 0 },
-  standard: { particles: 1, trail: 7, bloom: 8 },
+  standard: { particles: 0.7, trail: 5, bloom: 0 },
   high: { particles: 1.7, trail: 11, bloom: 13 },
 } as const
 
@@ -65,6 +75,7 @@ export class PixiCourt {
   private palSprites = new Map<string, Sprite>()
   private controlPointers = new Map<number, ControlPointer>()
   private destroyed = false
+  private adaptivePerformance = false
 
   constructor(settings: CourtEffectsSettings, private readonly focusPlayerIds: string[] = [], private readonly viewSide: Side = 'bottom') {
     this.settings = settings
@@ -72,12 +83,13 @@ export class PixiCourt {
 
   async mount(element: HTMLElement): Promise<void> {
     this.destroyed = false
+    const mobilePerformanceProfile = window.innerWidth <= 640 || window.matchMedia('(pointer: coarse)').matches
     await this.app.init({
       backgroundAlpha: 0,
-      antialias: true,
+      antialias: !mobilePerformanceProfile,
       autoDensity: true,
       autoStart: false,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      resolution: Math.min(window.devicePixelRatio || 1, mobilePerformanceProfile ? 1.5 : 2),
       resizeTo: element,
     })
     element.appendChild(this.app.canvas)
@@ -109,6 +121,23 @@ export class PixiCourt {
     if (settings.reducedMotion) {
       this.trauma = 0
       this.particles = []
+    }
+  }
+
+  setAdaptivePerformance(enabled: boolean): void {
+    if (enabled === this.adaptivePerformance) return
+    this.adaptivePerformance = enabled
+    if (enabled) {
+      this.trauma = 0
+      this.particles = []
+    }
+    this.applyDensity()
+  }
+
+  performanceProfile(): Pick<CourtPerformanceSample, 'rendererResolution' | 'renderQuality'> {
+    return {
+      rendererResolution: this.app.renderer.resolution,
+      renderQuality: this.adaptivePerformance ? 'adaptive' : 'full',
     }
   }
 
@@ -205,7 +234,7 @@ export class PixiCourt {
     this.app.destroy(true, { children: true })
   }
 
-  private get density() { return DENSITY[this.settings.effectDensity] }
+  private get density() { return DENSITY[this.adaptivePerformance ? 'low' : this.settings.effectDensity] }
 
   private applyDensity(): void {
     this.bloomLayer.filters = null

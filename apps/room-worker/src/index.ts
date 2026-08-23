@@ -58,6 +58,7 @@ interface SocketAttachment {
   reconnectAttempt: number
   telemetryUiMask: number
   lastNetworkTelemetryAt: number | null
+  lastPerformanceTelemetryAt: number | null
 }
 
 const MAX_BODY_BYTES = 16_384
@@ -191,6 +192,7 @@ export class GameRoom extends DurableObject<Env> {
         reconnectAttempt: 0,
         telemetryUiMask: 0,
         lastNetworkTelemetryAt: null,
+        lastPerformanceTelemetryAt: null,
       } satisfies SocketAttachment)
       this.logLifecycle('socket_opened', { connectionId })
       return new Response(null, { status: 101, webSocket: client })
@@ -455,11 +457,13 @@ export class GameRoom extends DurableObject<Env> {
         message.event,
         attachment.telemetryUiMask ?? 0,
         attachment.lastNetworkTelemetryAt ?? null,
+        attachment.lastPerformanceTelemetryAt ?? null,
         now,
       )
       if (!decision.accepted) return
       attachment.telemetryUiMask = decision.uiMask
       attachment.lastNetworkTelemetryAt = decision.lastNetworkAt
+      attachment.lastPerformanceTelemetryAt = decision.lastPerformanceAt
       socket.serializeAttachment(attachment)
       this.logLifecycle(`client_${message.event}`, {
         connectionId: attachment.connectionId ?? null,
@@ -470,6 +474,13 @@ export class GameRoom extends DurableObject<Env> {
         jitterMs: message.jitterMs ?? null,
         snapshotGapP95Ms: message.snapshotGapP95Ms ?? null,
         connectionQuality: message.connectionQuality ?? null,
+        frameGapP95Ms: message.frameGapP95Ms ?? null,
+        maxFrameGapMs: message.maxFrameGapMs ?? null,
+        renderP95Ms: message.renderP95Ms ?? null,
+        longFrameCount: message.longFrameCount ?? null,
+        freezeCount: message.freezeCount ?? null,
+        rendererResolution: message.rendererResolution ?? null,
+        renderQuality: message.renderQuality ?? null,
       })
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
       this.game = restartGame(this.game, Date.now() >>> 0)

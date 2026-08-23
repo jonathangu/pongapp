@@ -16,13 +16,14 @@ import {
 import { GameAudio } from './audio'
 import { PAL_SPRITE_URLS } from './palAssets'
 import { screenPointToWorld, screenVectorToWorld, visiblePointerTarget, type CourtPoint } from './perspective'
-import { PixiCourt, type CourtEffectsSettings } from './PixiCourt'
+import { PixiCourt, type CourtEffectsSettings, type CourtPerformanceSample } from './PixiCourt'
 
 interface NetworkStatus {
   latencyMs: number | null
   latencyP95Ms: number | null
   jitterMs: number | null
   quality: 'good' | 'fair' | 'poor'
+  reconnecting?: boolean
 }
 
 interface Props {
@@ -38,6 +39,7 @@ interface Props {
   subtitle: string
   onRematch?: () => void
   network?: NetworkStatus
+  onPerformanceSample?: (sample: CourtPerformanceSample) => void
 }
 
 const PAL_ORDER: PalType[] = ['guard', 'striker', 'captain']
@@ -47,6 +49,11 @@ const PAL_SHORT_EFFECT: Record<PalType, string> = {
   captain: 'raid & shoot',
 }
 const PAL_CARD_LABEL: Record<PalType, string> = { guard: 'Bumper', striker: 'Hook', captain: 'Captain' }
+
+function percentile(values: number[], fraction: number): number {
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * fraction))] ?? 0
+}
 
 function secondsLabel(state: GameState): string {
   if (state.overtime) return 'FINAL VOLLEY'
@@ -153,8 +160,12 @@ export function GameCourt(props: Props) {
   const desired = useRef<Record<string, CourtPoint>>({})
   const heldKeys = useRef(new Set<string>())
   const pointerPlayers = useRef(new Map<number, string>())
+  const performanceListener = useRef(props.onPerformanceSample)
+  const lastUiTick = useRef(state.tick)
+  const lastUiPhase = useRef(state.phase)
 
   useEffect(() => { audio.setMuted(props.muted) }, [audio, props.muted])
+  useEffect(() => { performanceListener.current = props.onPerformanceSample }, [props.onPerformanceSample])
   useEffect(() => () => { void audio.destroy() }, [audio])
 
   useEffect(() => {
@@ -165,12 +176,46 @@ export function GameCourt(props: Props) {
     rendererRef.current = renderer
     let frame = 0
     let previous = performance.now()
+    let sampleStartedAt = previous
+    let frameGaps: number[] = []
+    let renderDurations: number[] = []
+    let resetAfterVisibilityChange = false
+    const onVisibilityChange = () => { resetAfterVisibilityChange = true }
+    document.addEventListener('visibilitychange', onVisibilityChange)
     void renderer.mount(element).then(() => {
       if (cancelled) return
       const draw = (now: number) => {
-        const delta = Math.min(0.05, Math.max(0, (now - previous) / 1000))
+        if (resetAfterVisibilityChange) {
+          resetAfterVisibilityChange = false
+          previous = now
+          sampleStartedAt = now
+          frameGaps = []
+          renderDurations = []
+        }
+        const frameGap = Math.max(0, now - previous)
+        const delta = Math.min(0.05, frameGap / 1000)
         previous = now
+        const renderStartedAt = performance.now()
         renderer.render(props.getState(), delta)
+        const renderDuration = performance.now() - renderStartedAt
+        frameGaps.push(frameGap)
+        renderDurations.push(renderDuration)
+        if (now - sampleStartedAt >= 10_000) {
+          const frameGapP95Ms = Math.round(percentile(frameGaps, 0.95))
+          const sample = {
+            frameGapP95Ms,
+            maxFrameGapMs: Math.round(Math.max(0, ...frameGaps)),
+            renderP95Ms: Math.round(percentile(renderDurations, 0.95)),
+            longFrameCount: frameGaps.filter((value) => value > 50).length,
+            freezeCount: frameGaps.filter((value) => value > 250).length,
+            ...renderer.performanceProfile(),
+          }
+          if (sample.freezeCount > 0 || frameGapP95Ms > 34 || sample.renderP95Ms > 18) renderer.setAdaptivePerformance(true)
+          performanceListener.current?.({ ...sample, ...renderer.performanceProfile() })
+          frameGaps = []
+          renderDurations = []
+          sampleStartedAt = now
+        }
         frame = requestAnimationFrame(draw)
       }
       frame = requestAnimationFrame(draw)
@@ -178,6 +223,7 @@ export function GameCourt(props: Props) {
     return () => {
       cancelled = true
       cancelAnimationFrame(frame)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       renderer.destroy()
       rendererRef.current = null
     }
@@ -186,7 +232,16 @@ export function GameCourt(props: Props) {
   useEffect(() => rendererRef.current?.updateSettings(props.settings), [props.settings])
 
   useEffect(() => props.subscribe((next) => {
-    setState(next)
+    const urgent = next.phase !== lastUiPhase.current || next.events.some((event) => (
+      event.type === 'score' || event.type === 'matchStart' || event.type === 'matchEnd'
+      || event.type === 'palSummoned' || event.type === 'palDamaged' || event.type === 'palStunned'
+      || event.type === 'palPowered' || event.type === 'starSpawned'
+    ))
+    if (urgent || next.tick - lastUiTick.current >= 6) {
+      lastUiTick.current = next.tick
+      lastUiPhase.current = next.phase
+      setState(next)
+    }
     rendererRef.current?.onEvents(next.events, next)
     for (const event of next.events) audio.play(event)
     const label = eventMoment(next)
@@ -318,8 +373,8 @@ export function GameCourt(props: Props) {
         <div className={`pg-match-clock${state.overtime ? ' is-overtime' : ''}`}>{secondsLabel(state)}</div>
         <div className={`pg-rally-chip${state.rallyHits >= 8 ? ' is-hot' : ''}`}><span>RALLY</span><b>{state.rallyHits}</b></div>
         {props.network && (
-          <div className={`pg-network pg-network--${props.network.quality}`} title={`Median ${props.network.latencyMs ?? '—'}ms · p95 ${props.network.latencyP95Ms ?? '—'}ms · jitter ${props.network.jitterMs ?? '—'}ms`}>
-            <i />{props.network.quality === 'poor' ? 'Connection struggling' : props.network.latencyMs === null ? 'Edge connecting' : `${props.network.latencyMs}ms RTT`}
+          <div className={`pg-network pg-network--${props.network.reconnecting ? 'poor' : props.network.quality}`} title={`Median ${props.network.latencyMs ?? '—'}ms · p95 ${props.network.latencyP95Ms ?? '—'}ms · jitter ${props.network.jitterMs ?? '—'}ms`}>
+            <i />{props.network.reconnecting ? 'Reconnecting…' : props.network.quality === 'poor' ? 'Connection struggling' : props.network.latencyMs === null ? 'Edge connecting' : `${props.network.latencyMs}ms RTT`}
           </div>
         )}
       </div>

@@ -37,12 +37,19 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping'), sentAt: z.number() }),
   z.object({
     type: z.literal('clientTelemetry'),
-    event: z.enum(['control_surface_visible', 'room_full_visible', 'network_sample']),
+    event: z.enum(['control_surface_visible', 'room_full_visible', 'network_sample', 'performance_sample']),
     latencyMs: z.number().int().min(0).max(60_000).optional(),
     latencyP95Ms: z.number().int().min(0).max(60_000).optional(),
     jitterMs: z.number().int().min(0).max(60_000).optional(),
     snapshotGapP95Ms: z.number().int().min(0).max(60_000).nullable().optional(),
     connectionQuality: z.enum(['good', 'fair', 'poor']).optional(),
+    frameGapP95Ms: z.number().int().min(0).max(60_000).optional(),
+    maxFrameGapMs: z.number().int().min(0).max(60_000).optional(),
+    renderP95Ms: z.number().int().min(0).max(60_000).optional(),
+    longFrameCount: z.number().int().min(0).max(100_000).optional(),
+    freezeCount: z.number().int().min(0).max(100_000).optional(),
+    rendererResolution: z.number().min(0.5).max(4).optional(),
+    renderQuality: z.enum(['full', 'adaptive']).optional(),
   }).strict(),
 ])
 
