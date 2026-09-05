@@ -2,130 +2,114 @@ import { describe, expect, it } from 'vitest'
 import { advanceCoopGame, createCoopGame, expeditionWorld, type CoopGameState, type RiverObject } from '../src'
 
 function start(seed = 42) {
-  const state = createCoopGame([{ id: 'a', name: 'Pilot' }, { id: 'b', name: 'Gunner' }], seed)
-  for (let tick = 0; tick < 180; tick++) advanceCoopGame(state, {})
-  state.objects = []
-  return state
+  const s = createCoopGame([{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], seed)
+  for (let t = 0; t < 180; t++) advanceCoopGame(s, {})
+  s.objects = []; return s
 }
-function rock(s: CoopGameState): RiverObject { return { id: 99, type: 'rock', x: s.boat.x, y: .755, radius: .04, phase: 0, drift: 0 } }
-function attacker(hp = 100): RiverObject { return { id: 90, type: 'predator', enemy: 'boss', x: .5, y: .2, radius: .1, phase: 0, drift: 0, hp, maxHp: hp, age: 0 } }
+const rock = (s: CoopGameState): RiverObject => ({ id: 999, type: 'rock', x: s.boat.x, y: .755, radius: .04, phase: 0, drift: 0 })
+const enemy = (id = 90, x = .5, y = .4): RiverObject => ({ id, type: 'predator', enemy: 'ambusher', x, y, radius: .04, phase: 0, drift: 0, hp: 4, maxHp: 4, age: 0 })
+const step = (s: CoopGameState, n: number) => { for (let t = 0; t < n; t++) advanceCoopGame(s, {}) }
 
-describe('two-person crew expedition', () => {
-  it('assigns pilot and gunner, leaving engineer available', () => {
+describe('tap-only expedition ruleset 8', () => {
+  it('nudges immediately for either player, repeated taps move farther, and coasting settles', () => {
+    const one = start(), many = start()
+    advanceCoopGame(one, { b: { paddle: 0, rightTap: true } })
+    expect(one.rulesetVersion).toBe(8); expect(one.boat.x).toBeGreaterThan(.5)
+    for (let t = 0; t < 60; t++) advanceCoopGame(many, { a: { paddle: 0, rightTap: t < 3 } })
+    step(one, 60); expect(many.boat.x).toBeGreaterThan(one.boat.x); expect(one.boat.heading).toBe(0)
+    const x = one.boat.x; step(one, 20); expect(one.boat.x).toBe(x)
+    advanceCoopGame(one, { a: { paddle: 0, leftTap: true } }); expect(one.boat.x).toBeLessThan(x)
+  })
+  it('cancels simultaneous opposite taps and ignores legacy held inputs', () => {
+    const s = start(); advanceCoopGame(s, { a: { paddle: 0, leftTap: true }, b: { paddle: 0, rightTap: true } })
+    expect(s.boat.x).toBe(.5)
+    for (let t = 0; t < 100; t++) advanceCoopGame(s, { a: { paddle: 1, steer: 1, action: true, flare: true } })
+    expect(s.boat.x).toBe(.5); expect(s.crew.shotsFired).toBe(0); expect(s.rushTicks).toBe(0)
+  })
+  it('supports the widened steering range without leaving the river', () => {
     const s = start()
-    expect(s.rulesetVersion).toBe(7); expect(s.players.a?.station).toBe('pilot'); expect(s.players.b?.station).toBe('gunner')
+    for (let t = 0; t < 100; t++) { s.objects = []; advanceCoopGame(s, { a: { paddle: 0, rightTap: true } }) }
+    expect(s.boat.x).toBe(.94)
+    for (let t = 0; t < 100; t++) { s.objects = []; advanceCoopGame(s, { b: { paddle: 0, leftTap: true } }) }
+    expect(s.boat.x).toBe(.06)
   })
-  it('steers immediately in both directions and coasts at the faster speed', () => {
-    const a = start(), b = start()
-    advanceCoopGame(a, { a: { paddle: 0, steer: -1 } }); advanceCoopGame(b, { a: { paddle: 0, steer: 1 } })
-    expect(a.boat.x).toBeLessThan(.5); expect(b.boat.x).toBeGreaterThan(.5)
-    for (let i = 0; i < 30; i++) advanceCoopGame(a, {})
-    expect(a.boat.speed).toBeGreaterThan(.012)
-  })
-  it('ignores steering from a non-pilot', () => {
-    const s = start(); advanceCoopGame(s, { b: { paddle: 0, steer: 1 } }); expect(s.boat.x).toBe(.5)
-  })
-  it('takes an empty station and requires the other person to accept an occupied swap', () => {
-    const s = start()
-    advanceCoopGame(s, { b: { paddle: 0, station: 'engineer' } }); expect(s.players.b?.station).toBe('engineer')
-    advanceCoopGame(s, { a: { paddle: 0, station: 'engineer' } })
-    expect(s.players.a?.station).toBe('pilot'); expect(s.crew.swap?.to).toBe('b')
-    advanceCoopGame(s, { b: { paddle: 0, station: 'pilot' } })
-    expect(s.players.a?.station).toBe('engineer'); expect(s.players.b?.station).toBe('pilot'); expect(s.crew.swap).toBeNull()
-  })
-  it('resolves simultaneous empty-station claims without duplicate occupancy', () => {
-    const s = start(); advanceCoopGame(s, { a: { paddle: 0, station: 'engineer' }, b: { paddle: 0, station: 'engineer' } })
-    expect(new Set(Object.values(s.players).map(p => p.station)).size).toBe(2)
-  })
-  it('does not grant repeated invincibility for holding the old paddle', () => {
-    const s = start()
-    for (let i = 0; i < 300; i++) advanceCoopGame(s, { a: { paddle: 1 }, b: { paddle: 1 } })
-    expect(s.rushTicks).toBe(0)
-    s.hearts = 3; s.invulnerableTicks = 0; s.objects = [rock(s)]; advanceCoopGame(s, { a: { paddle: 0, flare: true } })
-    expect(s.rushTicks).toBeGreaterThan(0); expect(s.hearts).toBe(2); expect(s.crew.boostCooldown).toBe(360)
-  })
-  it('shield blocks, cools down, and does not clear distant enemies', () => {
-    const s = start(); s.players.b!.station = 'engineer'
-    s.objects = [rock(s), attacker()]
-    advanceCoopGame(s, { b: { paddle: 0, flare: true } })
-    expect(s.hearts).toBe(3); expect(s.objects.some(o => o.type === 'predator')).toBe(true); expect(s.crew.shieldCooldown).toBe(420)
-    advanceCoopGame(s, { b: { paddle: 0, flare: true } }); expect(s.crew.shieldCooldown).toBe(419)
-  })
-  it('requires three earned scrap and sustained repair; cannot heal for free', () => {
-    const s = start(); s.players.b!.station = 'engineer'; s.hearts = 1; s.crew.scrap = 3
-    for (let i = 0; i < 110; i++) { s.objects = []; advanceCoopGame(s, { b: { paddle: 0, action: true } }) }
-    expect(s.hearts).toBe(2); expect(s.crew.scrap).toBe(0)
-    for (let i = 0; i < 120; i++) { s.objects = []; advanceCoopGame(s, { b: { paddle: 0, action: true } }) }
+  it('persists repair progress, combines both players, and charges exactly three scrap per heart', () => {
+    const s = start(); s.hearts = 1; s.crew.scrap = 3
+    for (let t = 0; t < 2; t++) advanceCoopGame(s, { a: { paddle: 0, recoverTap: true }, b: { paddle: 0, recoverTap: true } })
+    step(s, 40); expect(s.crew.repair).toBe(4); expect(s.hearts).toBe(1)
+    advanceCoopGame(s, { a: { paddle: 0, recoverTap: true }, b: { paddle: 0, recoverTap: true } })
+    expect(s.hearts).toBe(2); expect(s.crew.scrap).toBe(0); expect(s.crew.repair).toBe(0)
+    for (let t = 0; t < 20; t++) advanceCoopGame(s, { a: { paddle: 0, recoverTap: true } })
     expect(s.hearts).toBe(2)
   })
-  it('manual turrets outperform unattended turrets and overheating requires cooling', () => {
-    const auto = start(), manual = start(); auto.objects = [attacker(1000)]; manual.objects = [attacker(1000)]
-    for (let i = 0; i < 170; i++) { advanceCoopGame(auto, {}); advanceCoopGame(manual, { b: { paddle: 0, action: true } }) }
-    expect(manual.objects[0]!.hp).toBeLessThan(auto.objects[0]!.hp!)
-    for (let i = 0; i < 30; i++) advanceCoopGame(manual, { b: { paddle: 0, action: true } })
-    expect(manual.crew.overheated).toBe(true)
-    for (let i = 0; i < 190; i++) { manual.objects = []; advanceCoopGame(manual, {}) }
-    expect(manual.crew.overheated).toBe(false)
+  it('cannot overheal when both players finish a repair at once', () => {
+    const s = start(); s.hearts = 2; s.crew.scrap = 9; s.crew.repair = 5
+    advanceCoopGame(s, { a: { paddle: 0, recoverTap: true }, b: { paddle: 0, recoverTap: true } })
+    expect(s.hearts).toBe(3); expect(s.crew.scrap).toBe(6); expect(s.crew.repair).toBe(0)
   })
-  it('taking over an automatic turret shortens its outstanding firing delay', () => {
-    const s = start(); s.crew.shotCooldown = 50
-    advanceCoopGame(s, { b: { paddle: 0, action: true } })
-    expect(s.crew.shotCooldown).toBeLessThanOrEqual(12)
+  it('fires a real slow shell, then damages a group only on impact', () => {
+    const s = start(); s.objects = [enemy(), enemy(91, .54, .42)]
+    advanceCoopGame(s, { b: { paddle: 0, shootTap: true } })
+    expect(s.objects.map(o => o.hp)).toEqual([4,4]); expect(s.crew.shots).toHaveLength(1)
+    const y = s.crew.shots[0]!.y; step(s, 1)
+    expect(Math.abs(s.crew.shots[0]!.y - y)).toBeLessThan(.01)
+    for (let t = 0; t < 50 && !s.crew.explosions.length; t++) advanceCoopGame(s, {})
+    expect(s.crew.explosions[0]?.radius).toBe(.145); expect(s.crew.kills).toBe(2)
   })
-  it('keeps network ticks monotonic after death but freezes expedition progress', () => {
-    const s = start(); s.hearts = 0; advanceCoopGame(s, {})
-    const end = s.crew.finishedTick, tick = s.tick
-    advanceCoopGame(s, {})
-    expect(s.tick).toBe(tick + 1); expect(s.crew.finishedTick).toBe(end)
+  it('preserves burst taps, has no unattended human auto-fire, and expires untargeted shells', () => {
+    const s = start()
+    for (let t = 0; t < 3; t++) advanceCoopGame(s, { a: { paddle: 0, shootTap: true } })
+    step(s, 28); expect(s.crew.shotsFired).toBe(3); expect(s.crew.pendingShots).toHaveLength(0)
+    for (let t = 0; t < 120; t++) { s.objects = []; advanceCoopGame(s, {}) }
+    expect(s.crew.shotsFired).toBe(3); expect(s.crew.shots).toHaveLength(0)
   })
-  it('locks a predator lunge after telegraphing instead of endlessly tracking', () => {
-    const s = start(); s.crew.shotCooldown = 1000
-    s.objects = [{ ...attacker(), enemy: 'ambusher', x: .08, y: .3, age: 49, radius: .04 }]
+  it('equips upgrades automatically without a choice or a manual upgrade packet', () => {
+    const s = start(); advanceCoopGame(s, { a: { paddle: 0, upgrade: 'chain' } }); expect(s.crew.upgrades).toEqual([])
+    s.tick = 1259; advanceCoopGame(s, {})
+    expect(s.crew.upgrades).toEqual(['twin']); expect(s.crew.choiceTicks).toBe(0)
+    advanceCoopGame(s, { a: { paddle: 0, shootTap: true } }); expect(s.crew.shotsFired).toBe(2)
+  })
+  it('spawns more than 24 enemies in the first 20 seconds and bounds snapshot cost', () => {
+    const s = start(); const ids = new Set<number>(); let maxBytes = 0
+    for (let t = 0; t < 7200; t++) {
+      s.invulnerableTicks = 100
+      advanceCoopGame(s, { a: { paddle: 0, shootTap: true }, b: { paddle: 0, shootTap: true } })
+      if (t < 1200) for (const o of s.objects) if (o.type === 'predator') ids.add(o.id)
+      expect(s.objects.length).toBeLessThanOrEqual(80); expect(s.crew.shots.length).toBeLessThanOrEqual(24)
+      expect(s.crew.explosions.length).toBeLessThanOrEqual(16); expect(s.crew.pendingShots.length).toBeLessThanOrEqual(6)
+      maxBytes = Math.max(maxBytes, JSON.stringify(s).length)
+    }
+    expect(ids.size).toBeGreaterThan(24); expect(maxBytes).toBeLessThan(60000)
+  })
+  it('locks an ambush after warning and makes chasers advance against the scenery', () => {
+    const s = start(); s.objects = [{ ...enemy(), x: .08, y: .3, age: 55 }]
     advanceCoopGame(s, {}); const target = s.objects[0]!.targetX
-    s.boat.x = .8
-    advanceCoopGame(s, {}); expect(s.objects[0]!.targetX).toBe(target); expect(s.objects[0]!.y).toBeGreaterThan(.3)
+    s.boat.x = .8; advanceCoopGame(s, {}); expect(s.objects[0]!.targetX).toBe(target); expect(s.objects[0]!.y).toBeGreaterThan(.3)
+    s.objects = [{ ...enemy(), enemy: 'chaser', y: .98, age: 55 }]; advanceCoopGame(s, {}); expect(s.objects[0]!.y).toBeLessThan(.98)
   })
-  it('chaser advances against the scenery after its warning', () => {
-    const s = start(); s.crew.shotCooldown = 1000
-    s.objects = [{ ...attacker(), enemy: 'chaser', x: .2, y: .98, age: 55, radius: .04 }]
-    advanceCoopGame(s, {}); expect(s.objects[0]!.y).toBeLessThan(.98)
-  })
-  it('allows only one shared upgrade per resupply and at most two unique slots', () => {
-    const s = start(); s.crew.choiceTicks = 100
-    advanceCoopGame(s, { a: { paddle: 0, upgrade: 'chain' }, b: { paddle: 0, upgrade: 'frost' } })
-    expect(s.crew.upgrades).toEqual(['chain'])
-    s.crew.choiceTicks = 100; advanceCoopGame(s, { a: { paddle: 0, upgrade: 'bubble' } })
-    expect(s.crew.bubble).toBe(1); expect(s.crew.upgrades).toEqual(['chain','bubble'])
-    s.crew.choiceTicks = 100; advanceCoopGame(s, { b: { paddle: 0, upgrade: 'twin' } })
-    expect(s.crew.upgrades).toHaveLength(2)
-  })
-  it('bubble absorbs exactly one collision', () => {
+  it('bubble absorbs one hit; death freezes progress but not network ticks', () => {
     const s = start(); s.crew.bubble = 1; s.objects = [rock(s)]
     advanceCoopGame(s, {}); expect(s.hearts).toBe(3); expect(s.crew.bubble).toBe(0)
     s.objects = [rock(s)]; advanceCoopGame(s, {}); expect(s.hearts).toBe(2)
+    s.hearts = 0; advanceCoopGame(s, {}); const tick = s.tick, end = s.crew.finishedTick
+    advanceCoopGame(s, {}); expect(s.tick).toBe(tick + 1); expect(s.crew.finishedTick).toBe(end)
   })
-  it('requires rescue objective and guardian defeat, not timer survival alone', () => {
-    const s = start(); s.tick = s.durationTicks + 179; advanceCoopGame(s, {})
-    expect(s.phase).toBe('finished'); expect(s.crew.victory).toBe(false)
-    const win = start(); win.rescued = 3; win.crew.bossDefeated = true
-    advanceCoopGame(win, {}); expect(win.crew.victory).toBe(true); expect(win.phase).toBe('finished')
+  it('requires rescues and guardian defeat, not survival alone', () => {
+    const s = start(); s.tick = s.durationTicks + 179; advanceCoopGame(s, {}); expect(s.crew.victory).toBe(false); expect(s.phase).toBe('finished')
+    const win = start(); win.rescued = 3; win.crew.bossDefeated = true; advanceCoopGame(win, {}); expect(win.crew.victory).toBe(true)
   })
-  it('visits all five worlds and spawns the final guardian', () => {
-    const s = start(); const worlds = new Set<number>()
-    for (let i = 0; i < s.durationTicks; i++) { s.invulnerableTicks = 120; advanceCoopGame(s, {}); worlds.add(expeditionWorld(s)) }
-    expect([...worlds]).toEqual([0,1,2,3,4]); expect(s.crew.bossSpawned).toBe(true)
+  it('visits all five worlds and always spawns the guardian', () => {
+    const s = start(), worlds = new Set<number>()
+    for (let t = 0; t < s.durationTicks; t++) { s.invulnerableTicks = 100; advanceCoopGame(s, {}); worlds.add(expeditionWorld(s)) }
+    expect([...worlds]).toEqual([0,1,2,3,4]); expect(s.objects.some(o => o.enemy === 'boss')).toBe(true)
   })
-  it('never rewards idle or one-button crews with an automatic win across seeds', () => {
-    for (let seed = 1; seed <= 12; seed++) {
-      const s = start(seed)
-      for (let i = 0; i < s.durationTicks && s.phase !== 'finished'; i++) advanceCoopGame(s, { b: { paddle: 0, action: true } })
-      expect(s.crew.victory).toBe(false)
-    }
+  it('does not give idle players an automatic win across seeds', () => {
+    for (let seed = 1; seed <= 12; seed++) { const s = start(seed); step(s, s.durationTicks); expect(s.crew.victory).toBe(false) }
   })
-  it('is deterministic including enemies, station changes, shots, upgrades and damage', () => {
+  it('is deterministic across pulses, projectiles, upgrades and damage', () => {
     const a = start(7), b = start(7)
-    for (let i = 0; i < 2200; i++) {
-      const inputs = { a: { paddle: 0, steer: Math.sin(i / 70) }, b: { paddle: 0, action: i % 300 < 160 } }
+    for (let t = 0; t < 7200; t++) {
+      const inputs = { a: { paddle: 0, leftTap: t % 70 === 0, rightTap: t % 85 === 0, recoverTap: t % 17 === 0 }, b: { paddle: 0, shootTap: t % 12 === 0 } }
       advanceCoopGame(a, inputs); advanceCoopGame(b, inputs)
     }
     expect(a).toEqual(b)

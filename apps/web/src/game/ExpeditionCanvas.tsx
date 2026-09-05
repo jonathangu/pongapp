@@ -8,7 +8,7 @@ const noise = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.545
 
 /** Forward stays up-screen; terrain retains an oblique, gently widening depth plane. */
 export function projectExpedition(w: number, h: number, x: number, y: number, z = 0): Point {
-  return [w * .5 + (x - .5) * w * (.56 + y * .4) + (y - .76) * w * .035, h * (.18 + y * .69) - z]
+  return [w * .5 + (x - .5) * w * (.78 + y * .25) + (y - .76) * w * .02, h * (.18 + y * .69) - z]
 }
 export function vehicleAngle(w: number, h: number, x: number, heading: number, speed: number): number {
   const a = projectExpedition(w, h, x, .76), b = projectExpedition(w, h, x + heading, .76 - Math.max(.002, speed))
@@ -53,7 +53,7 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
 
   ctx.clearRect(0,0,w,h)
   const sky=ctx.createLinearGradient(0,0,0,h); sky.addColorStop(0,theme.sky); sky.addColorStop(.7,world===4?'#37285b':world===1?'#e7a379':world===3?'#c5c6dc':'#82a4a0'); sky.addColorStop(1,theme.sky)
-  ctx.fillStyle=sky; ctx.fillRect(0,0,w,h)
+  ctx.fillStyle=sky; ctx.fillRect(-w,-h,w*3,h*3)
   // Sky panorama: distant layers, a setting sun, and orbiting constellations.
   const sunX=w*.83, sunY=h*.105
   glow(sunX,sunY,w*.25,world===4?'#9482ed44':'#ffe0a54a')
@@ -171,7 +171,7 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
 
   const [bx,by]=project(state.boat.x,.76)
   entities.push({depth:by,draw:()=>{
-    const s=unit*.078
+    const s=unit*.055
     ellipse(bx,by+7,s*1.25,s*.43,'#10294455')
     for(let i=0;i<5;i++) {const p=project(state.boat.x,.77+(i+1)*.035);ellipse(p[0],p[1],s*(.5+i*.12),s*(world===1?.28:.15),world===4?'#abc4f52b':world===1?'#e9bd8a40':'#d7f4db35')}
     if(state.flareTicks>0) {const radius=(1-state.flareTicks/60)*unit*.75;ctx.beginPath();ctx.ellipse(bx,by,Math.max(1,radius),Math.max(1,radius*.5),0,0,TAU);ctx.strokeStyle='#fff0b8';ctx.lineWidth=3;ctx.stroke();glow(bx,by,unit*.3,'#ffe5a033')}
@@ -203,13 +203,24 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
     ctx.restore()
   }})
   entities.sort((a,b)=>a.depth-b.depth).forEach((entity)=>entity.draw())
-  for(const shot of state.crew.shots){const from=project(shot.x,shot.y),to=project(shot.toX,shot.toY);ctx.globalAlpha=Math.min(1,shot.ticks/5);if(shot.kind==='chain'){const mid:Point=[(from[0]+to[0])/2+10,(from[1]+to[1])/2];line(from,mid,'#b7c6ff',2);line(mid,to,'#b7c6ff',2)}else{line(from,to,shot.kind==='manual'?'#ffdc94':'#a2f4e4',shot.kind==='manual'?3:1.5)}glow(to[0],to[1],12,'#ffe4ab99');ctx.globalAlpha=1}
+  for(const shot of state.crew.shots){
+    const p=project(shot.x,shot.y,8),radius=Math.max(5,unit*.019)
+    for(let i=5;i>0;i--){const q=project(shot.x-shot.vx*i,shot.y-shot.vy*i,8);ellipse(q[0],q[1],radius*(1-i/7),radius*(1-i/7),'#ffb94b55')}
+    glow(p[0],p[1],radius*3,'#ff9f4daa');ellipse(p[0],p[1],radius,radius,'#ffc974');ellipse(p[0]-radius*.2,p[1]-radius*.2,radius*.5,radius*.5,'#fff5c9')
+  }
+  for(const blast of state.crew.explosions){
+    const age=1-blast.ticks/blast.life,p=project(blast.x,blast.y),r=blast.radius*w*(.25+age*.85)
+    ctx.globalAlpha=1-age;glow(p[0],p[1],r,blast.kind==='chain'?'#bca0ffaa':'#ffbc63bb')
+    ctx.beginPath();ctx.ellipse(p[0],p[1],r,r*.7,0,0,TAU);ctx.strokeStyle='#ffe2a5';ctx.lineWidth=5*(1-age)+1;ctx.stroke()
+    for(let i=0;i<10;i++){const a=i/10*TAU+blast.id;ellipse(p[0]+Math.cos(a)*r,p[1]+Math.sin(a)*r*.7-Math.sin(age*Math.PI)*12,3*(1-age)+.5,3*(1-age)+.5,'#fff0c2')}
+    ctx.globalAlpha=1
+  }
   if(state.invulnerableTicks>60&&state.invulnerableTicks<=75){ctx.fillStyle='rgba(255,94,76,'+(state.invulnerableTicks-60)/110+')';ctx.fillRect(0,0,w,h)}
   for(let i=0;i<15;i++) {const x=noise(i+230)*w+Math.sin(t*.5+i)*12,y=noise(i+250)*h;ellipse(x,y,1.1,1.1,theme.glow+'90')}
   const vignette=ctx.createRadialGradient(w*.5,h*.5,w*.15,w*.5,h*.5,Math.max(w,h)*.7);vignette.addColorStop(0,'transparent');vignette.addColorStop(1,'#080d294a');ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h)
 }
 
-export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = 1, onZoom }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void; zoom?: number; onZoom?: (zoom: number) => void }) {
+export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .9, onZoom }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void; zoom?: number; onZoom?: (zoom: number) => void }) {
   const ref=useRef<HTMLCanvasElement>(null)
   const fallbackRef=useRef<HTMLCanvasElement>(null)
   const sceneRef=useRef<TinyWorldScene|null>(null)
@@ -240,7 +251,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = 1
   }} onPointerMove={e=>{
     if(!pointers.current.has(e.pointerId))return
     pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY})
-    if(pointers.current.size===2&&pinch.current){const [a,b]=[...pointers.current.values()];onZoom?.(Math.max(1,Math.min(1.35,pinch.current.zoom*Math.hypot(a!.x-b!.x,a!.y-b!.y)/Math.max(1,pinch.current.distance))))}
+    if(pointers.current.size===2&&pinch.current){const [a,b]=[...pointers.current.values()];onZoom?.(Math.max(.65,Math.min(1.2,pinch.current.zoom*Math.hypot(a!.x-b!.x,a!.y-b!.y)/Math.max(1,pinch.current.distance))))}
     if(tap.current&&Math.hypot(e.clientX-tap.current.x,e.clientY-tap.current.y)>8)tap.current=null
   }} onPointerUp={e=>{
     const select=!!tap.current&&!pinch.current;tap.current=null;pointers.current.delete(e.pointerId);if(!pointers.current.size)pinch.current=null
@@ -249,5 +260,5 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = 1
     const r=e.currentTarget.getBoundingClientRect()
     if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}
     const targets=getState().objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
-  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Sculpted 3D crew expedition. Pinch to zoom; as gunner, tap a predator to target it." /></>
+  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Wide-river 3D expedition. Pinch to zoom out; tap a predator to aim your next shot." /></>
 }

@@ -1,7 +1,7 @@
 import type { CoopGameState, VersusGameState } from '@pongapp/game-core'
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 6 as const
+export const PROTOCOL_VERSION = 7 as const
 
 export const createRoomRequestSchema = z.object({
   hostName: z.string().trim().min(2).max(16),

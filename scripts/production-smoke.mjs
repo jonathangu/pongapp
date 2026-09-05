@@ -47,7 +47,7 @@ async function verifyDeployment() {
   const healthResponse = await fetch(new URL('/api/health', roomServerUrl), { cache: 'no-store' })
   invariant(healthResponse.ok, `Room health returned ${healthResponse.status}`)
   const health = await healthResponse.json()
-  invariant(health.protocol === 6, `Room server protocol was ${health.protocol}, expected 6`)
+  invariant(health.protocol === 7, `Room server protocol was ${health.protocol}, expected 7`)
   invariant(health.runtime === 'cloudflare-durable-objects', `Room server runtime was ${health.runtime}, expected Cloudflare Durable Objects`)
   console.log(`production-smoke ok: ${siteUrl.href} -> ${scriptPath} -> ${roomServerUrl}`)
 }

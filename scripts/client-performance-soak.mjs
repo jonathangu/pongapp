@@ -99,7 +99,7 @@ try {
       peerSocket.addEventListener('error', reject, { once: true })
     })
     peerSocket.send(JSON.stringify({
-      type: 'hello', version: 6, guestId: `perf-peer-${crypto.randomUUID()}`,
+      type: 'hello', version: 7, guestId: `perf-peer-${crypto.randomUUID()}`,
       displayName: 'Perf Peer', role: 'player', clientSessionId: crypto.randomUUID(), reconnectAttempt: 0,
     }))
   }
