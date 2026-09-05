@@ -38,7 +38,23 @@ Runtime session: 01a0369d-0914-7190-ac0e-b4d37e1fc052
   explicitly reciprocating the close is documented safe in current runtimes and
   necessary in older ones. Both-mode close/reconnect verification now passed:
   https://developers.cloudflare.com/durable-objects/api/base/
-- CI / deployment / live browser verification: pending.
+- CI / deployment / live browser verification: complete for application commit
+  `79ba204f04b27ea58e12cd1b0b374fda0806c1dc`.
+  https://github.com/jonathangu/pongapp/actions/runs/33948497978
+- Worker deployment: `efe55bab-ec54-41d4-82c2-e96646da6ef8`. Production co-op
+  and versus room creation/input/seat-transfer smoke passed (room RTT medians
+  29 ms; gameplay still uses the direct peer path when available).
+- Public website: https://www.jonathangu.com/pongapp/
+  Served bundle `/pongapp/assets/index-C62dVi39.js` byte-matches the local build.
+  SHA-256 `8f223a4dd3120250eb232c847b725086ccbf70e8da3b60332c87b3d4a8d9f1d4`.
+- Public-site fresh-browser verification: solo entry, both mode invitations,
+  local direct peer paths, actual engineer repair, matching host/guest numeric
+  health and vector hearts, 320/375/390px guest layouts, multi-touch, zero browser
+  errors. 4x CPU slowdown, 6 seconds: p95 frame gap 16.7 ms, zero freezes.
+  `/var/folders/nl/zvqhkx6x13n56g_wq93srs7m0000gn/T/two-oars-qa-Rb70UW/results.json`.
+- Release guidance: refresh both phones before the next run; keep using the
+  Wi-Fi/hotspot arrangement the user confirmed works. No RackeTapp services or
+  unrelated local agents were modified. User-owned AGENTS.md remains untouched.
 - Original physical guest-phone disappearance was not reproduced on hardware.
   Replacement HUD and confirmed-health path now pass explicit host/guest damage,
   repair and visibility checks. User's own two-phone play remains the final
