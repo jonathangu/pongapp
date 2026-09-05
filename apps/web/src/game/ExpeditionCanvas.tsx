@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react'
 import { EXPEDITION_WORLDS, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
 import type { TinyWorldScene } from './TinyWorldScene'
+import { projectRolling, skyDropHeight, worldRoll } from './RollingWorld'
 
 type Point = [number, number]
 const TAU = Math.PI * 2
 const noise = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v) }
 
-/** Forward stays up-screen; terrain retains an oblique, gently widening depth plane. */
-export function projectExpedition(w: number, h: number, x: number, y: number, z = 0): Point {
-  return [w * .5 + (x - .5) * w * (.78 + y * .25) + (y - .76) * w * .02, h * (.18 + y * .69) - z]
+/** Canvas artwork uses pixel-sized accents on the shared curved world projection. */
+export function projectExpedition(w: number, h: number, x: number, y: number, z = 0, roll = 0): Point {
+  const p = projectRolling(w,h,x,y,0,roll)
+  return [p[0],p[1]-z]
 }
-export function vehicleAngle(w: number, h: number, x: number, heading: number, speed: number): number {
-  const a = projectExpedition(w, h, x, .76), b = projectExpedition(w, h, x + heading, .76 - Math.max(.002, speed))
+export function vehicleAngle(w: number, h: number, x: number, heading: number, speed: number, roll = 0): number {
+  const a = projectExpedition(w, h, x, .76, 0, roll), b = projectExpedition(w, h, x + heading, .76 - Math.max(.002, speed), 0, roll)
   return Math.atan2(b[0] - a[0], a[1] - b[1])
 }
 
@@ -21,7 +23,8 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   const theme = EXPEDITION_WORLDS[world]!
   const unit = Math.min(w * .95, h * .85)
   const t = time / 1000
-  const project = (x: number, y: number, z = 0): Point => projectExpedition(w, h, x, y, z)
+  const roll = worldRoll(state.boat.x)
+  const project = (x: number, y: number, z = 0): Point => projectExpedition(w, h, x, y, z, roll)
   const poly = (points: Point[], fill: string, stroke?: string) => {
     ctx.beginPath(); points.forEach(([x,y], i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y)); ctx.closePath()
     ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke() }
@@ -81,6 +84,11 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
     const r=18+noise(i+1)*30
     ellipse(cx,cy,r*1.5,r*.28,world===4?'#8f80b011':'#eff2df22');ellipse(cx+10,cy-r*.17,r*.7,r*.4,world===4?'#8f80b011':'#eff2df22')
   }
+  // Sample across the barrel as well as along it: the curved silhouette reveals sky at both sides.
+  for(let row=0;row<30;row++)for(let col=0;col<44;col++){
+    const x=-1.2+col*.075,y=-3+row*.17
+    poly([project(x,y),project(x+.075,y),project(x+.075,y+.17),project(x,y+.17)],theme.water)
+  }
   const edge:Point[]=[]
   for(let i=0;i<=20;i++){const y=i/20*1.32;edge.push(project(Math.sin(y*11+state.distance*.003)*.025,y))}
   for(let i=20;i>=0;i--){const y=i/20*1.32;edge.push(project(1+Math.sin(y*9+1+state.distance*.003)*.025,y))}
@@ -129,10 +137,12 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   }
 
   for(const object of state.objects) {
-    const [x,y]=project(object.x,object.y)
+    const [x,y]=projectRolling(w,h,object.x,object.y,skyDropHeight(object),roll)
     const s=unit*(object.enemy==='boss'?.14:.054)
     entities.push({depth:y,draw:()=> {
-      ellipse(x,y+2,s*.8,s*.28,'#081a3828')
+      const landing=project(object.x,object.y)
+      ellipse(landing[0],landing[1]+2,s*.8,s*.28,'#081a3828')
+      if(skyDropHeight(object)>.1){ellipse(landing[0],landing[1],s,s*.3,'#ffe7b944');line([x,y-4],[x,y-25],'#fff3d699',2)}
       const bob=Math.sin(t*3+object.id)*3
       if(object.type==='rock') {
         poly([[x-s,y],[x-s*.5,y-s*.8],[x+s*.35,y-s],[x+s,y-s*.15],[x+s*.4,y+s*.25]],world===4?'#8e7eb6':world===1?'#c39a82':'#809c9e')
@@ -177,7 +187,7 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
     if(state.flareTicks>0) {const radius=(1-state.flareTicks/60)*unit*.75;ctx.beginPath();ctx.ellipse(bx,by,Math.max(1,radius),Math.max(1,radius*.5),0,0,TAU);ctx.strokeStyle='#fff0b8';ctx.lineWidth=3;ctx.stroke();glow(bx,by,unit*.3,'#ffe5a033')}
     if(state.rushTicks>0) glow(bx,by,s*2.5,theme.glow+'55')
     if(state.crew.shieldTicks||state.crew.bubble){glow(bx,by,s*2.4,'#96f3ec44');ctx.strokeStyle='#a8ffee';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(bx,by,s*1.8,s*2,0,0,TAU);ctx.stroke()}
-    ctx.save();ctx.translate(bx,by);ctx.rotate(vehicleAngle(w,h,state.boat.x,state.boat.heading,state.boat.speed))
+    ctx.save();ctx.translate(bx,by);ctx.rotate(vehicleAngle(w,h,state.boat.x,state.boat.heading,state.boat.speed,roll))
     if(state.invulnerableTicks>0 && Math.floor(t*10)%2===0) ctx.globalAlpha=.6
     if(theme.vehicle==='truck') {
       ctx.save();ctx.rotate(-Math.PI/2)
@@ -259,6 +269,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
     if(!select||!onTarget)return
     const r=e.currentTarget.getBoundingClientRect()
     if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}
-    const targets=getState().objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
-  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Wide-river 3D expedition. Pinch to zoom out; tap a predator to aim your next shot." /></>
+    const state=getState(),roll=worldRoll(state.boat.x)
+    const targets=state.objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y,0,roll);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
+  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Rolling-world 3D expedition with a sky panorama. Steer to roll the river; pinch to zoom; tap a predator to aim." /></>
 }

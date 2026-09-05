@@ -32,7 +32,8 @@ async function verifyDeployment() {
   const sceneChunk = script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
   invariant(sceneChunk, 'PongApp bundle did not include the lazy 3D renderer')
   const sceneResponse = await fetchCurrent('/pongapp/assets/' + sceneChunk)
-  invariant(sceneResponse.ok && (await sceneResponse.text()).includes('tiny-worlds.glb'), '3D renderer chunk missing or stale')
+  const sceneScript=await sceneResponse.text()
+  invariant(sceneResponse.ok && sceneScript.includes('tiny-worlds.glb') && sceneScript.includes('rolling-cylinder'), 'Rolling-world 3D renderer chunk missing or stale')
   for (const name of ['tiny-worlds.glb', 'painted-material.jpg']) {
     const response = await fetchCurrent('/pongapp/art/' + name)
     invariant(response.ok, `${name} returned ${response.status}`)

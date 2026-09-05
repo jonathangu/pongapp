@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { EXPEDITION_WORLDS, RIVER_WIDTH, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { CYLINDER_RADIUS, cylinderPoint, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
 
 const ART = import.meta.env.BASE_URL + 'art/'
 const TAU = Math.PI * 2
@@ -39,11 +40,10 @@ function loadMaterialImage(): Promise<HTMLImageElement> {
 }
 
 export function tinyWorldCamera(width: number, height: number) {
-  const aspect = Math.max(.25,width/Math.max(1,height))
-  const viewHeight = Math.max(18,20/aspect)
-  const camera = new THREE.OrthographicCamera(-viewHeight*aspect/2,viewHeight*aspect/2,viewHeight/2,-viewHeight/2,.1,150)
-  camera.position.set(.45,24,14); camera.lookAt(0,0,0); camera.updateMatrixWorld()
-  return { camera, depth: viewHeight*.74/.8 }
+  const c = rollingCamera(width, height)
+  const camera = new THREE.PerspectiveCamera(c.halfFov * 360 / Math.PI, c.aspect, .1, 1200)
+  camera.position.set(0,c.y,c.z); camera.lookAt(0,0,c.targetZ); camera.updateMatrixWorld()
+  return { camera, depth: c.depth }
 }
 
 /** GPU instancing groups every repeated object by asset, not by scene entity. */
@@ -107,6 +107,9 @@ export class TinyWorldScene {
   private beamColors = new Float32Array(6*96)
   private beamCount = 0
   private renderFrame = 0
+  private roll = 0
+  private rollRotation = new THREE.Quaternion()
+  private rollAxis = new THREE.Vector3(0,0,1)
 
   constructor(private canvas: HTMLCanvasElement, private preview = false) {
     this.renderer = new THREE.WebGLRenderer({canvas,alpha:false,antialias:true,powerPreference:'high-performance'})
@@ -122,7 +125,7 @@ export class TinyWorldScene {
     this.sun.castShadow=true;this.sun.shadow.mapSize.set(1024,1024);this.sun.shadow.camera.left=-15;this.sun.shadow.camera.right=15;this.sun.shadow.camera.top=23;this.sun.shadow.camera.bottom=-23;this.sun.shadow.camera.near=.1;this.sun.shadow.camera.far=70;this.sun.shadow.bias=-.0005;this.sun.shadow.normalBias=.06
     this.fill=new THREE.HemisphereLight(0xc7f1ff,0x626775,1.45)
     this.scene.add(this.sun,this.fill)
-    this.skyCanvas=document.createElement('canvas');this.skyCanvas.width=256;this.skyCanvas.height=512
+    this.skyCanvas=document.createElement('canvas');this.skyCanvas.width=1024;this.skyCanvas.height=512
     this.skyTexture=new THREE.CanvasTexture(this.skyCanvas);this.skyTexture.colorSpace=THREE.SRGBColorSpace
     this.scene.background=this.skyTexture;this.textures.push(this.skyTexture)
     const floorCanvas=document.createElement('canvas');floorCanvas.width=floorCanvas.height=128
@@ -131,8 +134,8 @@ export class TinyWorldScene {
     this.floorTexture=new THREE.CanvasTexture(floorCanvas);this.floorTexture.wrapS=this.floorTexture.wrapT=THREE.RepeatWrapping;this.floorTexture.repeat.set(5,12);this.textures.push(this.floorTexture)
     this.groundMaterial=new THREE.MeshStandardMaterial({color:GROUNDS[0],roughness:.42,metalness:.12,map:this.floorTexture})
     this.materials.push(this.groundMaterial)
-    const plane=new THREE.PlaneGeometry(65,120);this.geometries.set('_ground',plane)
-    this.ground=new THREE.Mesh(plane,this.groundMaterial);this.ground.rotation.x=-Math.PI/2;this.ground.position.y=-.28;this.ground.receiveShadow=true;this.scene.add(this.ground)
+    const plane=new THREE.CylinderGeometry(CYLINDER_RADIUS-.28,CYLINDER_RADIUS-.28,1000,64,1,true);plane.rotateX(-Math.PI/2);this.geometries.set('_ground',plane)
+    this.ground=new THREE.Mesh(plane,this.groundMaterial);this.ground.position.y=-CYLINDER_RADIUS;this.ground.receiveShadow=true;this.scene.add(this.ground)
     const shadowCanvas=document.createElement('canvas');shadowCanvas.width=shadowCanvas.height=64
     const sc=shadowCanvas.getContext('2d')!;const gradient=sc.createRadialGradient(32,32,3,32,32,32);gradient.addColorStop(0,'rgba(15,28,39,.43)');gradient.addColorStop(.5,'rgba(15,28,39,.22)');gradient.addColorStop(1,'rgba(15,28,39,0)');sc.fillStyle=gradient;sc.fillRect(0,0,64,64)
     const shadowTex=new THREE.CanvasTexture(shadowCanvas);this.textures.push(shadowTex)
@@ -177,38 +180,60 @@ export class TinyWorldScene {
     this.width=width;this.height=height
     const projection=tinyWorldCamera(width,height);this.camera=projection.camera;this.depth=projection.depth
     this.dpr=Math.min(devicePixelRatio||1,1.5);this.renderer.setPixelRatio(this.dpr);this.renderer.setSize(width,height,false)
+    if(this.lastWorld>=0){const world=this.lastWorld;this.lastWorld=-1;this.setWorld(world)}
   }
   setZoom(zoom: number) {
     const value=Math.max(.65,Math.min(1.2,zoom))
     if(this.camera.zoom!==value){this.camera.zoom=value;this.camera.updateProjectionMatrix()}
   }
   private add(name: string,x: number,y: number,z: number,sx=1,sy=sx,sz=sx,rotation=0,color=0xffffff,rx=0,rz=0) {
-    this.transform.position.set(x,y,z);this.transform.scale.set(sx,sy,sz);this.transform.rotation.set(rx,rotation,rz);this.transform.updateMatrix()
+    const p=cylinderPoint(x,y,z,this.roll)
+    this.transform.position.set(p.x,p.y,p.z);this.transform.scale.set(sx,sy,sz);this.transform.rotation.set(rx,rotation,rz)
+    this.rollRotation.setFromAxisAngle(this.rollAxis,-p.angle);this.transform.quaternion.premultiply(this.rollRotation);this.transform.updateMatrix()
     this.batches.get(name)?.add(this.transform.matrix,this.tint.setHex(color))
   }
   private shadow(x: number,z: number,size: number,stretch=1) {this.add('_shadow',x,-.235,z,size,1,size*stretch)}
   private line(x1: number,y1: number,z1: number,x2: number,y2: number,z2: number,color: number) {
     if(this.beamCount>=96)return
-    const i=this.beamCount++*6;this.beamPositions.set([x1,y1,z1,x2,y2,z2],i)
+    const a=cylinderPoint(x1,y1,z1,this.roll),b=cylinderPoint(x2,y2,z2,this.roll)
+    const i=this.beamCount++*6;this.beamPositions.set([a.x,a.y,a.z,b.x,b.y,b.z],i)
     this.tint.setHex(color);this.beamColors.set([this.tint.r,this.tint.g,this.tint.b,this.tint.r,this.tint.g,this.tint.b],i)
   }
   private setWorld(world: number) {
     if(world===this.lastWorld)return
     this.lastWorld=world
-    this.ground.visible=world<3;this.groundMaterial.color.setHex(GROUNDS[world]!)
+    this.ground.visible=true;this.groundMaterial.color.setHex(GROUNDS[world]!)
     this.groundMaterial.roughness=world===0?.32:.82
     this.sun.color.setHex(world===4?0xb0bbff:world===2?0xfff1d7:0xffdfae)
     this.fill.color.setHex(world===4?0xa5b5ff:0xd0f5ef)
     this.fill.groundColor.setHex(world===4?0x705eaa:world===1?0xaa745c:0x718b90)
-    this.scene.fog=new THREE.Fog(SKIES[world]!,28,75)
+    this.scene.fog=new THREE.Fog(SKIES[world]!,48,120)
     const ctx=this.skyCanvas.getContext('2d')!;const gradient=ctx.createLinearGradient(0,0,0,512)
     gradient.addColorStop(0,['#4caaa9','#f0a18e','#83bcd7','#dc9aac','#111132'][world]!);gradient.addColorStop(.52,['#cce0b5','#ffe1a9','#deedf0','#ffe3c4','#353664'][world]!);gradient.addColorStop(1,['#539e96','#d8a5a4','#92b5ce','#bbb8d6','#152348'][world]!)
-    ctx.fillStyle=gradient;ctx.fillRect(0,0,256,512)
-    if(world===4)for(let i=0;i<130;i++){ctx.fillStyle=i%3?'#d1defd':'#fff6d4';ctx.globalAlpha=.2+noise(i+20)*.6;ctx.beginPath();ctx.arc(noise(i)*256,noise(i+5)*512,.3+noise(i+11),0,TAU);ctx.fill()}
+    ctx.fillStyle=gradient;ctx.fillRect(0,0,1024,512)
+    // A permanent panorama wraps the playable cylinder, rather than covering it with another view.
+    const sunX=world===1?770:world===2?245:780,sunY=world===4?105:140
+    const sunRadius=world===1?48:30,aspect=this.width/Math.max(1,this.height)/2
+    ctx.save();ctx.translate(sunX,sunY);ctx.scale(1,aspect);ctx.translate(-sunX,-sunY)
+    const halo=ctx.createRadialGradient(sunX,sunY,8,sunX,sunY,180);halo.addColorStop(0,world===4?'#bba0ed66':'#ffedc1aa');halo.addColorStop(1,'transparent');ctx.fillStyle=halo;ctx.fillRect(0,0,1024,512)
+    ctx.restore()
+    ctx.fillStyle=world===4?'#d6c4ef':'#fff0c7';ctx.beginPath();ctx.ellipse(sunX,sunY,sunRadius,sunRadius*aspect,0,0,TAU);ctx.fill()
+    if(world===4){ctx.fillStyle='#242249';ctx.beginPath();ctx.ellipse(sunX+13,sunY-8*aspect,29,29*aspect,0,0,TAU);ctx.fill()}
+    if(world<3)for(let layer=0;layer<3;layer++){
+      ctx.fillStyle=[['#91bdaf','#6b9f9b','#467f83'],['#dba296','#b77e83','#906576'],['#accbdb','#8faebf','#698da7']][world]![layer]!
+      ctx.beginPath();ctx.moveTo(0,512)
+      for(let i=-1;i<=26;i++){const x=i*43,y=260+layer*61-noise(i+layer*31+world*12)*(world===2?110:85);ctx.lineTo(x,y)}
+      ctx.lineTo(1024,512);ctx.closePath();ctx.fill()
+      if(world===2)for(let i=0;i<24;i++){const x=i*43,y=260+layer*61-noise(i+layer*31+world*12)*110;ctx.fillStyle='#eaf4ed99';ctx.beginPath();ctx.moveTo(x-13,y+24);ctx.lineTo(x,y);ctx.lineTo(x+15,y+22);ctx.lineTo(x+3,y+16);ctx.closePath();ctx.fill()}
+    }
+    if(world===3)for(let i=0;i<6;i++){ctx.strokeStyle=['#efa9ba','#f5c29b','#f5e5ae','#afe0c7','#adc9f0','#c2b8e9'][i]!;ctx.lineWidth=9;ctx.beginPath();ctx.ellipse(515,360,400-i*10,230-i*10,0,Math.PI,TAU);ctx.stroke()}
+    if(world===4)for(let i=0;i<250;i++){ctx.fillStyle=i%3?'#d1defd':'#fff6d4';ctx.globalAlpha=.2+noise(i+20)*.7;ctx.beginPath();ctx.arc(noise(i)*1024,noise(i+5)*512,.5+noise(i+11)*1.4,0,TAU);ctx.fill()}
+    if(world!==4)for(let i=0;i<16;i++){ctx.globalAlpha=.15+noise(i)*.18;ctx.fillStyle='#fff7e6';ctx.beginPath();ctx.ellipse(noise(i+31)*1024,40+noise(i+20)*390,45+noise(i+6)*75,5+noise(i+4)*12,-.05,0,TAU);ctx.fill()}
     ctx.globalAlpha=1;this.skyTexture.needsUpdate=true
   }
   project(x: number,y: number,elevation=.35): [number,number] {
-    this.point.set((x-.5)*RIVER_WIDTH,elevation,(y-.5)*this.depth).project(this.camera)
+    const p=cylinderPoint((x-.5)*RIVER_WIDTH,elevation,(y-.5)*this.depth,this.roll)
+    this.point.set(p.x,p.y,p.z).project(this.camera)
     return [(this.point.x+1)*this.width/2,(1-this.point.y)*this.height/2]
   }
   pick(state: CoopGameState,x: number,y: number): number|null {
@@ -220,7 +245,9 @@ export class TinyWorldScene {
   draw(state: CoopGameState,now: number): boolean {
     if(!this.ready||this.disposed||!this.width||!this.height)return false
     const world=expeditionWorld(state),t=now/1000
-    this.setWorld(world);this.beamCount=0
+    this.setWorld(world);this.beamCount=0;this.roll=worldRoll(state.boat.x)
+    this.ground.rotation.z=this.roll/CYLINDER_RADIUS
+    this.canvas.dataset.worldRoll=this.roll.toFixed(3);this.canvas.dataset.worldShape='rolling-cylinder'
     const scroll=state.distance*.67
     this.floorTexture.offset.y=-scroll*.16
     const theme=EXPEDITION_WORLDS[world]!
@@ -250,9 +277,9 @@ export class TinyWorldScene {
       for(let i=0;i<2;i++)this.add(TREES[world]!,6-i*4,.3,-this.depth*.51-1,1.1,1.1,1.1,i)
     }
     // Outer mountains and distant landmarks establish depth beyond the playable strip.
-    if(world<3)for(let i=0;i<12;i++){
+    if(world<3)for(let i=0;i<10;i++){
       const x=(i%2?1:-1)*(12.8+noise(i)*2),z=-this.depth*.6+Math.floor(i/2)*6
-      this.add(world===1?'mesa':'mountain',x,-.5,z,2,1.6+noise(i+44)*1.6,2,i*.4,world===0?0x81aa92:0xffffff)
+      this.add(world===1?'mesa':'mountain',x,-.5,z,2,.8+noise(i+44)*.8,2,i*.4,world===0?0x81aa92:0xffffff)
       if(world===0)this.add('palm',x-.5,1,z,1.5,1.5,1.5,i)
     }
     if(world>=3)for(let i=0;i<7;i++)this.add('cloud',(noise(i+82)-.5)*24+Math.sin(t*.08+i),-.7+noise(i+6)*2,-this.depth*(.42+noise(i+14)*.18),2.5,1.5,2,i*.2,world===4?0x635b96:0xffffff)
@@ -279,6 +306,8 @@ export class TinyWorldScene {
       const x=(object.x-.5)*RIVER_WIDTH,z=(object.y-.5)*this.depth
       if(object.y<-.4||object.y>1.6)continue
       const bob=Math.sin(t*3+object.id)*.09
+      const drop=skyDropHeight(object)
+      if(drop>.1){this.add('_ring',x,.02,z,.55,.55,.55,t,object.type==='rock'||object.type==='log'?0xffb887:0xa8f2e5);this.line(x,drop+.35,z,x,drop+1.8,z,object.type==='rock'||object.type==='log'?0xffcd93:0xd6fff0)}
       if(object.type==='predator'){
         const boss=object.enemy==='boss',scale=boss?1.85:.85
         const tx=((object.targetX??state.boat.x)-.5)*RIVER_WIDTH,tz=((object.targetY??.76)-.5)*this.depth
@@ -295,16 +324,16 @@ export class TinyWorldScene {
         if(state.crew.targetId===object.id)this.add('_ring',x,.08,z,scale*1.2,.7,scale*1.2,t,0xffe9a8)
       }else if(object.type==='rock'||object.type==='log'){
         this.shadow(x,z,1.4)
-        this.add(object.type,x,0,z,1,1,1,object.phase+(object.type==='rock'?t*.1:.6),world===4?0xc8b1ef:world===1?0xf0bc8c:0xffffff)
+        this.add(object.type,x,drop,z,1,1,1,object.phase+(object.type==='rock'?t*.1:.6),world===4?0xc8b1ef:world===1?0xf0bc8c:0xffffff)
       }else if(object.type==='gate'){
         this.add('gate',x,.05,z,1,1,1,.12,0xffffff)
         this.add('_ring',x,.015,z,.65,.65,.65,0,0xffe7ab)
       }else if(object.type==='rescue'){
-        this.shadow(x,z,1.4);this.add('rescue',x,.17+bob,z,1,1,1,Math.sin(t)*.15)
+        this.shadow(x,z,1.4);this.add('rescue',x,.17+bob+drop,z,1,1,1,Math.sin(t)*.15)
         this.add('_ring',x,.01,z,.65,.65,.65,0,0xffdda4)
       }else{
         const name=object.type==='heart'?'heart':object.type==='relic'?'crystal':'star',size=object.type==='firefly'?.75:.85
-        this.add(name,x,.58+bob,z,size,size,size,t*.8,0xffffff,.3)
+        this.add(name,x,.58+bob+drop,z,size,size,size,t*.8,0xffffff,.3)
         this.shadow(x,z,.9)
       }
     }
@@ -313,7 +342,7 @@ export class TinyWorldScene {
     const lift=world===3?.28:world===4?.25:.02
     const bob=(world===1||world===2?Math.sin(t*22)*.025:Math.sin(t*3)*.055)
     this.shadow(bx,bz,2.4,1.3)
-    this.add(theme.vehicle,bx,lift+bob,bz,.9,.9,.9,heading,0xffffff,0,-heading*.07)
+    this.add(theme.vehicle,bx,lift+bob,bz,1.08,1.08,1.08,heading,0xffffff,0,-heading*.07)
     const target=state.objects.find(o=>o.id===state.crew.targetId)??state.objects.filter(o=>o.type==='predator').sort((a,b)=>Math.abs(a.y-.76)-Math.abs(b.y-.76))[0]
     for(const side of [-1,1]){
       const x=bx+Math.cos(heading)*side*.7,z=bz-Math.sin(heading)*side*.7-.05
