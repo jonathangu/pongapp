@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { EXPEDITION_WORLDS, RIVER_WIDTH, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
-import { CYLINDER_RADIUS, cylinderPoint, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
+import { EXPEDITION_WORLDS, RIVER_WIDTH, ORBIT_LAP, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { CYLINDER_RADIUS, cylinderPoint, orbitVisible, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
 
 const ART = import.meta.env.BASE_URL + 'art/'
 const TAU = Math.PI * 2
@@ -214,9 +214,8 @@ export class TinyWorldScene {
     // A permanent panorama wraps the playable cylinder, rather than covering it with another view.
     const sunX=world===1?770:world===2?245:780,sunY=world===4?105:140
     const sunRadius=world===1?48:30,aspect=this.width/Math.max(1,this.height)/2
-    ctx.save();ctx.translate(sunX,sunY);ctx.scale(1,aspect);ctx.translate(-sunX,-sunY)
-    const halo=ctx.createRadialGradient(sunX,sunY,8,sunX,sunY,180);halo.addColorStop(0,world===4?'#bba0ed66':'#ffedc1aa');halo.addColorStop(1,'transparent');ctx.fillStyle=halo;ctx.fillRect(0,0,1024,512)
-    ctx.restore()
+    ctx.fillStyle=world===4?'#cdbaff0b':'#fff0cd12'
+    for(const r of [150,110,75]){ctx.beginPath();ctx.ellipse(sunX,sunY,r,r*aspect,0,0,TAU);ctx.fill()}
     ctx.fillStyle=world===4?'#d6c4ef':'#fff0c7';ctx.beginPath();ctx.ellipse(sunX,sunY,sunRadius,sunRadius*aspect,0,0,TAU);ctx.fill()
     if(world===4){ctx.fillStyle='#242249';ctx.beginPath();ctx.ellipse(sunX+13,sunY-8*aspect,29,29*aspect,0,0,TAU);ctx.fill()}
     if(world<3)for(let layer=0;layer<3;layer++){
@@ -238,68 +237,41 @@ export class TinyWorldScene {
   }
   pick(state: CoopGameState,x: number,y: number): number|null {
     let best=70,selected:number|null=null
-    for(const object of state.objects){if(object.type!=='predator')continue;const p=this.project(object.x,object.y,.45);const d=Math.hypot(p[0]-x,p[1]-y);if(d<best){best=d;selected=object.id}}
+    for(const object of state.objects){if(object.type!=='predator'||!orbitVisible(this.width,this.height,object.x,this.roll,.45))continue;const p=this.project(object.x,object.y,.45);const d=Math.hypot(p[0]-x,p[1]-y);if(d<best){best=d;selected=object.id}}
     return selected
   }
 
-  draw(state: CoopGameState,now: number): boolean {
+  draw(state: CoopGameState,now: number,roll=worldRoll(state.boat.x)): boolean {
     if(!this.ready||this.disposed||!this.width||!this.height)return false
     const world=expeditionWorld(state),t=now/1000
-    this.setWorld(world);this.beamCount=0;this.roll=worldRoll(state.boat.x)
+    this.setWorld(world);this.beamCount=0;this.roll=roll
     this.ground.rotation.z=this.roll/CYLINDER_RADIUS
     this.canvas.dataset.worldRoll=this.roll.toFixed(3);this.canvas.dataset.worldShape='rolling-cylinder'
     const scroll=state.distance*.67
     this.floorTexture.offset.y=-scroll*.16
     const theme=EXPEDITION_WORLDS[world]!
-    // Banks are a chain of sculpted chunks, not a flat corridor painted on a sky.
-    const rows=world>=3?7:11
-    for(let i=0;i<rows*2;i++){
-      const side=i%2?1:-1,seed=Math.floor(i/2)
-      const z=((seed*3.6+noise(i+70)*1.5+scroll)% (rows*3.6))-rows*1.8
-      const x=side*(9.8+noise(i)*.65),lift=world>=3?-.75+Math.sin(t*.7+i)*.17:0
-      const scale=.8+noise(i+40)*.4
-      this.add('island_'+BIOMES[world],x,lift,z,scale,scale,scale,noise(i+42)*TAU)
-      if(world<3)this.shadow(x,z,4.4)
-      if(world<3)this.add('island_'+BIOMES[world],x+side*2.4,-.2,z+1,1.7,1.6,1.8,noise(i)*3)
-      const treeScale=.65+noise(i+10)*.5
-      this.add(TREES[world]!,x-side*.3,lift+.16,z+.1,treeScale,treeScale,treeScale,noise(i+12)*TAU)
-      this.add('rock',x-side*.9,lift+.12,z+.75,.4,.5,.5,i,world===1?0xefb687:world===4?0xbd9ee8:0xffffff)
-      if(world===0)this.add('garden_tree',x+side*.45,lift+.05,z+.8,.58,.55,.58,i,0xa4c49a)
-      if(i%3===0)this.add('temple',x-side*.25,lift+.13,z-.3,.63,.63,.63,side*.2,world===4?0xccd2ff:0xffffff)
-      if(world===0||world===3){for(let j=0;j<3;j++)this.add('flower',x-side*(.7+j*.18),lift+.15,z+j*.25,.75,.75,.75,j)}
-      if(world===1||world===2)this.add(world===1?'mesa':'mountain',x+side*.5,-.05,z-.45,.7+noise(i)*.45,1+noise(i+8)*.45,1,noise(i+22)*TAU)
-      if(world>=3){this.add('cloud',x+side*.2,-2.3,z,1.4,.8,1.2,0,world===4?0x575488:0xffffff)}
+    // No border walls: a handful of distant landmarks are distributed around the whole barrel.
+    let scenery=0
+    for(let i=0;i<8;i++){
+      const nx=i/8*ORBIT_LAP+noise(i+70)*.15,z=((i*13+scroll)%86)-64
+      if(z>-10||!orbitVisible(this.width,this.height,nx,this.roll))continue
+      const x=(nx-.5)*RIVER_WIDTH,scale=.65*Math.min(1,(-z-10)/8)
+      this.add('island_'+BIOMES[world],x,-.2,z,scale,scale,scale,i)
+      this.add(i%3===0?'temple':TREES[world]!,x,.03,z,scale,scale,scale,i*.7)
+      scenery+=2
     }
-    // A distant hero landmark gives each chapter a destination and skyline.
-    if(world<4){
-      this.add('island_'+BIOMES[world],4,-.1,-this.depth*.5,1.7,1.6,1.7,.3)
-      this.add('temple',4,.4,-this.depth*.51,1.2,1.2,1.2,-.13,world===2?0xd7edff:0xffffff)
-      for(let i=0;i<2;i++)this.add(TREES[world]!,6-i*4,.3,-this.depth*.51-1,1.1,1.1,1.1,i)
-    }
-    // Outer mountains and distant landmarks establish depth beyond the playable strip.
-    if(world<3)for(let i=0;i<10;i++){
-      const x=(i%2?1:-1)*(12.8+noise(i)*2),z=-this.depth*.6+Math.floor(i/2)*6
-      this.add(world===1?'mesa':'mountain',x,-.5,z,2,.8+noise(i+44)*.8,2,i*.4,world===0?0x81aa92:0xffffff)
-      if(world===0)this.add('palm',x-.5,1,z,1.5,1.5,1.5,i)
-    }
-    if(world>=3)for(let i=0;i<7;i++)this.add('cloud',(noise(i+82)-.5)*24+Math.sin(t*.08+i),-.7+noise(i+6)*2,-this.depth*(.42+noise(i+14)*.18),2.5,1.5,2,i*.2,world===4?0x635b96:0xffffff)
-    if(world<3)for(let i=0;i<60;i++){
-      const z=((noise(i+80)*this.depth*1.5+scroll)%(this.depth*1.5))-this.depth*.75
-      const x=(i%2?1:-1)*(7.25+noise(i+21)*.8)
-      this.add('rock',x,-.25,z,.09+noise(i)*.13,.06,.14,i,world===1?0xffd5a0:world===2?0xe8ffff:0x65bca4)
+    this.canvas.dataset.sceneryCount=String(scenery)
+    // Sparse longitude glints make rotation legible without fencing the playable surface.
+    for(let i=0;i<36;i++){
+      const x=(i/36*ORBIT_LAP-.5)*RIVER_WIDTH,z=((noise(i+80)*38+scroll)%38)-19
+      this.add('_particle',x,-.2,z,.6,.12,4,0,world===1?0xffd5a0:world===4?0x909eea:0xb5eee2)
     }
     if(world===3){
-      // Rainbow arches are light effects, the environment itself remains mesh geometry.
-      const colors=[0xffa5b2,0xffc890,0xffe9ac,0xa9ddbb,0xa6c7ed,0xc9b4f0]
-      for(let c=0;c<colors.length;c++){const r=6-c*.4;this.add('_arch',0,-2,-this.depth*.44,r,r,r,0,colors[c]!)}
-      this.add('airship',-4,2+Math.sin(t*.4)*.25,-this.depth*.43,.65,.65,.65,-.5)
-      this.add('airship',5,1.6,-this.depth*.6,.5,.5,.5,.6)
+      this.add('airship',this.roll-6,3+Math.sin(t*.4)*.25,-30,.8,.8,.8,-.5)
     }
     if(world===4){
-      this.add('_orb',3.5,1,-this.depth*.44,2.1,2.1,2.1,t*.015,0x8b72ba)
-      this.add('_ring',3.5,1,-this.depth*.44,3.7,1.6,3.7,-.3,0xd3abef,.25,.3)
-      this.add('_orb',-5,.8,-this.depth*.6,1.2,1.2,1.2,0,0xdea5ac)
-      for(let i=0;i<10;i++)this.add('crystal_cluster',(noise(i+53)-.5)*18,-2,-20+noise(i+1)*30,1.8,1.8,1.8,i,0xcccbff)
+      this.add('_orb',this.roll+7,4,-32,2.1,2.1,2.1,t*.015,0x8b72ba)
+      this.add('_ring',this.roll+7,4,-32,3.7,1.6,3.7,-.3,0xd3abef,.25,.3)
     }
 
     for(const object of state.objects){
@@ -310,7 +282,7 @@ export class TinyWorldScene {
       if(drop>.1){this.add('_ring',x,.02,z,.55,.55,.55,t,object.type==='rock'||object.type==='log'?0xffb887:0xa8f2e5);this.line(x,drop+.35,z,x,drop+1.8,z,object.type==='rock'||object.type==='log'?0xffcd93:0xd6fff0)}
       if(object.type==='predator'){
         const boss=object.enemy==='boss',scale=boss?1.85:.85
-        const tx=((object.targetX??state.boat.x)-.5)*RIVER_WIDTH,tz=((object.targetY??.76)-.5)*this.depth
+        const tx=x+orbitDelta(object.targetX??state.boat.x,object.x)*RIVER_WIDTH,tz=((object.targetY??.76)-.5)*this.depth
         const angle=Math.atan2(-(tx-x),-(tz-z))
         const warning=(object.age??0)<55||boss&&(object.age??0)%200<80
         this.shadow(x,z,scale*2.8,1.5)
@@ -346,7 +318,7 @@ export class TinyWorldScene {
     const target=state.objects.find(o=>o.id===state.crew.targetId)??state.objects.filter(o=>o.type==='predator').sort((a,b)=>Math.abs(a.y-.76)-Math.abs(b.y-.76))[0]
     for(const side of [-1,1]){
       const x=bx+Math.cos(heading)*side*.7,z=bz-Math.sin(heading)*side*.7-.05
-      const aim=target?Math.atan2(-((target.x-.5)*RIVER_WIDTH-x),-((target.y-.5)*this.depth-z)):heading
+      const aim=target?Math.atan2(-orbitDelta(target.x,x/RIVER_WIDTH+.5)*RIVER_WIDTH,-((target.y-.5)*this.depth-z)):heading
       this.add('turret',x,.76+lift+bob,z,.85,.85,.85,aim,0xffffff)
     }
     if(state.crew.shieldTicks||state.crew.bubble){
@@ -361,7 +333,8 @@ export class TinyWorldScene {
     for(const shot of state.crew.shots){
       const x=(shot.x-.5)*RIVER_WIDTH,z=(shot.y-.5)*this.depth,age=shot.life-shot.ticks
       const lift=.65+Math.sin(Math.min(1,age/65)*Math.PI)*.6
-      this.add('_shell',x,lift,z,1.25,1.25,1.25,t*2)
+      const size=shot.kind==='manual'?1.6:1.05
+      this.add('_shell',x,lift,z,size,size,size,t*2)
       this.add('_ring',x,lift,z,.42,.42,.42,t*3,0xffef9d,.7)
       for(let i=1;i<=5;i++)this.add('_spark',x-shot.vx*RIVER_WIDTH*i*.75,lift-i*.025,z-shot.vy*this.depth*i*.75,(6-i)*.65,(6-i)*.65,(6-i)*.65,0,i<3?0xffe4a0:0xff7846)
       if(age<6){const muzzle=1-age/6;this.add('_shell',(shot.fromX-.5)*RIVER_WIDTH,.8,(shot.fromY-.5)*this.depth,muzzle*2,muzzle*2,muzzle*2,0)}
@@ -375,7 +348,7 @@ export class TinyWorldScene {
       for(let i=0;i<10;i++){const a=i/10*TAU+blast.id;this.add('_spark',x+Math.cos(a)*radius,.3+Math.sin(age*Math.PI)*1.4,z+Math.sin(a)*radius,3*(1-age),3*(1-age),3*(1-age),0,i%2?color:0xffeabe)}
     }
     for(let i=0;i<28;i++){
-      const z=((noise(i+401)*40+t*.25)%40)-20,x=(noise(i+51)-.5)*17
+      const z=((noise(i+401)*40+t*.25)%40)-20,x=this.roll+(noise(i+51)-.5)*17
       this.add('_particle',x,1+Math.sin(t*.3+i)*.8,z,.35,.35,.35,0,world===2?0xffffff:world===4?0xb5daff:0xffecb9)
     }
     for(const batch of this.batches.values())batch.finish()

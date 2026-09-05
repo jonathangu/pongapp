@@ -1,34 +1,36 @@
-import { CREW_UPGRADES, RECOVERY_SCRAP, RECOVERY_TAPS, RIVER_MIN_X, RIVER_MAX_X, expeditionWorld, type CoopGameState, type CoopInputs, type CrewShot, type CrewUpgrade, type RiverObject, type RiverObjectType } from './coop'
+import { CREW_UPGRADES, RECOVERY_SCRAP, RECOVERY_TAPS, RECOVERY_WORK, expeditionWorld, type CoopGameState, type CoopInputs, type CrewShot, type CrewUpgrade, type RiverObject, type RiverObjectType } from './coop'
+import { orbitDelta, orbitDistance, wrapOrbit } from './orbit'
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 function random(s: CoopGameState) { s.seed = (Math.imul(s.seed, 1664525) + 1013904223) >>> 0; return s.seed / 0x1_0000_0000 }
 function say(s: CoopGameState, message: string) { s.events.push({ type: 'crew', message }) }
-const MAX_OBJECTS = 80, MAX_SHOTS = 24, MAX_EXPLOSIONS = 16
-function spawn(s: CoopGameState, type: RiverObjectType, x = .1 + random(s) * .8, y = -.08): RiverObject {
-  const o: RiverObject = { id: s.nextObjectId++, type, x, y, radius: type === 'rock' || type === 'log' ? .033 : .024, phase: random(s) * 6.28, drift: 0 }
+const MAX_OBJECTS = 80, MAX_SHOTS = 48, MAX_EXPLOSIONS = 16
+function spawn(s: CoopGameState, type: RiverObjectType, x = s.boat.x + (random(s)-.5)*1.1, y = -.08): RiverObject {
+  const o: RiverObject = { id: s.nextObjectId++, type, x: wrapOrbit(x), y, radius: type === 'rock' || type === 'log' ? .033 : .024, phase: random(s) * 6.28, drift: 0 }
   if (s.objects.length < MAX_OBJECTS) s.objects.push(o)
   return o
 }
 function enemy(s: CoopGameState, kind: 'chaser' | 'ambusher' | 'boss', offset = 0) {
   if (kind !== 'boss' && s.objects.filter(o => o.type === 'predator').length >= 22) return
   if (kind === 'boss' && s.objects.length >= MAX_OBJECTS) s.objects.pop()
-  const o = spawn(s, 'predator', kind === 'boss' ? .5 : kind === 'chaser' ? clamp(s.boat.x + offset, .08, .92) : offset < 0 ? .035 : .965, kind === 'boss' ? .19 : kind === 'chaser' ? 1.02 : .22 + random(s) * .16)
+  const o = spawn(s, 'predator', s.boat.x + (kind === 'boss' ? 0 : kind === 'chaser' ? offset : offset < 0 ? -.52 : .52), kind === 'boss' ? .19 : kind === 'chaser' ? 1.02 : .22 + random(s) * .16)
   o.enemy = kind; o.age = 0; o.radius = kind === 'boss' ? .09 : .039
   o.hp = o.maxHp = kind === 'boss' ? 180 : kind === 'chaser' ? 5 : 4
   o.targetX = s.boat.x; o.targetY = .76
 }
 function targets(s: CoopGameState) {
   return s.objects.filter(o => o.type === 'predator' && (o.hp ?? 1) > 0 && o.y > -.05 && o.y < 1.12)
-    .sort((a, b) => (a.id === s.crew.targetId ? -10 : Math.hypot(a.x - s.boat.x, a.y - .76)) - (b.id === s.crew.targetId ? -10 : Math.hypot(b.x - s.boat.x, b.y - .76)))
+    .filter(o => Math.abs(orbitDelta(o.x,s.boat.x)) < 1.3)
+    .sort((a, b) => (a.id === s.crew.targetId ? -10 : orbitDistance(a.x,a.y,s.boat.x,.76)) - (b.id === s.crew.targetId ? -10 : orbitDistance(b.x,b.y,s.boat.x,.76)))
 }
-function launch(s: CoopGameState, ownerId: string, target: RiverObject | undefined, secondary = false) {
+function launch(s: CoopGameState, ownerId: string, target: RiverObject | undefined, power: boolean, secondary = false) {
   const c = s.crew
   if (c.shots.length >= MAX_SHOTS) return
   const side = s.players[ownerId]?.side === 'left' ? -1 : 1
-  const x = s.boat.x + side * (secondary ? -.024 : .024), y = .725
-  const toX = target?.x ?? clamp(x + (secondary ? .09 : 0), .04, .96), toY = target?.y ?? -.12
-  const length = Math.max(.001, Math.hypot(toX - x, toY - y)), speed = .009
-  c.shots.push({ id: s.nextObjectId++, ownerId, targetId: target?.id ?? null, x, y, fromX: x, fromY: y, toX, toY, vx: (toX - x) / length * speed, vy: (toY - y) / length * speed, ticks: 100, life: 100, damage: secondary ? 4 : 6, radius: .145, kind: 'manual' })
+  const x = wrapOrbit(s.boat.x + side * (secondary ? -.024 : .024)), y = .725
+  const toX = target?.x ?? wrapOrbit(x + (secondary ? .09 : 0)), toY = target?.y ?? -.12
+  const dx=orbitDelta(toX,x),length = Math.max(.001, Math.hypot(dx, toY - y)), speed = .016
+  c.shots.push({ id: s.nextObjectId++, ownerId, targetId: target?.id ?? null, x, y, fromX: x, fromY: y, toX, toY, vx: dx / length * speed, vy: (toY - y) / length * speed, ticks: 100, life: 100, damage: (power?14:7)*(secondary?.7:1), radius: power?.2:.145, kind: power?'manual':'auto' })
   c.shotsFired++
 }
 function explode(s: CoopGameState, shot: CrewShot) {
@@ -36,7 +38,7 @@ function explode(s: CoopGameState, shot: CrewShot) {
   c.explosions.push({ id: s.nextObjectId++, x: shot.x, y: shot.y, radius: shot.radius, ticks: 38, life: 38, kind: 'blast' })
   for (const o of s.objects) {
     if (o.type !== 'predator' || (o.hp ?? 1) <= 0) continue
-    const distance = Math.hypot(o.x - shot.x, o.y - shot.y)
+    const distance = orbitDistance(o.x,o.y,shot.x,shot.y)
     if (distance <= shot.radius + o.radius) {
       o.hp = (o.hp ?? 4) - shot.damage * (1 - .3 * Math.min(1, distance / shot.radius))
       if (c.upgrades.includes('frost')) o.slowTicks = 100
@@ -48,7 +50,7 @@ function explode(s: CoopGameState, shot: CrewShot) {
   c.explosions = c.explosions.slice(-MAX_EXPLOSIONS)
 }
 
-/** Ruleset 8: deterministic tap impulses and real projectile impacts; no hold or hitscan. */
+/** Ruleset 9: full-circumference movement, comfortable holds and stronger tap accents. */
 export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
   if (s.phase === 'finished') { s.events = []; s.tick++; return }
   s.tick++; s.events = []
@@ -63,32 +65,33 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
   s.rushTicks = Math.max(0, s.rushTicks - 1); s.flareTicks = Math.max(0, s.flareTicks - 1)
   c.explosions = c.explosions.filter(e => --e.ticks > 0)
   c.heat = 0; c.overheated = false; c.choiceTicks = 0; c.swap = null
-  let steer = 0
+  let steer = 0,heldSteer=0
+  const gunners:string[]=[]
   // Stable player order makes simultaneous repairs and taps identical on both peers.
   for (const p of Object.values(s.players).sort((a, b) => a.side.localeCompare(b.side))) {
     const input = inputs[p.id]
     const counts = c.actions[p.id] ??= { left: 0, right: 0, shoot: 0, recover: 0 }
     if (input?.leftTap) { steer--; counts.left++ }
     if (input?.rightTap) { steer++; counts.right++ }
+    heldSteer += clamp(input?.steer??0,-1,1)
+    if(input?.action)gunners.push(p.id)
     if (input?.targetId !== undefined) c.targetId = input.targetId
     if (input?.shootTap && c.pendingShots.length < 6) { c.pendingShots.push(p.id); counts.shoot++ }
-    if (input?.recoverTap && c.scrap >= RECOVERY_SCRAP && s.hearts < 3) {
-      counts.recover++; c.repair++
-      if (c.repair >= RECOVERY_TAPS) {
-        c.scrap -= RECOVERY_SCRAP; s.hearts++; c.repair = 0
+    if ((input?.recoverTap || input?.recoverHeld) && s.hearts < 3) {
+      if(input.recoverTap){counts.recover++;c.repair+=RECOVERY_WORK/RECOVERY_TAPS}
+      else if(input.recoverHeld)c.repair+=c.scrap>=RECOVERY_SCRAP?1.5:1
+      if (c.repair >= RECOVERY_WORK) {
+        c.scrap = Math.max(0,c.scrap-RECOVERY_SCRAP); s.hearts++; c.repair = 0
         s.events.push({ type: 'healed', x: s.boat.x, y: .76 }); say(s, 'RECOVERED +1 HEART')
       }
     }
   }
   if (s.hearts >= 3) c.repair = 0
-  s.boat.heading = clamp(s.boat.heading + steer * .009, -.024, .024)
-  const wind = world === 3 ? Math.sin(elapsed / 110) * .0003 : 0
-  s.boat.x = clamp(s.boat.x + s.boat.heading + wind, RIVER_MIN_X, RIVER_MAX_X)
-  if (s.boat.x === RIVER_MIN_X || s.boat.x === RIVER_MAX_X) s.boat.heading = 0
-  s.boat.heading *= .84
+  s.boat.heading = clamp(s.boat.heading*.76 + clamp(heldSteer,-1,1)*.00624 + steer*.06,-.09,.09)
+  s.boat.x = wrapOrbit(s.boat.x + s.boat.heading)
   if (Math.abs(s.boat.heading) < .00001) s.boat.heading = 0
-  s.paddles.left = steer < 0 ? 1 : s.paddles.left * .8
-  s.paddles.right = steer > 0 ? 1 : s.paddles.right * .8
+  s.paddles.left = steer+heldSteer < 0 ? 1 : s.paddles.left * .8
+  s.paddles.right = steer+heldSteer > 0 ? 1 : s.paddles.right * .8
   s.boat.speed += (.009 - s.boat.speed) * .2
   s.boat.wake = .6 + Math.min(.4, Math.abs(s.boat.heading) * 25); s.distance += s.boat.speed * 8
   s.harmony = 0
@@ -107,29 +110,29 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     enemy(s, wave % 3 ? 'ambusher' : 'chaser', -.15)
     enemy(s, wave % 2 ? 'chaser' : 'ambusher', .15)
   }
-  if (elapsed % 360 === 0) spawn(s, 'rescue', .15 + random(s) * .7)
+  if (elapsed % 360 === 0) spawn(s, 'rescue', s.boat.x+(random(s)-.5)*.65)
   if (elapsed % 260 === 0) spawn(s, 'relic')
   if (elapsed % 660 === 0) spawn(s, 'gate')
-  if (elapsed >= 5760 && !c.bossSpawned) { enemy(s, 'boss'); c.bossSpawned = true; say(s, 'STAR DEVOURER · TAP SHOOT!') }
+  if (elapsed >= 5760 && !c.bossSpawned) { enemy(s, 'boss'); c.bossSpawned = true; say(s, 'STAR DEVOURER · UNLEASH YOUR CANNONS!') }
 
   for (const o of s.objects) {
     o.phase += .05
-    if (o.type !== 'predator') { o.y += s.boat.speed; if (o.type === 'log') o.x += Math.sin(o.phase) * .0015; continue }
+    if (o.type !== 'predator') { o.y += s.boat.speed; if (o.type === 'log') o.x = wrapOrbit(o.x+Math.sin(o.phase)*.0015); continue }
     o.age = (o.age ?? 0) + 1; o.hp ??= 4; o.maxHp ??= o.hp; o.enemy ??= 'ambusher'
     o.slowTicks = Math.max(0, (o.slowTicks ?? 0) - 1)
     const slow = o.slowTicks ? .5 : 1, age = o.age
     if (o.enemy === 'boss') {
-      o.x = .5 + Math.sin(age / 115) * .3; o.y = .19 + Math.sin(age / 70) * .035
+      o.x = wrapOrbit(o.x+clamp(orbitDelta(s.boat.x,o.x),-.022,.022)); o.y = .19 + Math.sin(age / 70) * .035
       const cycle = age % 180
       if (cycle === 1) o.targetX = s.boat.x
       if (cycle === 70) { const rock = spawn(s, 'rock', o.targetX, .28); rock.radius = .045 }
     } else if (o.enemy === 'chaser') {
-      if (age < 50) { o.y = .97; o.x += (s.boat.x - o.x) * .018 }
+      if (age < 50) { o.y = .97; o.x = wrapOrbit(o.x+orbitDelta(s.boat.x,o.x)*.045) }
       if (age === 50) { o.targetX = s.boat.x; o.targetY = .46 }
-      if (age >= 50) { o.y -= .0058 * slow; o.x += clamp((o.targetX ?? o.x) - o.x, -.004, .004) * slow }
+      if (age >= 50) { o.y -= .0058 * slow; o.x = wrapOrbit(o.x+clamp(orbitDelta(o.targetX??o.x,o.x),-.008,.008)*slow) }
     } else {
       if (age <= 55) { o.targetX = s.boat.x; o.targetY = .79 }
-      else { o.x += ((o.targetX ?? .5) - (o.drift || (o.drift = o.x))) / 95 * slow; o.y += .006 * slow }
+      else { if(age===56)o.drift=orbitDelta(o.targetX??o.x,o.x)/65; o.x=wrapOrbit(o.x+o.drift*slow); o.y += .006 * slow }
     }
   }
 
@@ -138,21 +141,21 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     const target = s.objects.find(o => o.id === shot.targetId && (o.hp ?? 0) > 0)
     if (target) {
       shot.toX = target.x; shot.toY = target.y
-      const d = Math.max(.001, Math.hypot(target.x - shot.x, target.y - shot.y))
-      shot.vx += ((target.x - shot.x) / d * .009 - shot.vx) * .12
-      shot.vy += ((target.y - shot.y) / d * .009 - shot.vy) * .12
+      const dx=orbitDelta(target.x,shot.x),d = Math.max(.001, Math.hypot(dx, target.y - shot.y))
+      shot.vx += (dx / d * .016 - shot.vx) * .2
+      shot.vy += ((target.y - shot.y) / d * .016 - shot.vy) * .2
     }
-    shot.x += shot.vx; shot.y += shot.vy; shot.ticks--
-    const impact = s.objects.some(o => o.type === 'predator' && (o.hp ?? 1) > 0 && Math.hypot(o.x - shot.x, o.y - shot.y) < o.radius + .016)
-    if (impact || shot.ticks <= 0 || shot.x < -.15 || shot.x > 1.15 || shot.y < -.16 || shot.y > 1.2) explode(s, shot)
+    shot.x = wrapOrbit(shot.x+shot.vx); shot.y += shot.vy; shot.ticks--
+    const impact = s.objects.some(o => o.type === 'predator' && (o.hp ?? 1) > 0 && orbitDistance(o.x,o.y,shot.x,shot.y) < o.radius + .025)
+    if (impact || shot.ticks <= 0 || shot.y < -.16 || shot.y > 1.2) explode(s, shot)
     else flying.push(shot)
   }
   c.shots = flying
-  if (!c.shotCooldown && c.pendingShots.length && c.shots.length < MAX_SHOTS - 1) {
-    const owner = c.pendingShots.shift()!, enemies = targets(s)
-    launch(s, owner, enemies[0])
-    if (c.upgrades.includes('twin')) launch(s, owner, enemies[1] ?? enemies[0], true)
-    c.shotCooldown = 10
+  if (!c.shotCooldown && (c.pendingShots.length||gunners.length) && c.shots.length < MAX_SHOTS - 1) {
+    const power=c.pendingShots.length>0,owner = c.pendingShots.shift() ?? gunners[Math.floor(elapsed/8)%gunners.length]!, enemies = targets(s)
+    launch(s, owner, enemies[0],power)
+    if (c.upgrades.includes('twin')) launch(s, owner, enemies[1] ?? enemies[0],power,true)
+    c.shotCooldown = power?4:8
   }
 
   const survivors: RiverObject[] = []
@@ -163,8 +166,8 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
       s.events.push({ type: 'smashed', value: 90, x: o.x, y: o.y }); continue
     }
     const hazard = o.type === 'rock' || o.type === 'log' || o.type === 'predator'
-    if (!hazard && c.upgrades.includes('magnet') && Math.abs(o.y - .76) < .28) o.x += (s.boat.x - o.x) * .08
-    const collided = Math.hypot(o.x - s.boat.x, o.y - .76) < o.radius + .03
+    if (!hazard && c.upgrades.includes('magnet') && Math.abs(o.y - .76) < .28 && Math.abs(orbitDelta(o.x,s.boat.x))<.6) o.x = wrapOrbit(o.x+orbitDelta(s.boat.x,o.x)*.12)
+    const collided = orbitDistance(o.x,o.y,s.boat.x,.76) < o.radius + .04
     if (collided && o.enemy !== 'boss') {
       if (hazard) {
         if (c.shieldTicks || c.bubble) { if (!c.shieldTicks) c.bubble--; say(s, 'BUBBLE BLOCKED THE HIT'); s.score += 25 }

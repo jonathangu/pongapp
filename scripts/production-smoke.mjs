@@ -25,8 +25,8 @@ async function verifyDeployment() {
   const script = await scriptResponse.text()
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
   invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
-  for (const text of ['FOUR BUTTONS. ONE TEAM.', 'Tap to nudge', 'Big splash shell', 'RECOVERED +1 HEART']) {
-    invariant(script.includes(text), `PongApp bundle is missing tap-combat release marker: ${text}`)
+  for (const text of ['HOLD TO FLOW. TAP FOR POWER.', 'Hold orbit', 'Hold fire', 'Shared recovery progress', 'RECOVERED +1 HEART']) {
+    invariant(script.includes(text), `PongApp bundle is missing orbital-power release marker: ${text}`)
   }
 
   const sceneChunk = script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
@@ -51,7 +51,7 @@ async function verifyDeployment() {
   const healthResponse = await fetch(new URL('/api/health', roomServerUrl), { cache: 'no-store' })
   invariant(healthResponse.ok, `Room health returned ${healthResponse.status}`)
   const health = await healthResponse.json()
-  invariant(health.protocol === 7, `Room server protocol was ${health.protocol}, expected 7`)
+  invariant(health.protocol === 8, `Room server protocol was ${health.protocol}, expected 8`)
   invariant(health.runtime === 'cloudflare-durable-objects', `Room server runtime was ${health.runtime}, expected Cloudflare Durable Objects`)
   console.log(`production-smoke ok: ${siteUrl.href} -> ${scriptPath} -> ${roomServerUrl}`)
 }
