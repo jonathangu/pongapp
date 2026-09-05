@@ -11,8 +11,8 @@ describe('tiny-world art contract', () => {
       expect(b.y).toBeGreaterThan(a.y)
       expect(Math.abs(b.x-a.x)).toBeLessThan(.025)
       expect(a.y).toBeGreaterThan(-.7);expect(a.y).toBeLessThan(0)
-      expect(Math.abs(new Vector3(-4.25,0,0).project(camera).x)).toBeLessThan(.9)
-      expect(Math.abs(new Vector3(4.25,0,0).project(camera).x)).toBeLessThan(.9)
+      expect(Math.abs(new Vector3(-7,0,0).project(camera).x)).toBeLessThan(.9)
+      expect(Math.abs(new Vector3(7,0,0).project(camera).x)).toBeLessThan(.9)
     }
   })
   it('ships a valid local GLB with original one-primitive, vertex-painted assets', () => {

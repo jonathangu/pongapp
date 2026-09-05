@@ -252,12 +252,12 @@ export class GameRoom extends DurableObject<Env> {
     const stored = await this.ctx.storage.get<StoredRoomRecord>(ROOM_STORAGE_KEY)
     const legacy = stored ? undefined : await this.ctx.storage.get(LEGACY_ROOM_STORAGE_KEY)
     this.occupied = Boolean(stored || legacy)
-    if ((stored?.version === PROTOCOL_VERSION || stored?.version === 5) && stored.config) {
+    if ((stored?.version === PROTOCOL_VERSION || stored?.version === 6 || stored?.version === 5) && stored.config) {
       this.config = stored.config
       this.telemetryRoomId = stored.telemetryRoomId ?? crypto.randomUUID()
       this.matchSessionId = stored.matchSessionId ?? null
       this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
-      this.game = stored.game && (stored.game.rulesetVersion === 7 || stored.game.rulesetVersion === 6) ? stored.game : null
+      this.game = stored.game && (stored.game.rulesetVersion === 8 || stored.game.rulesetVersion === 6) ? stored.game : null
       const connectedIds = new Set(this.ctx.getWebSockets().map((socket) =>
         (socket.deserializeAttachment() as SocketAttachment | null)?.participantId,
       ).filter((id): id is string => Boolean(id)))

@@ -5,11 +5,12 @@ opens it and the countdown starts. No accounts, installation or ready button.
 
 Co-op is a 120-second isometric journey through Emerald Wilds, Sunset Mesa,
 Alpine Kingdom, Rainbow Skies and Starlight Frontier. The shared boat becomes a
-monster truck, airship and spacecraft. Hold together to accelerate; alternate
-to steer. Synchronize for Harmony Rush, escape stalking predators with a shared
-flare, rescue little friends, collect relics and thread golden gates. A flare
-recharges in seven seconds; relics recharge it immediately. Collisions grant
-two seconds of protection from repeat damage.
+monster truck, airship and spacecraft. Both players have four tap-only buttons:
+Left, Right, Shoot and Recover. Repeated taps add movement, big slow splash
+shells or shared repair progress. Six Recover taps and three scrap restore one
+heart. More enemies approach across a wider river; cannon upgrades equip
+automatically without menus. Rescue three friends and defeat the guardian.
+Collisions grant 1.5 seconds of protection from repeat damage.
 
 Rapid Rivals retains its two-boat race and now uses the same local simulation
 and peer transport. Solo Adventure runs the expedition with Scout AI.
@@ -24,8 +25,9 @@ The existing Cloudflare room authenticates seats and forwards WebRTC signaling.
 An ordered reliable data channel carries controls; an unordered non-retransmitted
 channel carries replaceable host snapshots at 20 Hz. If direct connectivity is
 unavailable, messages use the private WebSocket relay at 10 Hz without restarting
-the host simulation. The compatibility server simulation remains available to
-older protocol-v5 clients; new clients ignore it once their peer session starts.
+the host simulation. Protocol 7 carries cumulative action counters; co-op uses
+ruleset 8 and versus keeps ruleset 6. Stale clients must refresh. The room's
+fallback simulation is ignored once the peer session starts.
 
 The UI reports Local Wi-Fi only for a selected host/host ICE candidate pair;
 Direct peer for other direct routes; Relay when using the server path. Candidate

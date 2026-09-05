@@ -15,12 +15,25 @@ export const EXPEDITION_WORLDS = [
 export function expeditionWorld(state: CoopGameState): number { return Math.min(4, Math.floor(coopProgress(state) * 5)) }
 
 export type CrewStation = 'pilot' | 'gunner' | 'engineer'
+export type CrewTap = 'left' | 'right' | 'shoot' | 'recover'
+export const RIVER_WIDTH = 14
+export const RIVER_MIN_X = .06
+export const RIVER_MAX_X = .94
+export const RECOVERY_TAPS = 6
+export const RECOVERY_SCRAP = 3
+export interface CrewShot {
+  id: number; ownerId: string; targetId: number | null
+  x: number; y: number; fromX: number; fromY: number; toX: number; toY: number
+  vx: number; vy: number; ticks: number; life: number; damage: number; radius: number
+  kind: 'auto' | 'manual' | 'chain'
+}
+export interface CrewExplosion { id: number; x: number; y: number; radius: number; ticks: number; life: number; kind: 'blast' | 'chain' }
 export type CrewUpgrade = 'chain' | 'frost' | 'twin' | 'bubble' | 'magnet'
 export const CREW_UPGRADES = [
   { id: 'chain', name: 'Storm coil', description: 'Lightning jumps to nearby enemies', icon: 'ϟ' },
   { id: 'frost', name: 'Frostbite', description: 'Shots slow dangerous pursuers', icon: '❄' },
-  { id: 'twin', name: 'Twin fangs', description: 'A second gun covers another target', icon: '⋈' },
-  { id: 'bubble', name: 'Bubble battery', description: 'Absorb one hit per chapter', icon: '◉' },
+  { id: 'twin', name: 'Twin cannons', description: 'Each tap launches a second splash shell', icon: '⋈' },
+  { id: 'bubble', name: 'Bubble battery', description: 'Absorb one hit in the final stretch', icon: '◉' },
   { id: 'magnet', name: 'Salvage magnet', description: 'Pull in scrap and rescue friends', icon: '⊕' },
 ] as const
 export interface CoopPlayer { id: string; name: string; side: OarSide; station: CrewStation }
@@ -49,7 +62,11 @@ export interface CrewState {
   bossSpawned: boolean; bossDefeated: boolean; victory: boolean
   finishedTick: number | null
   targetId: number | null
-  shots: Array<{ id: number; x: number; y: number; toX: number; toY: number; ticks: number; kind: 'auto' | 'manual' | 'chain' }>
+  shots: CrewShot[]
+  explosions: CrewExplosion[]
+  pendingShots: string[]
+  shotsFired: number
+  actions: Record<string, Record<CrewTap, number>>
 }
 export type CoopEvent =
   | { type: 'tripStart' }
@@ -68,7 +85,7 @@ export type CoopEvent =
   | { type: 'tripFinished'; score: number; distance: number }
 
 export interface CoopGameState {
-  rulesetVersion: 7
+  rulesetVersion: 8
   phase: 'countdown' | 'playing' | 'finished'
   tick: number
   countdownTicks: number
@@ -98,7 +115,8 @@ export interface CoopGameState {
   crew: CrewState
 }
 
-export interface CoopInput { paddle: number; flare?: boolean; steer?: number; action?: boolean; station?: CrewStation; upgrade?: CrewUpgrade; targetId?: number | null }
+/** Tap flags are one-tick pulses produced by idempotent action counters, not held levels. */
+export interface CoopInput { paddle: number; flare?: boolean; steer?: number; action?: boolean; station?: CrewStation; upgrade?: CrewUpgrade; targetId?: number | null; leftTap?: boolean; rightTap?: boolean; shootTap?: boolean; recoverTap?: boolean }
 export type CoopInputs = Record<string, CoopInput>
 
 function random(state: CoopGameState): number {
@@ -124,12 +142,12 @@ export function createCoopGame(humans: Array<{ id: string; name: string }>, seed
   const players: Record<string, CoopPlayer> = {}
   humans.slice(0, 2).forEach((human, index) => { players[human.id] = { ...human, side: index === 0 ? 'left' : 'right', station: index === 0 ? 'pilot' : 'gunner' } })
   const state: CoopGameState = {
-    rulesetVersion: 7, phase: 'countdown', tick: 0, countdownTicks: COOP_TICK_RATE * 3,
+    rulesetVersion: 8, phase: 'countdown', tick: 0, countdownTicks: COOP_TICK_RATE * 3,
     durationTicks: COOP_TICK_RATE * COOP_MATCH_SECONDS, seed: seed || 1, nextObjectId: 1, players,
     boat: { x: 0.5, heading: 0, speed: 0, wake: 0 }, paddles: { left: 0, right: 0 }, objects: [],
     score: 0, hearts: 3, streak: 0, bestStreak: 0, distance: 0, harmony: 0, rushTicks: 0,
     lanternTicks: 0, nearMisses: 0, rescued: 0, relics: 0, gates: 0, flareCooldown: 0, flareTicks: 0, invulnerableTicks: 0, events: [],
-    crew: { heat: 0, overheated: false, shotCooldown: 0, shieldTicks: 0, shieldCooldown: 0, boostCooldown: 0, scrap: 2, repair: 0, kills: 0, swap: null, upgrades: [], choice: 0, choiceTicks: 0, bubble: 0, bossSpawned: false, bossDefeated: false, victory: false, finishedTick: null, targetId: null, shots: [] },
+    crew: { heat: 0, overheated: false, shotCooldown: 0, shieldTicks: 0, shieldCooldown: 0, boostCooldown: 0, scrap: 3, repair: 0, kills: 0, swap: null, upgrades: [], choice: 0, choiceTicks: 0, bubble: 0, bossSpawned: false, bossDefeated: false, victory: false, finishedTick: null, targetId: null, shots: [], explosions: [], pendingShots: [], shotsFired: 0, actions: {} },
   }
   ;[0.38, 0.5, 0.62].forEach((x, index) => spawnObject(state, 0.08 + index * 0.13, 'firefly', x))
   spawnObject(state, 0.53, 'rock', 0.32)

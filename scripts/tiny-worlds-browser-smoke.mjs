@@ -30,12 +30,14 @@ try {
   // Own disposable solo game only: establish reproducible busy scenes, not network rooms.
   await evaluate("(()=>{let n=document.querySelector('.crew-game');let f=n[Object.keys(n).find(k=>k.startsWith('__reactFiber$'))];while(f&&!f.memoizedProps?.getState)f=f.return;globalThis.qaProps=f.memoizedProps})()")
   for(let world=0;world<5;world++){
-    await evaluate(`(()=>{const s=qaProps.getState();s.tick=180+${world}*1440+260;s.crew.finishedTick=null;s.phase='playing';s.hearts=3;s.invulnerableTicks=900;s.boat.x=.5;s.boat.heading=0;s.distance=12;s.crew.choiceTicks=0;s.crew.shotCooldown=1000;s.crew.bossSpawned=true;s.objects=[{id:8000,type:'predator',enemy:'ambusher',x:.7,y:.42,age:10,hp:18,maxHp:18,targetX:.5,targetY:.76},{id:8001,type:'predator',enemy:'chaser',x:.24,y:.61,age:10,hp:12,maxHp:12,targetX:.5,targetY:.76},{id:8002,type:'rescue',x:.66,y:.6},{id:8003,type:'gate',x:.35,y:.24},{id:8004,type:'relic',x:.54,y:.44},{id:8005,type:'firefly',x:.5,y:.56},{id:8006,type:'firefly',x:.4,y:.34},{id:8007,type:'rock',x:.21,y:.48}].map(o=>({radius:.04,phase:0,drift:0,...o}));s.nextObjectId=9000})()`)
+    await evaluate(`(()=>{const s=qaProps.getState();s.tick=180+${world}*1440+260;s.crew.finishedTick=null;s.phase='playing';s.hearts=3;s.invulnerableTicks=900;s.boat.x=.5;s.boat.heading=0;s.distance=12;s.crew.choiceTicks=0;s.crew.shotCooldown=0;s.crew.bossSpawned=true;s.objects=[{id:8000,type:'predator',enemy:'ambusher',x:.7,y:.42,age:10,hp:18,maxHp:18,targetX:.5,targetY:.76},{id:8001,type:'predator',enemy:'chaser',x:.24,y:.61,age:10,hp:12,maxHp:12,targetX:.5,targetY:.76},{id:8002,type:'rescue',x:.66,y:.6},{id:8003,type:'gate',x:.35,y:.24},{id:8004,type:'relic',x:.54,y:.44},{id:8005,type:'firefly',x:.5,y:.56},{id:8006,type:'firefly',x:.4,y:.34},{id:8007,type:'rock',x:.21,y:.48}].map(o=>({radius:.04,phase:0,drift:0,...o}));s.nextObjectId=9000})()`)
+    await evaluate("globalThis.qaFire=setInterval(()=>qaProps.onCrew({tap:'shoot'}),170)")
     await sleep(700);await screenshot('world-'+world+'-mobile')
     await size(1440,960);await sleep(120);await screenshot('world-'+world+'-desktop');await size(390,844)
     await send('Emulation.setCPUThrottlingRate',{rate:4},sessionId)
     const sample=await evaluate(`new Promise(resolve=>{const gaps=[],stats=[];let last=performance.now();const end=last+5000;function frame(now){gaps.push(now-last);last=now;const raw=document.querySelector('.expedition-canvas').dataset.renderStats;if(raw)stats.push(JSON.parse(raw));if(now<end)requestAnimationFrame(frame);else{gaps.sort((a,b)=>a-b);resolve({frames:gaps.length,frameP95Ms:gaps[Math.floor(gaps.length*.95)],maxFrameMs:gaps.at(-1),freezes:gaps.filter(n=>n>250).length,maxDrawCalls:Math.max(...stats.map(s=>s.drawCalls)),maxTriangles:Math.max(...stats.map(s=>s.triangles)),maxRenderMs:Math.max(...stats.map(s=>s.renderMs)),dpr:stats.at(-1)?.dpr,renderer:document.querySelector('.expedition-canvas').dataset.renderer})}}requestAnimationFrame(frame)})`)
     await send('Emulation.setCPUThrottlingRate',{rate:1},sessionId)
+    await evaluate('clearInterval(qaFire)')
     results.push({world,cpuSlowdown:4,durationMs:5000,...sample})
     if(sample.renderer!=='webgl-3d'||sample.freezes||sample.frameP95Ms>25||sample.maxDrawCalls>60||sample.maxTriangles>180000)throw Error('Frame/resource budget exceeded: '+JSON.stringify(results.at(-1)))
   }
@@ -52,9 +54,8 @@ try {
   await waitFor("document.querySelector('.expedition-canvas')?.dataset.renderer==='canvas-fallback'")
   await sleep(200);await screenshot('context-loss-fallback')
   const before=await evaluate('qaProps.getState().boat.x')
-  await evaluate('qaProps.onCrew({steer:1})');await sleep(120)
+  await evaluate('qaProps.onCrew({tap:"right"})');await sleep(120)
   if(await evaluate('qaProps.getState().boat.x')===before)throw Error('Controls stopped after GPU context loss')
-  await evaluate('qaProps.onCrew({steer:0})')
   // A failed model download must also preserve the instantly usable base game.
   await send('Network.enable',{},sessionId)
   await send('Network.setBlockedURLs',{urls:['*tiny-worlds.glb*']},sessionId)

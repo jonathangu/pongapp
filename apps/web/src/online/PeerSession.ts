@@ -1,6 +1,6 @@
 import { restartCoopGame, restartVersusGame } from '@pongapp/game-core'
 import type { OnlineGameState } from '@pongapp/protocol'
-import { neutralControl, stepLocal, validControl, type Controls, type CrewControl } from './LocalSimulation'
+import { applyCrewControl, controlAdvances, neutralControl, stepLocal, validControl, type Controls, type CrewControl } from './LocalSimulation'
 
 export interface PeerStatus { path: 'connecting' | 'local' | 'direct' | 'relay'; rtt: number | null; paused: boolean }
 interface Frame { kind: 'frame'; epoch: string; state: OnlineGameState; controls: Controls; consumed: Controls }
@@ -36,7 +36,7 @@ export class PeerSession {
     initial: OnlineGameState, private readonly relay: (data: string) => void,
     private readonly publish: (state: OnlineGameState) => void, private readonly report: (status: PeerStatus) => void) {
     this.state = structuredClone(initial)
-    if (initial.rulesetVersion === 7) this.confirmedHearts = initial.hearts
+    if (initial.rulesetVersion === 8) this.confirmedHearts = initial.hearts
     this.confirmedPhase = initial.phase
     this.controls[id] = neutralControl(); this.controls[remoteId] = neutralControl()
     if (host) this.epoch = crypto.randomUUID()
@@ -48,13 +48,11 @@ export class PeerSession {
   getState(): OnlineGameState { return this.state }
   /** Confirmed team health is never replaced by speculative guest collisions. */
   private publishState(): void {
-    this.publish(!this.host && this.state.rulesetVersion === 7 ? { ...this.state, hearts: this.confirmedHearts, phase: this.confirmedPhase } : this.state)
+    this.publish(!this.host && this.state.rulesetVersion === 8 ? { ...this.state, hearts: this.confirmedHearts, phase: this.confirmedPhase } : this.state)
   }
   setCrew(patch: Partial<CrewControl>): void {
     const control = this.controls[this.id]!
-    if (patch.station !== undefined) control.stationSeq++
-    if (patch.upgrade !== undefined) control.upgradeSeq++
-    Object.assign(control, patch); control.seq++; this.sendControl()
+    applyCrewControl(control, patch); this.sendControl()
   }
   setPaddle(paddle: number): void { this.controls[this.id]!.paddle = paddle; this.controls[this.id]!.seq += 1; this.sendControl() }
   tap(): void { this.controls[this.id]!.taps += 1; this.controls[this.id]!.seq += 1; this.sendControl() }
@@ -120,13 +118,14 @@ export class PeerSession {
     if (m.kind === 'input' && validControl(m.control)) {
       if (typeof m.epoch === 'string' && m.epoch && this.epoch && m.epoch !== this.epoch) return
       this.remoteActive = m.active !== false
-      if (m.control.seq >= this.controls[this.remoteId]!.seq && m.control.taps-this.controls[this.remoteId]!.taps<=64 && m.control.flares-this.controls[this.remoteId]!.flares<=64) this.controls[this.remoteId] = { ...m.control }
+      if (controlAdvances(this.controls[this.remoteId]!, m.control)) this.controls[this.remoteId] = { ...m.control }
       if (this.host && !this.ready) { this.ready = true; this.sendFrame() }
     } else if (m.kind === 'frame' && !this.host) {
       const f = m as unknown as Frame
       if (typeof f.epoch !== 'string' || !f.state || f.state.rulesetVersion !== this.state.rulesetVersion || !Number.isSafeInteger(f.state.tick)) return
       if (this.retiredEpochs.has(f.epoch)) return
       if (!f.controls || !f.consumed || !validControl(f.controls[this.id]) || !validControl(f.controls[this.remoteId])) return
+      if ([this.id, this.remoteId].some(id => f.consumed[id] && !validControl(f.consumed[id]))) return
       if (f.epoch === this.epoch && f.state.tick <= this.lastFrame) return
       const fresh = f.epoch !== this.epoch
       if (fresh && this.epoch) this.retiredEpochs.add(this.epoch)
@@ -134,7 +133,7 @@ export class PeerSession {
       const own = this.controls[this.id]!
       this.epoch = f.epoch; this.lastFrame = f.state.tick
       this.state = structuredClone(f.state); this.consumed = structuredClone(f.consumed)
-      if (f.state.rulesetVersion === 7) this.confirmedHearts = f.state.hearts
+      if (f.state.rulesetVersion === 8) this.confirmedHearts = f.state.hearts
       this.confirmedPhase = f.state.phase
       this.controls = structuredClone(f.controls)
       // Reapply locally issued controls not yet represented by the host snapshot.

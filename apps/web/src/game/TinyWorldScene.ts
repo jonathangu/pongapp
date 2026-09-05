@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { EXPEDITION_WORLDS, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { EXPEDITION_WORLDS, RIVER_WIDTH, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
 
 const ART = import.meta.env.BASE_URL + 'art/'
 const TAU = Math.PI * 2
@@ -40,9 +40,9 @@ function loadMaterialImage(): Promise<HTMLImageElement> {
 
 export function tinyWorldCamera(width: number, height: number) {
   const aspect = Math.max(.25,width/Math.max(1,height))
-  const viewHeight = Math.max(12,15.5/aspect)
+  const viewHeight = Math.max(18,20/aspect)
   const camera = new THREE.OrthographicCamera(-viewHeight*aspect/2,viewHeight*aspect/2,viewHeight/2,-viewHeight/2,.1,150)
-  camera.position.set(.65,20,15); camera.lookAt(0,0,0); camera.updateMatrixWorld()
+  camera.position.set(.45,24,14); camera.lookAt(0,0,0); camera.updateMatrixWorld()
   return { camera, depth: viewHeight*.74/.8 }
 }
 
@@ -131,7 +131,7 @@ export class TinyWorldScene {
     this.floorTexture=new THREE.CanvasTexture(floorCanvas);this.floorTexture.wrapS=this.floorTexture.wrapT=THREE.RepeatWrapping;this.floorTexture.repeat.set(5,12);this.textures.push(this.floorTexture)
     this.groundMaterial=new THREE.MeshStandardMaterial({color:GROUNDS[0],roughness:.42,metalness:.12,map:this.floorTexture})
     this.materials.push(this.groundMaterial)
-    const plane=new THREE.PlaneGeometry(35,80);this.geometries.set('_ground',plane)
+    const plane=new THREE.PlaneGeometry(65,120);this.geometries.set('_ground',plane)
     this.ground=new THREE.Mesh(plane,this.groundMaterial);this.ground.rotation.x=-Math.PI/2;this.ground.position.y=-.28;this.ground.receiveShadow=true;this.scene.add(this.ground)
     const shadowCanvas=document.createElement('canvas');shadowCanvas.width=shadowCanvas.height=64
     const sc=shadowCanvas.getContext('2d')!;const gradient=sc.createRadialGradient(32,32,3,32,32,32);gradient.addColorStop(0,'rgba(15,28,39,.43)');gradient.addColorStop(.5,'rgba(15,28,39,.22)');gradient.addColorStop(1,'rgba(15,28,39,0)');sc.fillStyle=gradient;sc.fillRect(0,0,64,64)
@@ -145,6 +145,12 @@ export class TinyWorldScene {
     this.batches.set('_arch',new Batch(this.scene,arch,this.glowMaterial,6))
     const droplet=new THREE.IcosahedronGeometry(.06,0);this.geometries.set('_particle',droplet)
     this.batches.set('_particle',new Batch(this.scene,droplet,this.glowMaterial))
+    const shell=new THREE.IcosahedronGeometry(.22,1);this.geometries.set('_shell',shell)
+    const shellMaterial=new THREE.MeshStandardMaterial({color:0xffbd5c,emissive:0xff570c,emissiveIntensity:1.8,roughness:.35,metalness:.2});this.materials.push(shellMaterial)
+    this.batches.set('_shell',new Batch(this.scene,shell,shellMaterial,48))
+    const blast=new THREE.TorusGeometry(1,.085,5,28);blast.rotateX(Math.PI/2);this.geometries.set('_blast',blast)
+    this.batches.set('_blast',new Batch(this.scene,blast,this.glowMaterial,64))
+    this.batches.set('_spark',new Batch(this.scene,droplet,this.glowMaterial,384))
     const beamGeometry=new THREE.BufferGeometry();beamGeometry.setAttribute('position',new THREE.BufferAttribute(this.beamPositions,3).setUsage(THREE.DynamicDrawUsage));beamGeometry.setAttribute('color',new THREE.BufferAttribute(this.beamColors,3).setUsage(THREE.DynamicDrawUsage));beamGeometry.setDrawRange(0,0);this.geometries.set('_beams',beamGeometry)
     const beamMaterial=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.85,depthWrite:false});this.materials.push(beamMaterial)
     this.beams=new THREE.LineSegments(beamGeometry,beamMaterial);this.beams.frustumCulled=false;this.scene.add(this.beams)
@@ -173,7 +179,7 @@ export class TinyWorldScene {
     this.dpr=Math.min(devicePixelRatio||1,1.5);this.renderer.setPixelRatio(this.dpr);this.renderer.setSize(width,height,false)
   }
   setZoom(zoom: number) {
-    const value=Math.max(1,Math.min(1.35,zoom))
+    const value=Math.max(.65,Math.min(1.2,zoom))
     if(this.camera.zoom!==value){this.camera.zoom=value;this.camera.updateProjectionMatrix()}
   }
   private add(name: string,x: number,y: number,z: number,sx=1,sy=sx,sz=sx,rotation=0,color=0xffffff,rx=0,rz=0) {
@@ -202,7 +208,7 @@ export class TinyWorldScene {
     ctx.globalAlpha=1;this.skyTexture.needsUpdate=true
   }
   project(x: number,y: number,elevation=.35): [number,number] {
-    this.point.set((x-.5)*8.5,elevation,(y-.5)*this.depth).project(this.camera)
+    this.point.set((x-.5)*RIVER_WIDTH,elevation,(y-.5)*this.depth).project(this.camera)
     return [(this.point.x+1)*this.width/2,(1-this.point.y)*this.height/2]
   }
   pick(state: CoopGameState,x: number,y: number): number|null {
@@ -223,7 +229,7 @@ export class TinyWorldScene {
     for(let i=0;i<rows*2;i++){
       const side=i%2?1:-1,seed=Math.floor(i/2)
       const z=((seed*3.6+noise(i+70)*1.5+scroll)% (rows*3.6))-rows*1.8
-      const x=side*(5.7+noise(i)*.65),lift=world>=3?-.75+Math.sin(t*.7+i)*.17:0
+      const x=side*(9.8+noise(i)*.65),lift=world>=3?-.75+Math.sin(t*.7+i)*.17:0
       const scale=.8+noise(i+40)*.4
       this.add('island_'+BIOMES[world],x,lift,z,scale,scale,scale,noise(i+42)*TAU)
       if(world<3)this.shadow(x,z,4.4)
@@ -245,14 +251,14 @@ export class TinyWorldScene {
     }
     // Outer mountains and distant landmarks establish depth beyond the playable strip.
     if(world<3)for(let i=0;i<12;i++){
-      const x=(i%2?1:-1)*(7.8+noise(i)*2),z=-this.depth*.6+Math.floor(i/2)*6
+      const x=(i%2?1:-1)*(12.8+noise(i)*2),z=-this.depth*.6+Math.floor(i/2)*6
       this.add(world===1?'mesa':'mountain',x,-.5,z,2,1.6+noise(i+44)*1.6,2,i*.4,world===0?0x81aa92:0xffffff)
       if(world===0)this.add('palm',x-.5,1,z,1.5,1.5,1.5,i)
     }
     if(world>=3)for(let i=0;i<7;i++)this.add('cloud',(noise(i+82)-.5)*24+Math.sin(t*.08+i),-.7+noise(i+6)*2,-this.depth*(.42+noise(i+14)*.18),2.5,1.5,2,i*.2,world===4?0x635b96:0xffffff)
     if(world<3)for(let i=0;i<60;i++){
       const z=((noise(i+80)*this.depth*1.5+scroll)%(this.depth*1.5))-this.depth*.75
-      const x=(i%2?1:-1)*(3.3+noise(i+21)*.8)
+      const x=(i%2?1:-1)*(7.25+noise(i+21)*.8)
       this.add('rock',x,-.25,z,.09+noise(i)*.13,.06,.14,i,world===1?0xffd5a0:world===2?0xe8ffff:0x65bca4)
     }
     if(world===3){
@@ -270,12 +276,12 @@ export class TinyWorldScene {
     }
 
     for(const object of state.objects){
-      const x=(object.x-.5)*8.5,z=(object.y-.5)*this.depth
+      const x=(object.x-.5)*RIVER_WIDTH,z=(object.y-.5)*this.depth
       if(object.y<-.4||object.y>1.6)continue
       const bob=Math.sin(t*3+object.id)*.09
       if(object.type==='predator'){
         const boss=object.enemy==='boss',scale=boss?1.85:.85
-        const tx=((object.targetX??state.boat.x)-.5)*8.5,tz=((object.targetY??.76)-.5)*this.depth
+        const tx=((object.targetX??state.boat.x)-.5)*RIVER_WIDTH,tz=((object.targetY??.76)-.5)*this.depth
         const angle=Math.atan2(-(tx-x),-(tz-z))
         const warning=(object.age??0)<55||boss&&(object.age??0)%200<80
         this.shadow(x,z,scale*2.8,1.5)
@@ -302,17 +308,17 @@ export class TinyWorldScene {
         this.shadow(x,z,.9)
       }
     }
-    const bx=(state.boat.x-.5)*8.5,bz=.26*this.depth
-    const heading=-Math.atan2(state.boat.heading*8.5,Math.max(.002,state.boat.speed)*this.depth)
+    const bx=(state.boat.x-.5)*RIVER_WIDTH,bz=.26*this.depth
+    const heading=-Math.atan2(state.boat.heading*RIVER_WIDTH,Math.max(.002,state.boat.speed)*this.depth)
     const lift=world===3?.28:world===4?.25:.02
     const bob=(world===1||world===2?Math.sin(t*22)*.025:Math.sin(t*3)*.055)
-    this.shadow(bx,bz,3.1,1.3)
-    this.add(theme.vehicle,bx,lift+bob,bz,1.15,1.15,1.15,heading,0xffffff,0,-heading*.07)
+    this.shadow(bx,bz,2.4,1.3)
+    this.add(theme.vehicle,bx,lift+bob,bz,.9,.9,.9,heading,0xffffff,0,-heading*.07)
     const target=state.objects.find(o=>o.id===state.crew.targetId)??state.objects.filter(o=>o.type==='predator').sort((a,b)=>Math.abs(a.y-.76)-Math.abs(b.y-.76))[0]
     for(const side of [-1,1]){
-      const x=bx+Math.cos(heading)*side*.9,z=bz-Math.sin(heading)*side*.9-.05
-      const aim=target?Math.atan2(-((target.x-.5)*8.5-x),-((target.y-.5)*this.depth-z)):heading
-      this.add('turret',x,.92+lift+bob,z,1,1,1,aim,state.crew.overheated?0xffa28c:0xffffff)
+      const x=bx+Math.cos(heading)*side*.7,z=bz-Math.sin(heading)*side*.7-.05
+      const aim=target?Math.atan2(-((target.x-.5)*RIVER_WIDTH-x),-((target.y-.5)*this.depth-z)):heading
+      this.add('turret',x,.76+lift+bob,z,.85,.85,.85,aim,0xffffff)
     }
     if(state.crew.shieldTicks||state.crew.bubble){
       this.add('_ring',bx,.45,bz,1.5,1.5,1.5,t,0x9affeb)
@@ -324,10 +330,20 @@ export class TinyWorldScene {
       if(state.rushTicks)this.line(bx+side*.7,.18,bz+1,bx+side*.7,.18,bz+2.6,0xc6ffea)
     }
     for(const shot of state.crew.shots){
-      const x=(shot.x-.5)*8.5,z=(shot.y-.5)*this.depth,tx=(shot.toX-.5)*8.5,tz=(shot.toY-.5)*this.depth
-      const color=shot.kind==='manual'?0xffd185:shot.kind==='chain'?0xc1acff:0x9bffed
-      this.line(x,.9,z,tx,.45,tz,color)
-      this.add('_particle',tx,.45,tz,3,3,3,0,color)
+      const x=(shot.x-.5)*RIVER_WIDTH,z=(shot.y-.5)*this.depth,age=shot.life-shot.ticks
+      const lift=.65+Math.sin(Math.min(1,age/65)*Math.PI)*.6
+      this.add('_shell',x,lift,z,1.25,1.25,1.25,t*2)
+      this.add('_ring',x,lift,z,.42,.42,.42,t*3,0xffef9d,.7)
+      for(let i=1;i<=5;i++)this.add('_spark',x-shot.vx*RIVER_WIDTH*i*.75,lift-i*.025,z-shot.vy*this.depth*i*.75,(6-i)*.65,(6-i)*.65,(6-i)*.65,0,i<3?0xffe4a0:0xff7846)
+      if(age<6){const muzzle=1-age/6;this.add('_shell',(shot.fromX-.5)*RIVER_WIDTH,.8,(shot.fromY-.5)*this.depth,muzzle*2,muzzle*2,muzzle*2,0)}
+    }
+    for(const blast of state.crew.explosions){
+      const age=1-blast.ticks/blast.life,x=(blast.x-.5)*RIVER_WIDTH,z=(blast.y-.5)*this.depth
+      const radius=blast.radius*RIVER_WIDTH*(.25+age*.85),color=blast.kind==='chain'?0xc4b1ff:0xffbd63
+      this.add('_blast',x,.13,z,radius,Math.max(.15,1-age),radius,0,color)
+      this.add('_blast',x,.2,z,radius*.65,Math.max(.1,.6-age),radius*.65,t,0xffefbd,.15)
+      if(age<.45)this.add('_shell',x,.45,z,(1-age/.45)*2.6,(1-age/.45)*2.6,(1-age/.45)*2.6,0)
+      for(let i=0;i<10;i++){const a=i/10*TAU+blast.id;this.add('_spark',x+Math.cos(a)*radius,.3+Math.sin(age*Math.PI)*1.4,z+Math.sin(a)*radius,3*(1-age),3*(1-age),3*(1-age),0,i%2?color:0xffeabe)}
     }
     for(let i=0;i<28;i++){
       const z=((noise(i+401)*40+t*.25)%40)-20,x=(noise(i+51)-.5)*17
