@@ -59,6 +59,8 @@ try{
   await evaluate(mobile,"[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Solo Adventure')).click()")
   await waitFor(mobile,"document.querySelector('.expedition-countdown')===null && document.querySelector('.expedition-canvas')")
   await screenshot(mobile,'solo-mobile')
+  const multitouch=await evaluate(mobile,`(async()=>{const button=document.querySelector('.river-paddle');const capture=button.setPointerCapture;button.setPointerCapture=()=>{};button.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:11}));await new Promise(requestAnimationFrame);window.dispatchEvent(new PointerEvent('pointerup',{pointerId:12}));await new Promise(requestAnimationFrame);const held=document.querySelector('.expedition-game').classList.contains('is-paddling');window.dispatchEvent(new PointerEvent('pointerup',{pointerId:11}));await new Promise(requestAnimationFrame);const released=!document.querySelector('.expedition-game').classList.contains('is-paddling');button.setPointerCapture=capture;return {held,released}})()`)
+  if(!multitouch.held||!multitouch.released)throw Error('Flare pointer incorrectly releases steering')
   const layout=await evaluate(mobile,"({overflow:document.documentElement.scrollWidth>innerWidth,canvas:document.querySelector('canvas').getBoundingClientRect().toJSON(),control:document.querySelector('.river-paddle').getBoundingClientRect().toJSON()})")
   if(layout.overflow||layout.control.bottom>844)throw Error('Mobile layout overflows: '+JSON.stringify(layout))
   // Full invitation UI: host creates a room; a fresh browser opens the exact shared URL.
@@ -75,7 +77,7 @@ try{
     results.push({mode,invitationUI:'passed',directPath:'local'})
   }
   if(errors.length)throw Error('Browser errors: '+JSON.stringify(errors))
-  const evidence={results,layout,browserErrors:errors.length,artifacts}
+  const evidence={results,layout,multitouch,browserErrors:errors.length,artifacts}
   await writeFile(join(artifacts,'results.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2))
 }finally{ws.close();chrome.kill('SIGTERM')}
 process.exit(0)

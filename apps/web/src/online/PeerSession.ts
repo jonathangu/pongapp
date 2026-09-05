@@ -121,7 +121,7 @@ export class PeerSession {
       this.state = structuredClone(f.state); this.consumed = structuredClone(f.consumed)
       this.controls = structuredClone(f.controls)
       // Reapply locally issued controls not yet represented by the host snapshot.
-      if (own.seq > this.controls[this.id]!.seq) this.controls[this.id] = own
+      if (!fresh && own.seq > this.controls[this.id]!.seq) this.controls[this.id] = own
       const ahead = fresh ? 0 : Math.min(8, Math.max(0, oldTick - this.state.tick, Math.round((this.status.rtt ?? 0) * .03)))
       for (let i = 0; i < ahead; i += 1) stepLocal(this.state, this.controls, this.consumed)
       this.ready = true; this.publish(this.state)

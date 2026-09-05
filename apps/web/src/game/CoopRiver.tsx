@@ -18,6 +18,7 @@ export function CoopRiver({ getState, subscribe, localPlayerId, title, roomCode,
   const [pressed,setPressed]=useState(false)
   const [notice,setNotice]=useState('')
   const noticeTimer=useRef(0)
+  const paddlePointer=useRef<number|null>(null)
   useWakeLock()
   useEffect(()=>{
     let last=0;let eventTick=-1
@@ -33,7 +34,7 @@ export function CoopRiver({ getState, subscribe, localPlayerId, title, roomCode,
   },[subscribe])
   useEffect(()=>()=>clearTimeout(noticeTimer.current),[])
   useEffect(()=>{
-    const release=()=>{setPressed(false);onPaddle(0)}
+    const release=(e?:Event)=>{if(e instanceof PointerEvent && paddlePointer.current!==null && e.pointerId!==paddlePointer.current)return;paddlePointer.current=null;setPressed(false);onPaddle(0)}
     const keydown=(e:KeyboardEvent)=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();setPressed(true);onPaddle(1)}if(e.code==='KeyF')onFlare?.()}
     const keyup=(e:KeyboardEvent)=>{if(e.code==='Space')release()}
     window.addEventListener('pointerup',release);window.addEventListener('pointercancel',release);window.addEventListener('blur',release);window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup)
@@ -59,6 +60,6 @@ export function CoopRiver({ getState, subscribe, localPlayerId, title, roomCode,
       {state.phase==='finished'&&<div className="expedition-finish"><span>{state.hearts>0?'FIVE WORLDS. ONE TEAM.':'ANOTHER ADVENTURE?'}</span><h1>{state.hearts>0?'You reached the stars.':'What a ride.'}</h1><strong>{state.score.toLocaleString()} <small>TEAM POINTS</small></strong><div><p>◒ {state.rescued} friends rescued</p><p>◇ {state.relics} relics discovered</p><p>◎ {state.gates} gates crossed</p></div><button onClick={onRematch}>Another expedition ↗</button><button className="quiet" onClick={onExit}>Back to basecamp</button></div>}
       <div className="expedition-route">{EXPEDITION_WORLDS.map((v,i)=><span key={v.name} className={i===world?'active':i<world?'done':''}>{['✿','☀','▲','☁','✦'][i]}<i style={{width:Math.max(0,Math.min(1,progress*5-i))*100+'%'}}/></span>)}</div>
     </section>
-    <footer className="expedition-controls"><div className="expedition-instruction"><span>{side.toUpperCase()} · YOU</span><span>{pressed?'Working together feels good.':'Hold together for speed · alternate to steer'}</span></div><div><button className={'river-paddle river-paddle--'+side} disabled={state.phase==='finished'||Boolean(paused)} onPointerDown={e=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);setPressed(true);onPaddle(1)}} onContextMenu={e=>e.preventDefault()}><span>{pressed?'LET’S GO!':theme.vehicle==='boat'?'HOLD TO ROW':theme.vehicle==='truck'?'HOLD TO DRIVE':'HOLD TO FLY'}</span><small>Your {side} side · Space</small></button><button className="expedition-flare" disabled={!onFlare||state.flareCooldown>0||state.phase!=='playing'||Boolean(paused)} onPointerDown={e=>{e.preventDefault();onFlare?.()}}><b>✺</b><span>{state.flareCooldown>0?Math.ceil(state.flareCooldown/60)+'s':'FLARE'}</span><small>Scare predators · F</small></button></div></footer>
+    <footer className="expedition-controls"><div className="expedition-instruction"><span>{side.toUpperCase()} · YOU</span><span>{pressed?'Working together feels good.':'Hold together for speed · alternate to steer'}</span></div><div><button className={'river-paddle river-paddle--'+side} disabled={state.phase==='finished'||Boolean(paused)} onPointerDown={e=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);paddlePointer.current=e.pointerId;setPressed(true);onPaddle(1)}} onContextMenu={e=>e.preventDefault()}><span>{pressed?'LET’S GO!':theme.vehicle==='boat'?'HOLD TO ROW':theme.vehicle==='truck'?'HOLD TO DRIVE':'HOLD TO FLY'}</span><small>Your {side} side · Space</small></button><button className="expedition-flare" disabled={!onFlare||state.flareCooldown>0||state.phase!=='playing'||Boolean(paused)} onPointerDown={e=>{e.preventDefault();onFlare?.()}}><b>✺</b><span>{state.flareCooldown>0?Math.ceil(state.flareCooldown/60)+'s':'FLARE'}</span><small>Scare predators · F</small></button></div></footer>
   </main>
 }
