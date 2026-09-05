@@ -27,4 +27,14 @@ This release implements the user's movement, camera, power and recovery changes 
 
 Success criteria: first input visible within one simulation tick; full orbit possible within a few seconds of holding; tap stronger than a comparable short hold; fire starts immediately and sustains; recovery progress legible without opening help; open sky and one focal action area; zero input sticking; smooth mobile browser play.
 
-Status: requirements and vision recorded. Implementation begins next.
+## Implemented and locally verified
+
+- Co-op ruleset9 / protocol8; versus ruleset6 unchanged. Full2π coordinates, wrapped collision/homing/targeting and a smoothly following cylinder with no side clamps. Camera pitch is exactly baseline+10°.
+- Held steering settles at .026 coordinate units/tick; tap impulse .06. Held shells damage7, power-tap shells damage14 with a wider blast. Projectiles/objects/effects remain capped.
+- Recovery requires180 shared work: five taps, approximately three seconds holding, or two seconds holding with salvage. Progress is saved, and zero salvage never prevents repair.
+- Separate pointer/keyboard sources support simultaneous holds. Release/cancel/lost capture/blur/background/help/rematch clear controls. Explicit target-sequence events prevent a neutral teammate from clearing manual aim.
+- Removed dense bank, rock and mountain fences. Sparse distant landmarks preserve open foreground and the full-circumference terrain. WebGL and fallback projection/picking share the same smoothed roll.
+- `pnpm check`:93 tests plus lint, typecheck and production build passed. Real local Durable Object co-op/versus and stale protocol7 refresh rejection passed. RTC/direct+relay tests include guest full orbit, held firing/free repair, release/stale rejection, exact-once tap bursts, persistent manual aim, rematch/background/reconnect and invitation UI.
+- Five worlds under sustained held fire plus repeated power taps: DPR3 browser emulation (renderer capped1.5),4×CPU, p95≈16.7ms, no>250ms freezes, no browser exceptions; model failure and GPU loss retain usable fallback.20 deterministic balance seeds completed the rescue/guardian objective; this is not a human fun assessment.
+
+Evidence: `/Users/guclaw/.openclaw/workspace/task-artifacts/orbital-power-play/`. Cross-browser control and production deployment receipts are recorded there; only the final live receipt establishes release completion. This supersedes historical tap-only acceptance scripts; use `scripts/orbital-controls-smoke.mjs` for the current four-button contract.

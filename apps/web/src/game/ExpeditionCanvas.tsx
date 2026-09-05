@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { EXPEDITION_WORLDS, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { EXPEDITION_WORLDS, ORBIT_LAP, RIVER_WIDTH, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
 import type { TinyWorldScene } from './TinyWorldScene'
-import { projectRolling, skyDropHeight, worldRoll } from './RollingWorld'
+import { followRoll, orbitVisible, projectRolling, skyDropHeight, worldRoll } from './RollingWorld'
 
 type Point = [number, number]
 const TAU = Math.PI * 2
@@ -18,12 +18,11 @@ export function vehicleAngle(w: number, h: number, x: number, heading: number, s
 }
 
 /** A small, depth-sorted isometric renderer. No textures, downloads or per-frame React tree. */
-export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: number, state: CoopGameState, time: number): void {
+export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: number, state: CoopGameState, time: number, roll=worldRoll(state.boat.x)): void {
   const world = expeditionWorld(state)
   const theme = EXPEDITION_WORLDS[world]!
   const unit = Math.min(w * .95, h * .85)
   const t = time / 1000
-  const roll = worldRoll(state.boat.x)
   const project = (x: number, y: number, z = 0): Point => projectExpedition(w, h, x, y, z, roll)
   const poly = (points: Point[], fill: string, stroke?: string) => {
     ctx.beginPath(); points.forEach(([x,y], i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y)); ctx.closePath()
@@ -85,51 +84,51 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
     ellipse(cx,cy,r*1.5,r*.28,world===4?'#8f80b011':'#eff2df22');ellipse(cx+10,cy-r*.17,r*.7,r*.4,world===4?'#8f80b011':'#eff2df22')
   }
   // Sample across the barrel as well as along it: the curved silhouette reveals sky at both sides.
+  const center=roll/RIVER_WIDTH+.5
   for(let row=0;row<30;row++)for(let col=0;col<44;col++){
-    const x=-1.2+col*.075,y=-3+row*.17
+    const x=center-1.6+col*.075,y=-3+row*.17
+    if(!orbitVisible(w,h,x,roll))continue
     poly([project(x,y),project(x+.075,y),project(x+.075,y+.17),project(x,y+.17)],theme.water)
   }
   const edge:Point[]=[]
-  for(let i=0;i<=20;i++){const y=i/20*1.32;edge.push(project(Math.sin(y*11+state.distance*.003)*.025,y))}
-  for(let i=20;i>=0;i--){const y=i/20*1.32;edge.push(project(1+Math.sin(y*9+1+state.distance*.003)*.025,y))}
+  for(let i=0;i<=20;i++){const y=-3+i/20*4.5;edge.push(project(center-1.3,y))}
+  for(let i=20;i>=0;i--){const y=-3+i/20*4.5;edge.push(project(center+1.3,y))}
   if(world<3) {
     poly(edge,theme.water)
     const terrain=ctx.createLinearGradient(0,h*.15,0,h);terrain.addColorStop(0,world===0?'#1f9c9588':world===1?'#efc094aa':'#d9f5eeaa');terrain.addColorStop(.65,'transparent');terrain.addColorStop(1,'#132f4c55');ctx.save();ctx.beginPath();edge.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.clip();ctx.fillStyle=terrain;ctx.fillRect(0,0,w,h);ctx.restore()
-    for(const bank of [edge.slice(0,21),edge.slice(21)])for(let i=1;i<bank.length;i++){line(bank[i-1]!,bank[i]!,world===0?'#8bddb247':world===1?'#f3c89866':'#f1ffff66',4)}
   } else {
     // Air and space have open skies, no reskinned river slab.
     glow(w*.45,h*.58,w*.6,world===4?'#886adf28':'#d3d7ff22')
-    for(const x of [.08,.92]) {ctx.setLineDash([2,14]);line(project(x,-.25),project(x,1.2),world===4?'#bba4f255':'#fff2d355',1);ctx.setLineDash([])}
   }
   ctx.save(); ctx.beginPath();edge.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.clip()
   for(let i=0;i<55;i++) {
     const y=((i/20+state.distance*.125)%1.65)-.32
-    const x=noise(i+15)*.85+.075
+    const x=noise(i+15)*ORBIT_LAP
+    if(!orbitVisible(w,h,x,roll))continue
     const a=project(x,y),b=project(x+.05+noise(i)*.1,y)
     line(a,b,world===1?'#efc08b66':world===2?'#e5ffff80':world===4?'#93a1ec33':'#b4f0df45',world===1?3:1)
   }
   if(world===1||world===2) {
-    for(let j=0;j<2;j++) { const x=j?.8:.2;line(project(x,-.3),project(x,1.3),world===1?'#724c5144':'#567c9633',unit*.04) }
+    for(let j=0;j<6;j++) {const x=j*ORBIT_LAP/6;if(orbitVisible(w,h,x,roll))line(project(x,-.3),project(x,1.3),world===1?'#724c5122':'#567c961a',1)}
   }
   ctx.restore()
 
-  // Monumental scenery sits outside the driveable corridor; it never hides hazards.
-  if(world===1||world===2){for(const side of [-1,1]){const px=side<0?w*.045:w*.97,py=h*.5,r=unit*.2;poly([[px-r,py+r],[px-r*.5,py-r*.3],[px,py-r*1.8],[px+r*.5,py-r*.7],[px+r,py+r]],world===1?'#aa6555':'#809ba9');poly([[px,py-r*1.8],[px+r*.5,py-r*.7],[px+r,py+r],[px+r*.12,py+r]],world===1?'#784c51':'#516e8e');if(world===2)poly([[px-r*.32,py-r*.65],[px,py-r*1.8],[px+r*.4,py-r*.65],[px+r*.16,py-r*.8],[px-r*.05,py-r*.5]],'#eff8ee');else{for(let j=0;j<4;j++)line([px-r*.4,py-r*.6+j*r*.38],[px+r*.35,py-r*.45+j*r*.38],'#ecad7c77',3)}}}
+  // Open foreground, with only a few distant landmarks rather than side fences.
   if(world===4){glow(w*.06,h*.5,w*.5,'#805beb30');glow(w*.95,h*.8,w*.6,'#2776ac25')}
 
   const entities:Array<{depth:number;draw:()=>void}>=[]
   // Raised terrain and island silhouettes, ordered with the vehicle and creatures.
-  for(let i=0;i<(world>=3?12:28);i++) {
-    const side=i%2; const y=((Math.floor(i/2)/(world>=3?3.5:9)+state.distance*.1)%1.75)-.35
-    const x=side?1.08+noise(i)*.3:-.08-noise(i)*.3
+  for(let i=0;i<5;i++) {
+    const y=-1+noise(i+8)*.6,x=i/5*ORBIT_LAP
+    if(!orbitVisible(w,h,x,roll))continue
     entities.push({depth:project(x,y)[1],draw:()=>{
-      const elevation=(world===3||world===4?18:9)+noise(i+4)*18
+      const elevation=8+noise(i+4)*6
       const top=world===0?'#478660':world===1?'#d28d6f':world===2?'#d2e3df':world===3?'#adcdbd':'#665793'
-      const [px,py]=project(x,y); const r=unit*(.07+noise(i)*.055)
+      const [px,py]=project(x,y); const r=unit*(.025+noise(i)*.02)
       poly([[px-r,py],[px-r*.8,py-elevation],[px,py-elevation-r*.4],[px+r*.8,py-elevation*.7],[px+r,py],[px,py+r*.35]],theme.bank)
       poly([[px-r*.8,py-elevation],[px,py-elevation-r*.4],[px+r*.8,py-elevation*.7],[px+r*.4,py],[px-r*.5,py]],top)
       if(world===1) {line([px-r*.7,py-elevation*.6],[px+r*.7,py-elevation*.3],'#f3b18588',3);line([px-r*.7,py-elevation*.2],[px+r*.5,py],'#6e434966',4)}
-      if(world===0||world===1||world===2) tree(x,y,.55+noise(i)*.65,noise(i))
+      if(world===0||world===1||world===2) tree(x,y,.25+noise(i)*.2,noise(i))
       else if(world===3) {const [px,py]=project(x,y,elevation);ellipse(px,py,unit*.065,unit*.025,'#f3f0dc');ellipse(px-8,py-6,unit*.035,unit*.027,'#fff6e4')}
       else {const [px,py]=project(x,y,elevation);poly([[px-8,py],[px,py-24],[px+8,py],[px,py+5]],'#ac97dd');line([px,py-24],[px,py+5],'#e1cdfb',1)}
       if(i%9===0) {prism(x,y,.033,elevation+unit*.08,'#d6c99e','#8d9377','#647c70');const [px,py]=project(x,y,elevation+unit*.1);glow(px,py,15,theme.glow+'70');ellipse(px,py,3,4,theme.glow)}
@@ -137,6 +136,7 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   }
 
   for(const object of state.objects) {
+    if(!orbitVisible(w,h,object.x,roll))continue
     const [x,y]=projectRolling(w,h,object.x,object.y,skyDropHeight(object),roll)
     const s=unit*(object.enemy==='boss'?.14:.054)
     entities.push({depth:y,draw:()=> {
@@ -214,11 +214,13 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   }})
   entities.sort((a,b)=>a.depth-b.depth).forEach((entity)=>entity.draw())
   for(const shot of state.crew.shots){
+    if(!orbitVisible(w,h,shot.x,roll))continue
     const p=project(shot.x,shot.y,8),radius=Math.max(5,unit*.019)
     for(let i=5;i>0;i--){const q=project(shot.x-shot.vx*i,shot.y-shot.vy*i,8);ellipse(q[0],q[1],radius*(1-i/7),radius*(1-i/7),'#ffb94b55')}
     glow(p[0],p[1],radius*3,'#ff9f4daa');ellipse(p[0],p[1],radius,radius,'#ffc974');ellipse(p[0]-radius*.2,p[1]-radius*.2,radius*.5,radius*.5,'#fff5c9')
   }
   for(const blast of state.crew.explosions){
+    if(!orbitVisible(w,h,blast.x,roll))continue
     const age=1-blast.ticks/blast.life,p=project(blast.x,blast.y),r=blast.radius*w*(.25+age*.85)
     ctx.globalAlpha=1-age;glow(p[0],p[1],r,blast.kind==='chain'?'#bca0ffaa':'#ffbc63bb')
     ctx.beginPath();ctx.ellipse(p[0],p[1],r,r*.7,0,0,TAU);ctx.strokeStyle='#ffe2a5';ctx.lineWidth=5*(1-age)+1;ctx.stroke()
@@ -236,6 +238,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
   const sceneRef=useRef<TinyWorldScene|null>(null)
   const stateRef=useRef(getState);stateRef.current=getState
   const zoomRef=useRef(zoom);zoomRef.current=zoom
+  const rollRef=useRef(0)
   const pointers=useRef(new Map<number,{x:number;y:number}>())
   const tap=useRef<{x:number;y:number}|null>(null)
   const pinch=useRef<{distance:number;zoom:number}|null>(null)
@@ -250,7 +253,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
     // Invite/controls and the fallback draw immediately; the larger 3D bundle is non-blocking.
     void import('./TinyWorldScene').then(async({TinyWorldScene})=>{if(!active)return;scene=new TinyWorldScene(canvas,preview);sceneRef.current=scene;resize();await scene.load();if(failed&&active)useFallback()}).catch(()=>{if(active)useFallback()})
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize()
-    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current();let drawn=false;try{scene?.setZoom(zoomRef.current);drawn=!!scene&&!failed&&scene.draw(state,now)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else{ctx.save();ctx.translate(width/2,height/2);ctx.scale(zoomRef.current,zoomRef.current);ctx.translate(-width/2,-height/2);drawExpedition(ctx,width,height,state,now);ctx.restore()}lastDraw=now}frame=requestAnimationFrame(draw)}
+    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current();rollRef.current=lastDraw?followRoll(rollRef.current,state.boat.x,now-lastDraw):worldRoll(state.boat.x);canvas.dataset.worldRoll=rollRef.current.toFixed(3);canvas.dataset.orbitPosition=state.boat.x.toFixed(4);let drawn=false;try{scene?.setZoom(zoomRef.current);drawn=!!scene&&!failed&&scene.draw(state,now,rollRef.current)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else{ctx.save();ctx.translate(width/2,height/2);ctx.scale(zoomRef.current,zoomRef.current);ctx.translate(-width/2,-height/2);drawExpedition(ctx,width,height,state,now,rollRef.current);ctx.restore()}lastDraw=now}frame=requestAnimationFrame(draw)}
     frame=requestAnimationFrame(draw);return()=>{active=false;cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',contextLost);scene?.dispose();sceneRef.current=null}
   },[preview])
   return <><canvas ref={fallbackRef} className="expedition-canvas-fallback" aria-hidden="true" style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}/><canvas ref={ref} className="expedition-canvas" data-zoom={zoom.toFixed(2)} style={{position:'relative',opacity:0,touchAction:preview?'pan-y':'none'}} onPointerDown={e=>{
@@ -269,7 +272,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
     if(!select||!onTarget)return
     const r=e.currentTarget.getBoundingClientRect()
     if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}
-    const state=getState(),roll=worldRoll(state.boat.x)
-    const targets=state.objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y,0,roll);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
+    const state=getState(),roll=rollRef.current
+    const targets=state.objects.filter(o=>o.type==='predator'&&orbitVisible(r.width,r.height,o.x,roll)).map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y,0,roll);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
   }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Rolling-world 3D expedition with a sky panorama. Steer to roll the river; pinch to zoom; tap a predator to aim." /></>
 }

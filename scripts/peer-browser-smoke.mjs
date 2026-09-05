@@ -20,20 +20,43 @@ async function waitFor(session,expression,timeout=12000){const end=Date.now()+ti
 async function page(width=390,height=844){const {browserContextId}=await send('Target.createBrowserContext');const {targetId}=await send('Target.createTarget',{url:'about:blank',browserContextId});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});await send('Page.enable',{},sessionId);await send('Runtime.enable',{},sessionId);await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},sessionId);await send('Emulation.setFocusEmulationEnabled',{enabled:true},sessionId);await send('Page.navigate',{url:ui},sessionId);await waitFor(sessionId,"document.querySelector('.preview-worlds')");return sessionId}
 async function screenshot(session,name){const r=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},session);await writeFile(join(artifacts,name+'.png'),Buffer.from(r.data,'base64'))}
 const results=[]
+async function verifyHeldControls(a,b,path){
+  await evaluate(a,"qa.peer.state.hearts=1;qa.peer.state.crew.scrap=0;qa.peer.state.crew.repair=0;qa.peer.state.invulnerableTicks=10000;globalThis.qaQuiet=setInterval(()=>qa.peer.state.objects=[],50)")
+  await waitFor(b,'qa.peer.getState().hearts===1 && qa.peer.getState().crew.scrap===0')
+  const before=await evaluate(a,'qa.peer.state.crew.shotsFired')
+  await evaluate(b,'qa.setCrew({steer:1,action:true,recoverHeld:true})')
+  const orbit=await evaluate(a,`new Promise(resolve=>{let last=qa.peer.state.boat.x,traveled=0;const end=performance.now()+4600;function frame(){const x=qa.peer.state.boat.x;traveled+=((x-last+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;last=x;if(performance.now()<end)requestAnimationFrame(frame);else resolve(traveled)}frame()})`)
+  if(orbit<2*Math.PI)throw Error(path+' held guest did not complete an orbit: '+orbit)
+  await waitFor(a,'qa.peer.state.hearts>=2');await waitFor(b,'qa.peer.getState().hearts>=2')
+  const stale=await evaluate(a,'({kind:"input",epoch:qa.peer.epoch,control:{...qa.peer.controls[qa.peer.remoteId]}})')
+  await evaluate(b,'qa.setCrew({steer:0,action:false,recoverHeld:false})')
+  await waitFor(a,'!qa.peer.controls[qa.peer.remoteId].action && !qa.peer.controls[qa.peer.remoteId].recoverHeld && qa.peer.controls[qa.peer.remoteId].steer===0')
+  await evaluate(a,'qa.peer.receiveRelay('+JSON.stringify(JSON.stringify(stale))+')')
+  await sleep(700)
+  const stopped=await evaluate(a,'({shots:qa.peer.state.crew.shotsFired,repair:qa.peer.state.crew.repair,heading:qa.peer.state.boat.heading})')
+  await sleep(250)
+  const later=await evaluate(a,'({shots:qa.peer.state.crew.shotsFired,repair:qa.peer.state.crew.repair,heading:qa.peer.state.boat.heading})')
+  if(stopped.shots<=before+20||later.shots!==stopped.shots||later.repair!==stopped.repair||Math.abs(later.heading)>.0001)throw Error(path+' held release/stale rejection failed '+JSON.stringify({stopped,later}))
+  await evaluate(a,"clearInterval(qaQuiet);qa.peer.state.objects=[{id:81001,type:'predator',enemy:'ambusher',x:qa.peer.state.boat.x,y:.1,radius:.04,phase:0,drift:0,age:0,hp:100,maxHp:100}]")
+  await evaluate(b,'qa.setCrew({targetId:81001})');await waitFor(a,'qa.peer.state.crew.targetId===81001');await sleep(250)
+  await waitFor(b,'qa.peer.getState().crew.targetId===81001')
+  await evaluate(b,'qa.setCrew({targetId:null})');await waitFor(a,'qa.peer.state.crew.targetId===null')
+  results.push({mode:'coop',path,heldControls:'guest full orbit, continuous fire, free held repair, release and stale rejection passed',orbit,targetSelection:'persistent selection and explicit clear passed'})
+}
 async function verifyTapBurst(a,b,path){
   const id=await evaluate(b,'qav.participant.id')
   await evaluate(a,"qa.peer.state.hearts=2;qa.peer.state.crew.scrap=3;qa.peer.state.crew.repair=0;qa.peer.state.objects=[];qa.peer.state.invulnerableTicks=10000")
   await waitFor(b,'qa.peer.getState().hearts===2 && qa.peer.getState().crew.scrap===3')
   const before=await evaluate(a,`({...qa.peer.state.crew.actions[${JSON.stringify(id)}]})`)
   // Three identical cumulative packets carry a burst; neither coalescing nor duplication may lose/add taps.
-  await evaluate(b,"(()=>{const p=qa.peer,send=p.send.bind(p);p.send=()=>{};for(let i=0;i<3;i++){qa.setCrew({tap:'right'});qa.setCrew({tap:'shoot'})}for(let i=0;i<6;i++)qa.setCrew({tap:'recover'});p.send=send;p.sendControl();p.sendControl();p.sendControl()})()")
-  await waitFor(a,`qa.peer.state.crew.actions[${JSON.stringify(id)}].recover===${(before.recover??0)+6}`)
+  await evaluate(b,"(()=>{const p=qa.peer,send=p.send.bind(p);p.send=()=>{};for(let i=0;i<3;i++){qa.setCrew({tap:'right'});qa.setCrew({tap:'shoot'})}for(let i=0;i<5;i++)qa.setCrew({tap:'recover'});p.send=send;p.sendControl();p.sendControl();p.sendControl()})()")
+  await waitFor(a,`qa.peer.state.crew.actions[${JSON.stringify(id)}].recover===${(before.recover??0)+5}`)
   await sleep(400)
   for(const session of [a,b]){
     const state=await evaluate(session,`({actions:qa.peer.getState().crew.actions[${JSON.stringify(id)}],hearts:qa.peer.getState().hearts,scrap:qa.peer.getState().crew.scrap})`)
-    if(state.actions.right!==(before.right??0)+3||state.actions.shoot!==(before.shoot??0)+3||state.actions.recover!==(before.recover??0)+6||state.hearts!==3)throw Error(path+' duplicate/coalesced taps failed: '+JSON.stringify(state))
+    if(state.actions.right!==(before.right??0)+3||state.actions.shoot!==(before.shoot??0)+3||state.actions.recover!==(before.recover??0)+5||state.hearts!==3)throw Error(path+' duplicate/coalesced taps failed: '+JSON.stringify(state))
   }
-  results.push({mode:'coop',path,tapBurst:'three steering + three shooting + six recovery taps, triplicate cumulative packets, exact once on both peers'})
+  results.push({mode:'coop',path,tapBurst:'three steering + three shooting + five recovery taps, triplicate cumulative packets, exact once on both peers'})
 }
 try{
   // Real browser RTC peers, through the real private room signaling endpoint.
@@ -50,7 +73,7 @@ try{
     if(response.localResponseMs>100)throw Error(mode+' did not predict input promptly: '+JSON.stringify(response))
     await sleep(250)
     const direct=await evaluate(a,'qav.peer')
-    if(mode==='coop')await verifyTapBurst(a,b,'direct')
+    if(mode==='coop'){await verifyTapBurst(a,b,'direct');await verifyHeldControls(a,b,'direct')}
     await evaluate(b,"Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'))")
     await waitFor(a,'qav.peer.paused');await waitFor(b,'qav.peer.paused')
     await evaluate(b,"Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'))")
@@ -69,7 +92,7 @@ try{
     await sleep(400)
     const after=await evaluate(b,'({epoch:qa.peer.epoch,tick:qa.peer.getState().tick,peer:qav.peer})')
     if(after.epoch!==epoch||after.peer.paused)throw Error('Fallback restarted or stalled the match')
-    if(mode==='coop')await verifyTapBurst(a,b,'relay')
+    if(mode==='coop'){await verifyTapBurst(a,b,'relay');await verifyHeldControls(a,b,'relay')}
     // Guest rematch adopts exactly the host's new epoch.
     await evaluate(a,"qa.peer.state.phase='finished'")
     try{await waitFor(b,"qa.peer.getState().phase==='finished'")}catch(error){console.log('Terminal relay diagnostic',mode,await evaluate(a,'({host:qa.peer.host,phase:qa.peer.getState().phase,tick:qa.peer.getState().tick,epoch:qa.peer.epoch,status:qav.peer})'),await evaluate(b,'({host:qa.peer.host,phase:qa.peer.getState().phase,tick:qa.peer.getState().tick,epoch:qa.peer.epoch,status:qav.peer})'));throw error}
@@ -96,7 +119,7 @@ try{
   await evaluate(mobile,"[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Solo Adventure')).click()")
   await waitFor(mobile,"document.querySelector('.expedition-countdown')===null && document.querySelector('.expedition-canvas')")
   await screenshot(mobile,'solo-mobile')
-  const multitouch={contract:'Four independent tap buttons; actual touch hold/burst covered by mobile-controls-smoke'}
+  const multitouch={contract:'Four independent hold/tap buttons; native simultaneous touches covered by orbital-controls-smoke'}
   const layout=await evaluate(mobile,"({overflow:document.documentElement.scrollWidth>innerWidth,canvas:document.querySelector('.expedition-canvas').getBoundingClientRect().toJSON(),control:document.querySelector('[data-action=right]').getBoundingClientRect().toJSON()})")
   if(layout.overflow||layout.canvas.width<100||layout.canvas.height<100||layout.control.bottom>844)throw Error('Mobile layout overflows: '+JSON.stringify(layout))
   await send('Emulation.setCPUThrottlingRate',{rate:4},mobile)
@@ -121,7 +144,7 @@ try{
       await evaluate(host,"crewProps.getState().hearts=2;crewProps.getState().objects=[];crewProps.getState().invulnerableTicks=600")
       for(const session of [host,guest])await waitFor(session,"document.querySelector('.crew-hull').dataset.hearts==='2' && document.querySelectorAll('.expedition-hearts svg.full').length===2")
       await evaluate(host,"crewProps.getState().crew.scrap=3")
-      await evaluate(guest,"for(let i=0;i<6;i++)crewProps.onCrew({tap:'recover'})")
+      await evaluate(guest,"for(let i=0;i<5;i++)crewProps.onCrew({tap:'recover'})")
       for(const session of [host,guest])await waitFor(session,"document.querySelector('.crew-hull').dataset.hearts==='3'",5000)
       for(const width of [320,375,390]) {
         await send('Emulation.setDeviceMetricsOverride',{width,height:740,deviceScaleFactor:1,mobile:true},guest)
@@ -129,7 +152,7 @@ try{
         if(hull.left<0||hull.right>width||hull.icons!==3||hull.overflow)throw Error('Guest hull/layout clipped '+JSON.stringify(hull))
         await screenshot(guest,'guest-hull-'+width)
       }
-      results.push({health:'host+guest damage and six guest tap repair passed',guestWidths:[320,375,390],vectorHearts:'visible'})
+      results.push({health:'host+guest damage and five guest tap repair passed',guestWidths:[320,375,390],vectorHearts:'visible'})
     } else {
       for(const [width,height] of [[320,568],[390,844],[844,390],[1440,900]]){
         await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},guest)

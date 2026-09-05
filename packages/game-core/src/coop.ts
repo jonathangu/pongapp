@@ -19,8 +19,9 @@ export type CrewTap = 'left' | 'right' | 'shoot' | 'recover'
 export const RIVER_WIDTH = 14
 export const RIVER_MIN_X = .06
 export const RIVER_MAX_X = .94
-export const RECOVERY_TAPS = 6
+export const RECOVERY_TAPS = 5
 export const RECOVERY_SCRAP = 3
+export const RECOVERY_WORK = 180
 export interface CrewShot {
   id: number; ownerId: string; targetId: number | null
   x: number; y: number; fromX: number; fromY: number; toX: number; toY: number
@@ -85,7 +86,7 @@ export type CoopEvent =
   | { type: 'tripFinished'; score: number; distance: number }
 
 export interface CoopGameState {
-  rulesetVersion: 8
+  rulesetVersion: 9
   phase: 'countdown' | 'playing' | 'finished'
   tick: number
   countdownTicks: number
@@ -116,7 +117,7 @@ export interface CoopGameState {
 }
 
 /** Tap flags are one-tick pulses produced by idempotent action counters, not held levels. */
-export interface CoopInput { paddle: number; flare?: boolean; steer?: number; action?: boolean; station?: CrewStation; upgrade?: CrewUpgrade; targetId?: number | null; leftTap?: boolean; rightTap?: boolean; shootTap?: boolean; recoverTap?: boolean }
+export interface CoopInput { paddle: number; flare?: boolean; steer?: number; action?: boolean; recoverHeld?: boolean; station?: CrewStation; upgrade?: CrewUpgrade; targetId?: number | null; leftTap?: boolean; rightTap?: boolean; shootTap?: boolean; recoverTap?: boolean }
 export type CoopInputs = Record<string, CoopInput>
 
 function random(state: CoopGameState): number {
@@ -142,7 +143,7 @@ export function createCoopGame(humans: Array<{ id: string; name: string }>, seed
   const players: Record<string, CoopPlayer> = {}
   humans.slice(0, 2).forEach((human, index) => { players[human.id] = { ...human, side: index === 0 ? 'left' : 'right', station: index === 0 ? 'pilot' : 'gunner' } })
   const state: CoopGameState = {
-    rulesetVersion: 8, phase: 'countdown', tick: 0, countdownTicks: COOP_TICK_RATE * 3,
+    rulesetVersion: 9, phase: 'countdown', tick: 0, countdownTicks: COOP_TICK_RATE * 3,
     durationTicks: COOP_TICK_RATE * COOP_MATCH_SECONDS, seed: seed || 1, nextObjectId: 1, players,
     boat: { x: 0.5, heading: 0, speed: 0, wake: 0 }, paddles: { left: 0, right: 0 }, objects: [],
     score: 0, hearts: 3, streak: 0, bestStreak: 0, distance: 0, harmony: 0, rushTicks: 0,

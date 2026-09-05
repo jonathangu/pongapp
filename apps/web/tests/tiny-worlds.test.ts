@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import { readFileSync } from 'node:fs'
 import { tinyWorldCamera } from '../src/game/TinyWorldScene'
-import { CYLINDER_RADIUS, cylinderPoint, projectRolling, skyDropHeight, worldRoll } from '../src/game/RollingWorld'
-import { RIVER_WIDTH, type RiverObject } from '@pongapp/game-core'
+import { CYLINDER_RADIUS, cylinderPoint, followRoll, orbitVisible, projectRolling, rollingCamera, skyDropHeight, worldRoll } from '../src/game/RollingWorld'
+import { ORBIT_LAP, RIVER_WIDTH, type RiverObject } from '@pongapp/game-core'
 
 describe('tiny-world art contract', () => {
   it('keeps forward up-screen and the playable width visible on phone and desktop', () => {
@@ -50,6 +50,20 @@ describe('tiny-world art contract', () => {
     }
     expect(skyDropHeight(object('predator',-.08))).toBe(0)
     expect(skyDropHeight(object('gate',-.08))).toBe(0)
+  })
+  it('tilts exactly ten degrees farther downward and follows a wrap without rotating the long way',()=>{
+    for(const [w,h] of [[390,500],[844,180],[1440,700]]){
+      const c=rollingCamera(w!,h!),baseline=Math.max(10,Math.min(26,c.halfFov*180/Math.PI-8))
+      expect(c.pitch*180/Math.PI-baseline).toBeCloseTo(10,10)
+    }
+    const before=worldRoll(ORBIT_LAP-.01),after=followRoll(before,.01,16)
+    expect(after).toBeGreaterThan(before);expect(after-before).toBeLessThan(.02*RIVER_WIDTH)
+    for(const x of [0,.5,2,5]){
+      const roll=worldRoll(x),a=projectRolling(390,500,x,.76,0,roll),b=projectRolling(390,500,x+ORBIT_LAP,.76,0,roll)
+      expect(a[0]).toBeCloseTo(b[0],9);expect(a[1]).toBeCloseTo(b[1],9)
+      expect(orbitVisible(390,500,x,roll)).toBe(true)
+      expect(orbitVisible(390,500,x+ORBIT_LAP/2,roll)).toBe(false)
+    }
   })
   it('ships a valid local GLB with original one-primitive, vertex-painted assets', () => {
     const bytes=readFileSync(new URL('../public/art/tiny-worlds.glb',import.meta.url))
