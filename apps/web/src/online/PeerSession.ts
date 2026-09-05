@@ -1,6 +1,6 @@
 import { restartCoopGame, restartVersusGame } from '@pongapp/game-core'
 import type { OnlineGameState } from '@pongapp/protocol'
-import { neutralControl, stepLocal, validControl, type Controls } from './LocalSimulation'
+import { neutralControl, stepLocal, validControl, type Controls, type CrewControl } from './LocalSimulation'
 
 export interface PeerStatus { path: 'connecting' | 'local' | 'direct' | 'relay'; rtt: number | null; paused: boolean }
 interface Frame { kind: 'frame'; epoch: string; state: OnlineGameState; controls: Controls; consumed: Controls }
@@ -15,6 +15,8 @@ export class PeerSession {
   private controls: Controls = {}
   private consumed: Controls = {}
   private state: OnlineGameState
+  private confirmedHearts = 3
+  private confirmedPhase: OnlineGameState['phase'] = 'countdown'
   private epoch = ''
   private retiredEpochs = new Set<string>()
   private lastFrame = -1
@@ -34,6 +36,8 @@ export class PeerSession {
     initial: OnlineGameState, private readonly relay: (data: string) => void,
     private readonly publish: (state: OnlineGameState) => void, private readonly report: (status: PeerStatus) => void) {
     this.state = structuredClone(initial)
+    if (initial.rulesetVersion === 7) this.confirmedHearts = initial.hearts
+    this.confirmedPhase = initial.phase
     this.controls[id] = neutralControl(); this.controls[remoteId] = neutralControl()
     if (host) this.epoch = crypto.randomUUID()
     this.timer = window.setInterval(() => this.tick(), 1000 / 60)
@@ -42,6 +46,16 @@ export class PeerSession {
   }
 
   getState(): OnlineGameState { return this.state }
+  /** Confirmed team health is never replaced by speculative guest collisions. */
+  private publishState(): void {
+    this.publish(!this.host && this.state.rulesetVersion === 7 ? { ...this.state, hearts: this.confirmedHearts, phase: this.confirmedPhase } : this.state)
+  }
+  setCrew(patch: Partial<CrewControl>): void {
+    const control = this.controls[this.id]!
+    if (patch.station !== undefined) control.stationSeq++
+    if (patch.upgrade !== undefined) control.upgradeSeq++
+    Object.assign(control, patch); control.seq++; this.sendControl()
+  }
   setPaddle(paddle: number): void { this.controls[this.id]!.paddle = paddle; this.controls[this.id]!.seq += 1; this.sendControl() }
   tap(): void { this.controls[this.id]!.taps += 1; this.controls[this.id]!.seq += 1; this.sendControl() }
   flare(): void { this.controls[this.id]!.flares += 1; this.controls[this.id]!.seq += 1; this.sendControl() }
@@ -50,9 +64,9 @@ export class PeerSession {
     if (!this.host) { this.send({ kind: 'rematch' }); return }
     this.state = this.state.rulesetVersion === 6 ? restartVersusGame(this.state) : restartCoopGame(this.state)
     this.epoch = crypto.randomUUID(); this.lastFrame = -1
-    this.controls[this.id]!.paddle = 0; this.controls[this.remoteId]!.paddle = 0
+    for (const control of Object.values(this.controls)) { control.paddle = 0; control.steer = 0; control.action = false; control.targetId = null }
     this.consumed = structuredClone(this.controls)
-    this.sendFrame(); this.publish(this.state)
+    this.sendFrame(); this.publishState()
   }
   receiveRelay(data: string): void { this.receive(data) }
   close(): void { this.disposed = true; clearInterval(this.timer); clearInterval(this.statsTimer); this.pc?.close() }
@@ -104,6 +118,7 @@ export class PeerSession {
     }
     this.lastPeerAt = performance.now()
     if (m.kind === 'input' && validControl(m.control)) {
+      if (typeof m.epoch === 'string' && m.epoch && this.epoch && m.epoch !== this.epoch) return
       this.remoteActive = m.active !== false
       if (m.control.seq >= this.controls[this.remoteId]!.seq && m.control.taps-this.controls[this.remoteId]!.taps<=64 && m.control.flares-this.controls[this.remoteId]!.flares<=64) this.controls[this.remoteId] = { ...m.control }
       if (this.host && !this.ready) { this.ready = true; this.sendFrame() }
@@ -119,12 +134,14 @@ export class PeerSession {
       const own = this.controls[this.id]!
       this.epoch = f.epoch; this.lastFrame = f.state.tick
       this.state = structuredClone(f.state); this.consumed = structuredClone(f.consumed)
+      if (f.state.rulesetVersion === 7) this.confirmedHearts = f.state.hearts
+      this.confirmedPhase = f.state.phase
       this.controls = structuredClone(f.controls)
       // Reapply locally issued controls not yet represented by the host snapshot.
       if (!fresh && own.seq > this.controls[this.id]!.seq) this.controls[this.id] = own
       const ahead = fresh ? 0 : Math.min(8, Math.max(0, oldTick - this.state.tick, Math.round((this.status.rtt ?? 0) * .03)))
       for (let i = 0; i < ahead; i += 1) stepLocal(this.state, this.controls, this.consumed)
-      this.ready = true; this.publish(this.state)
+      this.ready = true; this.publishState()
     } else if (m.kind === 'ping' && typeof m.at === 'number') this.send({ kind: 'pong', at: m.at })
     else if (m.kind === 'pong' && typeof m.at === 'number') this.setStatus({ rtt: Math.round(Math.max(0, performance.now() - m.at)) })
     else if (m.kind === 'rematch' && this.host) this.rematch()
@@ -141,12 +158,12 @@ export class PeerSession {
       while (this.accumulator >= 1000 / 60 && steps < 6) {
         stepLocal(this.state, this.controls, this.consumed); this.accumulator -= 1000 / 60; steps += 1
       }
-      if (steps) this.publish(this.state)
+      if (steps) this.publishState()
     } else this.accumulator = 0
     if (this.host && this.ready && now - this.lastSend >= (this.direct() ? 50 : 100)) { this.sendFrame(); this.lastSend = now }
     if (this.status.path === 'connecting' && now - this.lastPeerAt < 150 && this.ready) this.setStatus({ path: 'relay' })
   }
-  private sendControl(): void { this.send({ kind: 'input', control: this.controls[this.id], active: document.visibilityState === 'visible' }) }
+  private sendControl(): void { this.send({ kind: 'input', epoch: this.epoch, control: this.controls[this.id], active: document.visibilityState === 'visible' }) }
   private sendFrame(): void { this.send({ kind: 'frame', epoch: this.epoch, state: this.state, controls: this.controls, consumed: this.consumed }, true) }
   private direct(): boolean { return this.controlChannel?.readyState === 'open' && this.pc?.connectionState === 'connected' }
   private send(message: unknown, snapshot = false): void {

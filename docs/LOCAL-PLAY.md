@@ -17,6 +17,27 @@ phone and desktop visual inspection, production deployment and smoke.
 Physical iPhone hotspot combinations require device verification; browsers and
 network isolation policies can prevent direct traffic even on the same network.
 
+## Crew combat upgrade — September 2026
+
+The user confirmed the earlier latency/Wi-Fi changes work on their actual two-phone
+setup. Keep that evidence distinct from our same-Mac browser measurements.
+
+Protocol 6 / co-op ruleset 7 adds pilot, gunner and engineer controls while preserving
+the same direct RTC channels, signaling, fixed-tick local prediction and relay path.
+Versus ruleset remains 6. Refresh both phones after this release. Existing Worker
+room identities/seats are retained across protocol-5 storage loading; incompatible
+old co-op simulation state starts fresh with the new rules instead of being replayed.
+
+Station/upgrade requests are sequence-counted, and occupied station swaps require
+the partner's agreement. Each player can occupy one station. Crew inputs include
+steering, held operation, a one-shot ability and a priority target. Auto-turrets fire
+weakly unattended. Engineer repairs cost 3 scrap and restore 1 of 3 shared hearts.
+Both HUDs show numeric and vector health; the guest HUD uses confirmed host health
+instead of speculative predicted damage. Victory requires 3 rescues plus defeating
+the final guardian before extraction closes. Solo Scout fills an unattended role.
+
+Detailed design and release evidence: `CREW-COMBAT-PLAN.md`, `CREW-RELEASE.md`.
+
 ## Verification receipt — 2026-09-04
 
 - `pnpm check`: lint, typecheck, 70 tests, production builds passed.

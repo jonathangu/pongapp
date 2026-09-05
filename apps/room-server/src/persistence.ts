@@ -19,7 +19,7 @@ export interface StoredRoomRecord {
 }
 
 interface RoomDatabase {
-  version: 5
+  version: 6
   rooms: Record<string, StoredRoomRecord>
 }
 
@@ -34,7 +34,7 @@ export class FileRoomStore {
       const parsed = JSON.parse(await readFile(this.path, 'utf8')) as Partial<RoomDatabase>
       // v5 is intentionally a hard ruleset cut. Ignore persisted older rooms so
       // the server can boot cleanly on the existing Fly volume.
-      if (parsed.version !== 5 || !parsed.rooms) return new Map()
+      if (parsed.version !== 6 || !parsed.rooms) return new Map()
       for (const [code, record] of Object.entries(parsed.rooms)) this.records.set(code, record)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -44,7 +44,7 @@ export class FileRoomStore {
 
   save(code: string, record: StoredRoomRecord): Promise<void> {
     this.records.set(code, structuredClone(record))
-    const database: RoomDatabase = { version: 5, rooms: Object.fromEntries(this.records) }
+    const database: RoomDatabase = { version: 6, rooms: Object.fromEntries(this.records) }
     const payload = JSON.stringify(database)
     const temporaryPath = `${this.path}.next`
     this.writeQueue = this.writeQueue.catch((error: unknown) => {

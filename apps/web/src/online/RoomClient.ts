@@ -1,6 +1,7 @@
 import { COOP_TICK_RATE, type CoopGameState } from '@pongapp/game-core'
 import { PROTOCOL_VERSION, type ClientMessage, type CreateRoomRequest, type RoomLobby, type RoomParticipant, type ServerMessage } from '@pongapp/protocol'
 import { PeerSession, type PeerStatus } from './PeerSession'
+import type { CrewControl } from './LocalSimulation'
 
 export type RoomClientStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
 export type ConnectionQuality = 'good' | 'fair' | 'poor'
@@ -84,7 +85,7 @@ export class RoomClient {
   subscribeState(listener: (state: CoopGameState) => void): () => void { this.stateListeners.add(listener); if (this.view.gameState) listener(this.view.gameState); return () => this.stateListeners.delete(listener) }
   getRenderState(): CoopGameState {
     const local = this.peer?.getState()
-    if (local?.rulesetVersion === 5) return local
+    if (local?.rulesetVersion === 7) return local
     const latest = this.snapshots.at(-1)
     if (!latest) { if (!this.view.gameState) throw new Error('No river snapshot is available.'); return cloneState(this.view.gameState) }
     const clone = cloneState(latest.state); const previous = this.snapshots.at(-2)
@@ -97,6 +98,7 @@ export class RoomClient {
   }
   setPaddle(power: number): void { const next = Math.max(0, Math.min(1, power)); if (next === this.paddle) return; this.paddle = next; if (this.peer) { this.peer.setPaddle(next); return }; this.paddleChanged = true; this.controlActivated = true; this.flushInput() }
   flare(): void { this.peer?.flare() }
+  setCrew(patch: Partial<CrewControl>): void { this.peer?.setCrew(patch) }
   reportTelemetry(event: 'control_surface_visible' | 'room_full_visible'): void { this.send({ type: 'clientTelemetry', event }) }
   reportPerformance(sample: ClientPerformanceSample): void { this.send({ type: 'clientTelemetry', event: 'performance_sample', ...sample }) }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
@@ -123,7 +125,7 @@ export class RoomClient {
       const participant = message.lobby.participants.find((candidate) => candidate.id === this.view.participant?.id) ?? this.view.participant
       this.patch({ participant, lobby: message.lobby, status: message.lobby.phase === 'lobby' ? 'lobby' : 'playing' })
     } else if (message.type === 'snapshot' || message.type === 'result') {
-      if (message.state.rulesetVersion !== 5) return
+      if (message.state.rulesetVersion !== 7) return
       if (this.peer) return
       const me = this.view.participant
       const other = this.view.lobby?.participants.find((p) => p.slot !== null && p.id !== me?.id)
@@ -131,7 +133,7 @@ export class RoomClient {
         this.peer = new PeerSession(me.id, other.id, me.slot === 0, message.state,
           (data) => this.send({ type: 'peerSignal', targetId: other.id, data }),
           (state) => {
-            if (state.rulesetVersion !== 5) return
+            if (state.rulesetVersion !== 7) return
             this.view = { ...this.view, gameState: state, status: 'playing' }
             // HUD updates are throttled; the canvas reads local state every frame.
             if (state.tick % 6 === 0 || state.events.length || state.phase === 'finished') for (const listener of this.listeners) listener(this.view)

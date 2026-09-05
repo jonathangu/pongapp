@@ -1,5 +1,5 @@
 const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
-const PROTOCOL_VERSION = 5
+const PROTOCOL_VERSION = 6
 const gameMode = process.env.GAME_MODE === 'versus' ? 'versus' : 'coop'
 const roomName = gameMode === 'versus' ? 'Smoke Race' : 'Smoke Boat'
 
@@ -104,9 +104,9 @@ try {
     clients[0],
     (message) => message.type === 'snapshot'
       && message.acknowledgedSeq >= 1
-      && (gameMode === 'versus' ? message.state.racers[clients[0].playerId].lane === 1 : message.state.paddles.left === 1),
+      && (gameMode === 'versus' ? message.state.racers[clients[0].playerId].lane === 1 : message.state.crew && message.state.boat.speed > 0),
   )
-  invariant(paddled.state.rulesetVersion === (gameMode === 'versus' ? 6 : 5), `Expected the ${gameMode} ruleset`)
+  invariant(paddled.state.rulesetVersion === (gameMode === 'versus' ? 6 : 7), `Expected the ${gameMode} ruleset`)
 
   const latencySamples = []
   for (let index = 0; index < 7; index += 1) {

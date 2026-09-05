@@ -5,7 +5,7 @@ import { neutralControl, stepLocal, type Controls } from '../src/online/LocalSim
 describe('local prediction and idempotent actions',()=>{
   it('moves the boat on the very next local tick without a server response',()=>{
     const state=createCoopGame([{id:'a',name:'A'},{id:'b',name:'B'}],42);state.phase='playing'
-    const controls={a:{...neutralControl(),paddle:1},b:neutralControl()}
+    const controls={a:{...neutralControl(),steer:1},b:neutralControl()}
     stepLocal(state,controls,{})
     expect(state.boat.x).toBeGreaterThan(.5)
   })

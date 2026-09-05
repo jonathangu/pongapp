@@ -30,11 +30,26 @@ try{
     for(const [session,index] of [[a,0],[b,1]])await evaluate(session,`(async()=>{const {${cls}}=await import(${JSON.stringify(new URL('src/online/'+cls+'.ts',ui).href)});globalThis.qa=new ${cls}(${JSON.stringify(server)},${JSON.stringify(roomCode)},{guestId:'qa-'+crypto.randomUUID(),displayName:'Player ${index}'});qa.subscribe(v=>globalThis.qav=v);qa.connect()})()`)
     await waitFor(a,"qav.peer?.path==='local' && !qav.peer.paused && qav.gameState?.phase==='playing'",20000)
     await waitFor(b,"qav.peer?.path==='local' && !qav.peer.paused && qav.gameState?.phase==='playing'",20000)
+    if(mode==='coop') {
+      await evaluate(b,"qa.setCrew({station:'pilot'})");await sleep(150)
+      await evaluate(a,"qa.setCrew({station:'gunner'})");await sleep(150)
+      await waitFor(b,"qa.peer.getState().players[qav.participant.id].station==='pilot'")
+    }
     // Deliberately prevent all outbound gameplay on the guest. Its local control must still respond.
-    const response=await evaluate(b,`new Promise(resolve=>{const p=qa.peer;const original=p.send.bind(p);p.send=()=>{};const before=${mode==='coop'?'p.getState().boat.x':'p.getState().racers[qav.participant.id].lane'};const at=performance.now();qa.${mode==='coop'?'setPaddle(1)':'tap()'};const poll=()=>{const after=${mode==='coop'?'p.getState().boat.x':'p.getState().racers[qav.participant.id].lane'};if(after!==before){p.send=original;resolve({localResponseMs:performance.now()-at,before,after})}else if(performance.now()-at>300){p.send=original;resolve({localResponseMs:999,before,after})}else requestAnimationFrame(poll)};requestAnimationFrame(poll)})`)
+    const response=await evaluate(b,`new Promise(resolve=>{const p=qa.peer;const original=p.send.bind(p);p.send=()=>{};const before=${mode==='coop'?'p.getState().boat.x':'p.getState().racers[qav.participant.id].lane'};const at=performance.now();qa.${mode==='coop'?'setCrew({steer:1})':'tap()'};const poll=()=>{const after=${mode==='coop'?'p.getState().boat.x':'p.getState().racers[qav.participant.id].lane'};if(after!==before){p.send=original;resolve({localResponseMs:performance.now()-at,before,after})}else if(performance.now()-at>300){p.send=original;resolve({localResponseMs:999,before,after})}else requestAnimationFrame(poll)};requestAnimationFrame(poll)})`)
     if(response.localResponseMs>100)throw Error(mode+' did not predict input promptly: '+JSON.stringify(response))
     await sleep(250)
     const direct=await evaluate(a,'qav.peer')
+    await evaluate(b,"Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'))")
+    await waitFor(a,'qav.peer.paused');await waitFor(b,'qav.peer.paused')
+    await evaluate(b,"Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'))")
+    await waitFor(a,'!qav.peer.paused');await waitFor(b,'!qav.peer.paused')
+    // Cloud signaling reconnect must not reset an already established direct game.
+    const reconnectEpoch=await evaluate(a,'qa.peer.epoch')
+    await evaluate(a,"qa.socket.close(4002,'QA reconnect')")
+    try { await waitFor(a,"qa.socket?.readyState===1 && qav.status==='playing'",10000) }
+    catch(error){console.log('Reconnect diagnostic',mode,await evaluate(a,'({status:qav.status,error:qav.error,socket:qa.socket?.readyState,peer:qav.peer})'));throw error}
+    if(await evaluate(a,'qa.peer.epoch')!==reconnectEpoch)throw Error('Signaling reconnect reset direct match')
     const epoch=await evaluate(a,'qa.peer.epoch')
     const oldFrame=await evaluate(a,"({kind:'frame',epoch:qa.peer.epoch,state:qa.peer.state,controls:qa.peer.controls,consumed:qa.peer.consumed})")
     // Force ICE failure: relay must preserve host authority and epoch, with both simulations running.
@@ -50,7 +65,12 @@ try{
     if(rematchA===epoch||rematchA!==rematchB)throw Error('Rematch epoch mismatch')
     await evaluate(b,'qa.peer.receiveRelay('+JSON.stringify(JSON.stringify(oldFrame))+')')
     if(await evaluate(b,'qa.peer.epoch')!==rematchA)throw Error('An old packet undid the rematch')
-    results.push({mode,...response,direct,relay:after.peer,rematch:'passed'})
+    if(mode==='coop') {
+      const lateInput=await evaluate(a,'({kind:"input",epoch:'+JSON.stringify(epoch)+',control:{...qa.peer.controls[qa.peer.remoteId],steer:1,seq:qa.peer.controls[qa.peer.remoteId].seq+1}})')
+      await evaluate(a,'qa.peer.receiveRelay('+JSON.stringify(JSON.stringify(lateInput))+')')
+      if(await evaluate(a,'qa.peer.controls[qa.peer.remoteId].steer')!==0)throw Error('Prior-match input leaked into rematch')
+    }
+    results.push({mode,...response,direct,relay:after.peer,rematch:'passed',backgroundResume:'passed',signalingReconnect:'passed'})
     await evaluate(a,'qa.close()');await evaluate(b,'qa.close()')
   }
   const mobile=await page(),desktop=await page(1440,960)
@@ -63,6 +83,11 @@ try{
   if(!multitouch.held||!multitouch.released)throw Error('Flare pointer incorrectly releases steering')
   const layout=await evaluate(mobile,"({overflow:document.documentElement.scrollWidth>innerWidth,canvas:document.querySelector('canvas').getBoundingClientRect().toJSON(),control:document.querySelector('.river-paddle').getBoundingClientRect().toJSON()})")
   if(layout.overflow||layout.control.bottom>844)throw Error('Mobile layout overflows: '+JSON.stringify(layout))
+  await send('Emulation.setCPUThrottlingRate',{rate:4},mobile)
+  const performanceSample=await evaluate(mobile,`new Promise(resolve=>{const gaps=[];let last=performance.now();const end=last+6000;function frame(now){gaps.push(now-last);last=now;if(now<end)requestAnimationFrame(frame);else{gaps.sort((a,b)=>a-b);resolve({cpuSlowdown:4,durationMs:6000,frameP95Ms:gaps[Math.floor(gaps.length*.95)],maxFrameMs:gaps.at(-1),freezes:gaps.filter(n=>n>250).length})}}requestAnimationFrame(frame)})`)
+  await send('Emulation.setCPUThrottlingRate',{rate:1},mobile)
+  if(performanceSample.freezes>0||performanceSample.frameP95Ms>40)throw Error('Mobile frame budget regression: '+JSON.stringify(performanceSample))
+  results.push({performanceSample})
   // Full invitation UI: host creates a room; a fresh browser opens the exact shared URL.
   for(const mode of ['coop','versus']) {
     const host=await page(1440,960),guest=await page()
@@ -74,6 +99,25 @@ try{
     await waitFor(host,"document.querySelector('[data-path=local]') && !document.querySelector('.expedition-pause')",20000)
     await waitFor(guest,"document.querySelector('[data-path=local]') && !document.querySelector('.expedition-pause')",20000)
     await sleep(3300);await screenshot(guest,mode+'-invite-mobile');await screenshot(host,mode+'-play-desktop')
+    if(mode==='coop') {
+      // Inspect the actual React control surface, not a second diagnostic game.
+      for(const session of [host,guest]) await evaluate(session,`(()=>{const node=document.querySelector('.crew-game');let f=node[Object.keys(node).find(k=>k.startsWith('__reactFiber$'))];while(f&&!f.memoizedProps?.getState)f=f.return;if(!f)throw Error('Missing game props');globalThis.crewProps=f.memoizedProps})()`)
+      await evaluate(host,"crewProps.getState().hearts=2;crewProps.getState().objects=[];crewProps.getState().invulnerableTicks=600")
+      for(const session of [host,guest])await waitFor(session,"document.querySelector('.crew-hull').dataset.hearts==='2' && document.querySelectorAll('.expedition-hearts svg.full').length===2")
+      await evaluate(guest,"crewProps.onCrew({station:'engineer'})")
+      await waitFor(guest,"document.querySelector('.crew-action-row').dataset.station==='engineer'")
+      await evaluate(host,"crewProps.getState().crew.scrap=3")
+      await evaluate(guest,"crewProps.onCrew({action:true})")
+      for(const session of [host,guest])await waitFor(session,"document.querySelector('.crew-hull').dataset.hearts==='3'",5000)
+      await evaluate(guest,"crewProps.onCrew({action:false})")
+      for(const width of [320,375,390]) {
+        await send('Emulation.setDeviceMetricsOverride',{width,height:740,deviceScaleFactor:1,mobile:true},guest)
+        const hull=await evaluate(guest,"(()=>{const r=document.querySelector('.crew-hull').getBoundingClientRect();return {width:innerWidth,left:r.left,right:r.right,icons:document.querySelectorAll('.expedition-hearts svg').length,overflow:document.documentElement.scrollWidth>innerWidth}})()")
+        if(hull.left<0||hull.right>width||hull.icons!==3||hull.overflow)throw Error('Guest hull/layout clipped '+JSON.stringify(hull))
+        await screenshot(guest,'guest-hull-'+width)
+      }
+      results.push({health:'host+guest damage and actual engineer repair passed',guestWidths:[320,375,390],vectorHearts:'visible'})
+    }
     results.push({mode,invitationUI:'passed',directPath:'local'})
   }
   if(errors.length)throw Error('Browser errors: '+JSON.stringify(errors))

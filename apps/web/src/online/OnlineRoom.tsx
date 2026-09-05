@@ -4,6 +4,7 @@ import type { CreateRoomRequest } from '@pongapp/protocol'
 import { CoopRiver } from '../game/CoopRiver'
 import { inviteUrlFor, normalizeRoomCode, pongHomeUrlFor } from './invite'
 import { RoomClient, type RoomClientView } from './RoomClient'
+import type { CrewControl } from './LocalSimulation'
 
 interface Props {
   serverUrl: string
@@ -50,6 +51,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
   const subscribeState = useCallback((listener: (state: CoopGameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
   const setPaddle = useCallback((power: number) => clientRef.current?.setPaddle(power), [])
   const flare = useCallback(() => clientRef.current?.flare(), [])
+  const crew = useCallback((patch: Partial<CrewControl>) => clientRef.current?.setCrew(patch), [])
   const rematch = useCallback(() => clientRef.current?.rematch(), [])
   const participantId = view.participant?.id
   const activeRoomCode = normalizeRoomCode(view.roomCode || roomCode || view.lobby?.roomCode || '')
@@ -106,5 +108,5 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
     </section>
   }
 
-  return <CoopRiver getState={getState} subscribe={subscribeState} localPlayerId={participantId} title={roomName} roomCode={view.roomCode} network={{ latencyMs: view.latencyMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting', peer: view.peer }} onPaddle={setPaddle} onFlare={flare} onExit={exit} onRematch={rematch} />
+  return <CoopRiver getState={getState} subscribe={subscribeState} localPlayerId={participantId} title={roomName} roomCode={view.roomCode} network={{ latencyMs: view.latencyMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting', peer: view.peer }} onPaddle={setPaddle} onCrew={crew} onFlare={flare} onExit={exit} onRematch={rematch} />
 }

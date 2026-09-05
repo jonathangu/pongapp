@@ -36,7 +36,7 @@ export class GameRoom {
         participant.disconnectedAt = Date.now()
         this.participants.set(participant.id, participant)
       }
-      this.game = restored.game && (restored.game.rulesetVersion === 5 || restored.game.rulesetVersion === 6) ? structuredClone(restored.game) : null
+      this.game = restored.game && (restored.game.rulesetVersion === 7 || restored.game.rulesetVersion === 6) ? structuredClone(restored.game) : null
     }
     if (this.game && this.game.phase !== 'finished') this.startLoop()
   }
