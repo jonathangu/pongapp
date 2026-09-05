@@ -1,0 +1,268 @@
+{
+  "results": [
+    {
+      "world": 0,
+      "cpuSlowdown": 4,
+      "durationMs": 5000,
+      "frames": 301,
+      "frameP95Ms": 16.799999999999272,
+      "maxFrameMs": 16.80000000000109,
+      "freezes": 0,
+      "maxDrawCalls": 20,
+      "maxTriangles": 159754,
+      "maxRenderMs": 1.1,
+      "dpr": 1.5,
+      "renderer": "webgl-3d"
+    },
+    {
+      "world": 1,
+      "cpuSlowdown": 4,
+      "durationMs": 5000,
+      "frames": 302,
+      "frameP95Ms": 16.700000000000728,
+      "maxFrameMs": 16.80000000000291,
+      "freezes": 0,
+      "maxDrawCalls": 20,
+      "maxTriangles": 124084,
+      "maxRenderMs": 1,
+      "dpr": 1.5,
+      "renderer": "webgl-3d"
+    },
+    {
+      "world": 2,
+      "cpuSlowdown": 4,
+      "durationMs": 5000,
+      "frames": 302,
+      "frameP95Ms": 16.799999999999272,
+      "maxFrameMs": 16.80000000000291,
+      "freezes": 0,
+      "maxDrawCalls": 21,
+      "maxTriangles": 97102,
+      "maxRenderMs": 0.8,
+      "dpr": 1.5,
+      "renderer": "webgl-3d"
+    },
+    {
+      "world": 3,
+      "cpuSlowdown": 4,
+      "durationMs": 5000,
+      "frames": 301,
+      "frameP95Ms": 16.700000000000728,
+      "maxFrameMs": 16.80000000000291,
+      "freezes": 0,
+      "maxDrawCalls": 24,
+      "maxTriangles": 112106,
+      "maxRenderMs": 1,
+      "dpr": 1.5,
+      "renderer": "webgl-3d"
+    },
+    {
+      "world": 4,
+      "cpuSlowdown": 4,
+      "durationMs": 5000,
+      "frames": 301,
+      "frameP95Ms": 16.700000000004366,
+      "maxFrameMs": 16.80000000000291,
+      "freezes": 0,
+      "maxDrawCalls": 21,
+      "maxTriangles": 64754,
+      "maxRenderMs": 1,
+      "dpr": 1.5,
+      "renderer": "webgl-3d"
+    }
+  ],
+  "layout": [
+    {
+      "width": 320,
+      "height": 700,
+      "overflow": false,
+      "hearts": [
+        {
+          "x": 127,
+          "y": 68.5,
+          "width": 19,
+          "height": 19,
+          "top": 68.5,
+          "right": 146,
+          "bottom": 87.5,
+          "left": 127
+        },
+        {
+          "x": 152,
+          "y": 68.5,
+          "width": 19,
+          "height": 19,
+          "top": 68.5,
+          "right": 171,
+          "bottom": 87.5,
+          "left": 152
+        },
+        {
+          "x": 177,
+          "y": 68.5,
+          "width": 19,
+          "height": 19,
+          "top": 68.5,
+          "right": 196,
+          "bottom": 87.5,
+          "left": 177
+        }
+      ],
+      "canvas": {
+        "x": 0,
+        "y": 93,
+        "width": 320,
+        "height": 480.8125,
+        "top": 93,
+        "right": 320,
+        "bottom": 573.8125,
+        "left": 0
+      }
+    },
+    {
+      "width": 375,
+      "height": 812,
+      "overflow": false,
+      "hearts": [
+        {
+          "x": 148.5,
+          "y": 80.5,
+          "width": 22,
+          "height": 22,
+          "top": 80.5,
+          "right": 170.5,
+          "bottom": 102.5,
+          "left": 148.5
+        },
+        {
+          "x": 176.5,
+          "y": 80.5,
+          "width": 22,
+          "height": 22,
+          "top": 80.5,
+          "right": 198.5,
+          "bottom": 102.5,
+          "left": 176.5
+        },
+        {
+          "x": 204.5,
+          "y": 80.5,
+          "width": 22,
+          "height": 22,
+          "top": 80.5,
+          "right": 226.5,
+          "bottom": 102.5,
+          "left": 204.5
+        }
+      ],
+      "canvas": {
+        "x": 0,
+        "y": 112,
+        "width": 375,
+        "height": 540.234375,
+        "top": 112,
+        "right": 375,
+        "bottom": 652.234375,
+        "left": 0
+      }
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "overflow": false,
+      "hearts": [
+        {
+          "x": 156,
+          "y": 80.5,
+          "width": 22,
+          "height": 22,
+          "top": 80.5,
+          "right": 178,
+          "bottom": 102.5,
+          "left": 156
+        },
+        {
+          "x": 184,
+          "y": 80.5,
+          "width": 22,
+          "height": 22,
+          "top": 80.5,
+          "right": 206,
+          "bottom": 102.5,
+          "left": 184
+        },
+        {
+          "x": 212,
+          "y": 80.5,
+          "width": 22,
+          "height": 22,
+          "top": 80.5,
+          "right": 234,
+          "bottom": 102.5,
+          "left": 212
+        }
+      ],
+      "canvas": {
+        "x": 0,
+        "y": 112,
+        "width": 390,
+        "height": 572.234375,
+        "top": 112,
+        "right": 390,
+        "bottom": 684.234375,
+        "left": 0
+      }
+    },
+    {
+      "width": 844,
+      "height": 390,
+      "overflow": false,
+      "hearts": [
+        {
+          "x": 387.5,
+          "y": 68,
+          "width": 19,
+          "height": 19,
+          "top": 68,
+          "right": 406.5,
+          "bottom": 87,
+          "left": 387.5
+        },
+        {
+          "x": 412.5,
+          "y": 68,
+          "width": 19,
+          "height": 19,
+          "top": 68,
+          "right": 431.5,
+          "bottom": 87,
+          "left": 412.5
+        },
+        {
+          "x": 437.5,
+          "y": 68,
+          "width": 19,
+          "height": 19,
+          "top": 68,
+          "right": 456.5,
+          "bottom": 87,
+          "left": 437.5
+        }
+      ],
+      "canvas": {
+        "x": 0,
+        "y": 88,
+        "width": 624,
+        "height": 302,
+        "top": 88,
+        "right": 624,
+        "bottom": 390,
+        "left": 0
+      }
+    }
+  ],
+  "contextLossFallback": "passed with responsive controls",
+  "assetFailureFallback": "passed",
+  "browserErrors": 0,
+  "output": "/var/folders/nl/zvqhkx6x13n56g_wq93srs7m0000gn/T/tiny-worlds-qa-ylmxb6"
+}

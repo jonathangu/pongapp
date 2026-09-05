@@ -53,7 +53,7 @@ The browser scripts expect Vite at 5173 and the local room Worker at 8787. For p
 
 Reference documentation: [Three.js GLTFLoader](https://threejs.org/docs/pages/GLTFLoader.html), [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli). The community Blender connector was reviewed as a workflow reference, but not installed; this project uses its own narrow, local, reproducible bridge instead.
 
-## Verified public release
+## Initial verified public release
 
 - Application commit: `69a57311cec5669da74d56bc2cf56055d396f7df`.
 - [GitHub Actions run 33949680038](https://github.com/jonathangu/pongapp/actions/runs/33949680038): build, deployment, asset-hash verification, production co-op and production versus smoke all passed.
@@ -64,3 +64,11 @@ Reference documentation: [Three.js GLTFLoader](https://threejs.org/docs/pages/GL
 - Confirming: the live solo/co-op expedition now uses original Blender-authored 3D models and the generated material. Versus rules/renderer and the successful direct WebRTC/local simulation are unchanged. No Worker restart or protocol migration was necessary.
 - Concept, runtime assets, editable `.blend`, generator, MCP bridge and verification receipts are all checked in. Current-session tool discovery was not hot-reloaded; restart/reload Codex to expose the newly registered native MCP tool list. The bridge itself was independently exercised successfully over MCP.
 - Final compatibility cleanup: current Three.js maps deprecated `PCFSoftShadowMap` to `PCFShadowMap` and warns. Select `PCFShadowMap` directly, preserving the exact filter already used in the verified screenshots and removing the warning. Follow-up application release recorded below.
+
+## Final release confirmation
+
+- Current live application: `a3d0ba0acd585625db9d8a26c3a41113fc3195e2`, [successful run 33949856814](https://github.com/jonathangu/pongapp/actions/runs/33949856814). All 88 tests, build, deploy, exact asset checks and co-op/versus production smoke passed again.
+- Final served entry: `index-DNqw4yEi.js`; renderer: `TinyWorldScene-B4fjaPbI.js`. GLB and material hashes are unchanged from the initial release.
+- Repeated full public-URL visual/performance suite after that cleanup: `qa/production/visual-results-final.json`. Five worlds at requested device DPR 3 / rendered DPR 1.5 and 4× CPU slowdown: p95 16.7–16.8ms, 301–302 frames per 5-second sample, no >250ms stalls, at most 159,754 sampled triangles including shadow rendering. Context-loss steering, download-failure fallback, all tested sizes and uncaught-exception checks passed.
+- Task-owned Vite, preview and local Worker processes were stopped. Production Worker was not restarted. User-owned `AGENTS.md` changes remain unstaged and untouched.
+- Only blocked user setting: this chat's requested **High reasoning** selection. The native app-control surface refused access to Codex; no workaround or global reasoning change was attempted. Await the user selecting High in their model controls. This does not block the already-live visual upgrade or the verified local Blender asset pipeline.
