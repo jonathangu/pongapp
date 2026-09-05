@@ -114,7 +114,7 @@ export class TinyWorldScene {
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure=1.1
     // One small shadow atlas, no postprocessing, physics, or per-frame React tree.
-    this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.shadowMap.autoUpdate=false
+    this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFShadowMap;this.renderer.shadowMap.autoUpdate=false
     this.surface=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.78,metalness:.06,side:THREE.DoubleSide})
     this.glowMaterial=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.66,depthWrite:false})
     this.materials.push(this.surface,this.glowMaterial)
