@@ -1,0 +1,147 @@
+{
+  "blender": "5.2.1 LTS",
+  "generator": "scripts/art/build_worlds.py",
+  "assets": [
+    {
+      "name": "boat",
+      "triangles": 3348,
+      "vertices": 1734
+    },
+    {
+      "name": "truck",
+      "triangles": 7616,
+      "vertices": 3956
+    },
+    {
+      "name": "ship",
+      "triangles": 3300,
+      "vertices": 1714
+    },
+    {
+      "name": "airship",
+      "triangles": 4124,
+      "vertices": 2130
+    },
+    {
+      "name": "turret",
+      "triangles": 356,
+      "vertices": 184
+    },
+    {
+      "name": "predator",
+      "triangles": 3172,
+      "vertices": 1674
+    },
+    {
+      "name": "rescue",
+      "triangles": 948,
+      "vertices": 486
+    },
+    {
+      "name": "star",
+      "triangles": 20,
+      "vertices": 12
+    },
+    {
+      "name": "crystal",
+      "triangles": 16,
+      "vertices": 12
+    },
+    {
+      "name": "heart",
+      "triangles": 342,
+      "vertices": 177
+    },
+    {
+      "name": "gate",
+      "triangles": 456,
+      "vertices": 232
+    },
+    {
+      "name": "rock",
+      "triangles": 80,
+      "vertices": 42
+    },
+    {
+      "name": "log",
+      "triangles": 108,
+      "vertices": 60
+    },
+    {
+      "name": "island_jungle",
+      "triangles": 460,
+      "vertices": 252
+    },
+    {
+      "name": "island_mesa",
+      "triangles": 460,
+      "vertices": 252
+    },
+    {
+      "name": "island_snow",
+      "triangles": 460,
+      "vertices": 252
+    },
+    {
+      "name": "island_garden",
+      "triangles": 460,
+      "vertices": 252
+    },
+    {
+      "name": "island_cosmic",
+      "triangles": 460,
+      "vertices": 252
+    },
+    {
+      "name": "palm",
+      "triangles": 756,
+      "vertices": 440
+    },
+    {
+      "name": "fir",
+      "triangles": 292,
+      "vertices": 164
+    },
+    {
+      "name": "cactus",
+      "triangles": 684,
+      "vertices": 358
+    },
+    {
+      "name": "garden_tree",
+      "triangles": 276,
+      "vertices": 146
+    },
+    {
+      "name": "crystal_cluster",
+      "triangles": 24,
+      "vertices": 18
+    },
+    {
+      "name": "cloud",
+      "triangles": 600,
+      "vertices": 310
+    },
+    {
+      "name": "temple",
+      "triangles": 1950,
+      "vertices": 1013
+    },
+    {
+      "name": "mesa",
+      "triangles": 144,
+      "vertices": 84
+    },
+    {
+      "name": "mountain",
+      "triangles": 30,
+      "vertices": 19
+    },
+    {
+      "name": "flower",
+      "triangles": 324,
+      "vertices": 176
+    }
+  ],
+  "bytes": 2474280
+}

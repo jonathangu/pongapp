@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { EXPEDITION_WORLDS, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import type { TinyWorldScene } from './TinyWorldScene'
 
 type Point = [number, number]
 const TAU = Math.PI * 2
@@ -210,13 +211,22 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
 
 export function ExpeditionCanvas({ getState, preview = false, onTarget }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void }) {
   const ref=useRef<HTMLCanvasElement>(null)
+  const fallbackRef=useRef<HTMLCanvasElement>(null)
+  const sceneRef=useRef<TinyWorldScene|null>(null)
+  const stateRef=useRef(getState);stateRef.current=getState
   useEffect(()=>{
-    const canvas=ref.current;const ctx=canvas?.getContext('2d',{alpha:false});if(!canvas||!ctx)return
+    const canvas=ref.current,fallback=fallbackRef.current;const ctx=fallback?.getContext('2d',{alpha:false});if(!canvas||!fallback||!ctx)return
     let frame=0;let width=0;let height=0;let lastDraw=0
-    const resize=()=>{const r=canvas.getBoundingClientRect();width=r.width;height=r.height;const dpr=Math.min(window.devicePixelRatio||1,1.5);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+    let scene:TinyWorldScene|null=null,active=true,failed=false
+    const useFallback=()=>{failed=true;canvas.dataset.renderer='canvas-fallback';canvas.style.opacity='0';fallback.style.display='block'}
+    const contextLost=(event:Event)=>{event.preventDefault();useFallback()}
+    canvas.addEventListener('webglcontextlost',contextLost)
+    const resize=()=>{const r=canvas.getBoundingClientRect();width=r.width;height=r.height;const dpr=Math.min(window.devicePixelRatio||1,1.5);fallback.width=Math.round(width*dpr);fallback.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);if(scene&&!failed)scene.resize(width,height)}
+    // Invite/controls and the fallback draw immediately; the larger 3D bundle is non-blocking.
+    void import('./TinyWorldScene').then(async({TinyWorldScene})=>{if(!active)return;scene=new TinyWorldScene(canvas,preview);sceneRef.current=scene;resize();await scene.load();if(failed&&active)useFallback()}).catch(()=>{if(active)useFallback()})
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize()
-    const draw=(now:number)=>{if(width&&height&&(!preview||now-lastDraw>33)){drawExpedition(ctx,width,height,getState(),now);lastDraw=now}frame=requestAnimationFrame(draw)}
-    frame=requestAnimationFrame(draw);return()=>{cancelAnimationFrame(frame);observer.disconnect()}
-  },[getState,preview])
-  return <canvas ref={ref} className="expedition-canvas" onPointerDown={e=>{if(!onTarget)return;const r=e.currentTarget.getBoundingClientRect();const targets=getState().objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y);return {id:o.id,d:Math.hypot(p[0]-(e.clientX-r.left),p[1]-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)}} aria-label="Three-quarter crew expedition through jungle, desert, mountains, rainbow skies and space" />
+    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current();let drawn=false;try{drawn=!!scene&&!failed&&scene.draw(state,now)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else drawExpedition(ctx,width,height,state,now);lastDraw=now}frame=requestAnimationFrame(draw)}
+    frame=requestAnimationFrame(draw);return()=>{active=false;cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',contextLost);scene?.dispose();sceneRef.current=null}
+  },[preview])
+  return <><canvas ref={fallbackRef} className="expedition-canvas-fallback" aria-hidden="true" style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}/><canvas ref={ref} className="expedition-canvas" style={{position:'relative',opacity:0}} onPointerDown={e=>{if(!onTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}const targets=getState().objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y);return {id:o.id,d:Math.hypot(p[0]-(e.clientX-r.left),p[1]-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)}} aria-label="Sculpted 3D crew expedition through jungle, desert, mountains, rainbow skies and space" /></>
 }

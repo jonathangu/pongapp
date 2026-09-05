@@ -26,6 +26,19 @@ async function verifyDeployment() {
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
   invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
 
+  const sceneChunk = script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
+  invariant(sceneChunk, 'PongApp bundle did not include the lazy 3D renderer')
+  const sceneResponse = await fetchCurrent('/pongapp/assets/' + sceneChunk)
+  invariant(sceneResponse.ok && (await sceneResponse.text()).includes('tiny-worlds.glb'), '3D renderer chunk missing or stale')
+  for (const name of ['tiny-worlds.glb', 'painted-material.jpg']) {
+    const response = await fetchCurrent('/pongapp/art/' + name)
+    invariant(response.ok, `${name} returned ${response.status}`)
+    const served = Buffer.from(await response.arrayBuffer())
+    const expected = readFileSync(new URL('../apps/web/public/art/' + name, import.meta.url))
+    const hash = bytes => createHash('sha256').update(bytes).digest('hex')
+    invariant(hash(served) === hash(expected), `${name} does not match this release`)
+  }
+
   const workerResponse = await fetchCurrent('/pongapp/sw.js')
   invariant(workerResponse.ok, `Service-worker retirement script returned ${workerResponse.status}`)
   const worker = await workerResponse.text()
@@ -51,3 +64,5 @@ for (let attempt = 1; attempt <= 12; attempt += 1) {
 }
 
 throw finalError
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'

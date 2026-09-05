@@ -23,3 +23,14 @@
 @media(min-width:900px){.crew-game .expedition-hud{padding-inline:max(25px,calc((100% - 700px)/2))}.crew-controls{padding-top:10px;padding-bottom:12px}.crew-game{grid-template-rows:50px 62px minmax(0,1fr) auto}}
 @media(max-height:700px){.crew-game{grid-template-rows:42px 51px minmax(0,1fr) auto}.crew-game .expedition-hud{padding-block:4px}.crew-game .expedition-hud strong{font-size:1.3rem}.crew-game .expedition-hearts svg{height:19px;width:19px;flex-basis:19px}.crew-controls{padding-top:5px;padding-bottom:max(6px,env(safe-area-inset-bottom))}.crew-status{margin-bottom:4px}.crew-stations{margin-bottom:5px}.crew-stations button{height:37px}.crew-hold.river-paddle,.crew-ability.expedition-flare,.crew-auto{height:57px}.crew-game .expedition-title p{display:none}.crew-mission{top:67px}.crew-boss{top:97px}.crew-game .expedition-title h1{font-size:1.3rem}.crew-upgrades{bottom:34px;padding:8px}.crew-upgrades small{display:none}.crew-upgrades button{min-height:34px;padding:6px}}
 @media(max-width:350px){.crew-game .expedition-hud{padding-inline:10px;grid-template-columns:1fr 105px 1fr}.crew-stations button{gap:4px}.crew-status{font-size:.5rem}.crew-action-row{grid-template-columns:1fr 1fr 78px}.crew-action-row[data-station=gunner],.crew-action-row[data-station=engineer]{grid-template-columns:1fr 78px}.crew-mission span{font-size:.45rem;padding:4px 6px}}
+/* Turn the cockpit into a side console on landscape phones, preserving play height. */
+@media(max-height:500px) and (min-width:600px){
+  .crew-game{grid-template-rows:42px 46px minmax(0,1fr)}
+  .crew-game .expedition-world{width:calc(100% - 220px);max-width:none;justify-self:start}
+  .crew-controls{position:absolute;top:88px;bottom:0;right:0;width:220px;box-sizing:border-box;padding:9px 10px;border-top:0;border-left:1px solid #e8c88c40}
+  .crew-status{font-size:.47rem;flex-wrap:wrap;gap:2px;margin-bottom:6px}
+  .crew-stations{grid-template-columns:1fr;gap:4px;margin-bottom:7px}.crew-stations button{height:34px;justify-content:flex-start;padding-left:14px}.crew-stations small{display:inline;margin-left:8px}
+  .crew-action-row{grid-template-columns:1fr 1fr;gap:6px}.crew-action-row[data-station=gunner],.crew-action-row[data-station=engineer]{grid-template-columns:1fr}
+  .crew-hold.river-paddle{height:51px}.crew-ability.expedition-flare,.crew-auto{grid-column:1/-1;height:43px;flex-direction:row;gap:7px}.crew-ability.expedition-flare small{display:none}
+  .crew-game .expedition-title h1{font-size:1.15rem}.crew-game .crew-mission{top:62px}.crew-game .crew-boss{top:89px}
+}

@@ -1,0 +1,99 @@
+{
+  "results": [
+    {
+      "mode": "coop",
+      "localResponseMs": 10.5,
+      "before": 0.5,
+      "after": 0.50294,
+      "direct": {
+        "path": "local",
+        "rtt": 1,
+        "paused": false
+      },
+      "relay": {
+        "path": "relay",
+        "rtt": 1,
+        "paused": false
+      },
+      "rematch": "passed",
+      "backgroundResume": "passed",
+      "signalingReconnect": "passed"
+    },
+    {
+      "mode": "versus",
+      "localResponseMs": 26.699999809265137,
+      "before": 1,
+      "after": 0,
+      "direct": {
+        "path": "local",
+        "rtt": 12,
+        "paused": false
+      },
+      "relay": {
+        "path": "relay",
+        "rtt": 3,
+        "paused": false
+      },
+      "rematch": "passed",
+      "backgroundResume": "passed",
+      "signalingReconnect": "passed"
+    },
+    {
+      "performanceSample": {
+        "cpuSlowdown": 4,
+        "durationMs": 6000,
+        "frameP95Ms": 16.700000000000728,
+        "maxFrameMs": 16.80000000000109,
+        "freezes": 0
+      }
+    },
+    {
+      "health": "host+guest damage and actual engineer repair passed",
+      "guestWidths": [
+        320,
+        375,
+        390
+      ],
+      "vectorHearts": "visible"
+    },
+    {
+      "mode": "coop",
+      "invitationUI": "passed",
+      "directPath": "local"
+    },
+    {
+      "mode": "versus",
+      "invitationUI": "passed",
+      "directPath": "local"
+    }
+  ],
+  "layout": {
+    "overflow": false,
+    "canvas": {
+      "x": 0,
+      "y": 112,
+      "width": 390,
+      "height": 572.234375,
+      "top": 112,
+      "right": 390,
+      "bottom": 684.234375,
+      "left": 0
+    },
+    "control": {
+      "x": 12,
+      "y": 766,
+      "width": 129,
+      "height": 68,
+      "top": 766,
+      "right": 141,
+      "bottom": 834,
+      "left": 12
+    }
+  },
+  "multitouch": {
+    "held": true,
+    "released": true
+  },
+  "browserErrors": 0,
+  "artifacts": "/var/folders/nl/zvqhkx6x13n56g_wq93srs7m0000gn/T/two-oars-qa-J7zjNi"
+}

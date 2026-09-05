@@ -1,0 +1,19 @@
+{
+  "tools": [
+    "inspect_tiny_world_assets",
+    "build_tiny_world_assets"
+  ],
+  "result": {
+    "meta": null,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"status\": \"built\",\n  \"manifest\": {\n    \"blender\": \"5.2.1 LTS\",\n    \"generator\": \"scripts/art/build_worlds.py\",\n    \"assets\": [\n      {\n        \"name\": \"boat\",\n        \"triangles\": 3348,\n        \"vertices\": 1734\n      },\n      {\n        \"name\": \"truck\",\n        \"triangles\": 7616,\n        \"vertices\": 3956\n      },\n      {\n        \"name\": \"ship\",\n        \"triangles\": 3300,\n        \"vertices\": 1714\n      },\n      {\n        \"name\": \"airship\",\n        \"triangles\": 4124,\n        \"vertices\": 2130\n      },\n      {\n        \"name\": \"turret\",\n        \"triangles\": 356,\n        \"vertices\": 184\n      },\n      {\n        \"name\": \"predator\",\n        \"triangles\": 3172,\n        \"vertices\": 1674\n      },\n      {\n        \"name\": \"rescue\",\n        \"triangles\": 948,\n        \"vertices\": 486\n      },\n      {\n        \"name\": \"star\",\n        \"triangles\": 20,\n        \"vertices\": 12\n      },\n      {\n        \"name\": \"crystal\",\n        \"triangles\": 16,\n        \"vertices\": 12\n      },\n      {\n        \"name\": \"heart\",\n        \"triangles\": 342,\n        \"vertices\": 177\n      },\n      {\n        \"name\": \"gate\",\n        \"triangles\": 456,\n        \"vertices\": 232\n      },\n      {\n        \"name\": \"rock\",\n        \"triangles\": 80,\n        \"vertices\": 42\n      },\n      {\n        \"name\": \"log\",\n        \"triangles\": 108,\n        \"vertices\": 60\n      },\n      {\n        \"name\": \"island_jungle\",\n        \"triangles\": 460,\n        \"vertices\": 252\n      },\n      {\n        \"name\": \"island_mesa\",\n        \"triangles\": 460,\n        \"vertices\": 252\n      },\n      {\n        \"name\": \"island_snow\",\n        \"triangles\": 460,\n        \"vertices\": 252\n      },\n      {\n        \"name\": \"island_garden\",\n        \"triangles\": 460,\n        \"vertices\": 252\n      },\n      {\n        \"name\": \"island_cosmic\",\n        \"triangles\": 460,\n        \"vertices\": 252\n      },\n      {\n        \"name\": \"palm\",\n        \"triangles\": 756,\n        \"vertices\": 440\n      },\n      {\n        \"name\": \"fir\",\n        \"triangles\": 292,\n        \"vertices\": 164\n      },\n      {\n        \"name\": \"cactus\",\n        \"triangles\": 684,\n        \"vertices\": 358\n      },\n      {\n        \"name\": \"garden_tree\",\n        \"triangles\": 276,\n        \"vertices\": 146\n      },\n      {\n        \"name\": \"crystal_cluster\",\n        \"triangles\": 24,\n        \"vertices\": 18\n      },\n      {\n        \"name\": \"cloud\",\n        \"triangles\": 600,\n        \"vertices\": 310\n      },\n      {\n        \"name\": \"temple\",\n        \"triangles\": 1950,\n        \"vertices\": 1013\n      },\n      {\n        \"name\": \"mesa\",\n        \"triangles\": 144,\n        \"vertices\": 84\n      },\n      {\n        \"name\": \"mountain\",\n        \"triangles\": 30,\n        \"vertices\": 19\n      },\n      {\n        \"name\": \"flower\",\n        \"triangles\": 324,\n        \"vertices\": 176\n      }\n    ],\n    \"bytes\": 2474280\n  }\n}",
+        "annotations": null,
+        "meta": null
+      }
+    ],
+    "structuredContent": null,
+    "isError": false
+  }
+}
