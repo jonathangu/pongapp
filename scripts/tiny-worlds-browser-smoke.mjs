@@ -19,7 +19,7 @@ const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true})
 const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result?.value}
 async function waitFor(expression,timeout=20000){const end=Date.now()+timeout;while(Date.now()<end){if(await evaluate('Boolean('+expression+')'))return;await sleep(100)}throw Error('Timed out: '+expression)}
 async function screenshot(name){const r=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},sessionId);await writeFile(join(output,name+'.png'),Buffer.from(r.data,'base64'))}
-async function size(width,height){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},sessionId)}
+async function size(width,height){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:Number(process.env.QA_DPR??1),mobile:width<600},sessionId)}
 const results=[]
 try {
   await send('Page.enable',{},sessionId);await send('Runtime.enable',{},sessionId)

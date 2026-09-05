@@ -52,3 +52,14 @@ node scripts/peer-browser-smoke.mjs
 The browser scripts expect Vite at 5173 and the local room Worker at 8787. For production UI checks set `UI_URL`; for peer UI set `QA_UI_ONLY=1` and the live `ROOM_SERVER_URL`. Never use production rooms belonging to real players for fixtures.
 
 Reference documentation: [Three.js GLTFLoader](https://threejs.org/docs/pages/GLTFLoader.html), [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli). The community Blender connector was reviewed as a workflow reference, but not installed; this project uses its own narrow, local, reproducible bridge instead.
+
+## Verified public release
+
+- Application commit: `69a57311cec5669da74d56bc2cf56055d396f7df`.
+- [GitHub Actions run 33949680038](https://github.com/jonathangu/pongapp/actions/runs/33949680038): build, deployment, asset-hash verification, production co-op and production versus smoke all passed.
+- Live site: https://www.jonathangu.com/pongapp/ . Entry `index-xLzehElA.js`; lazy renderer `TinyWorldScene-BUE-_7dS.js`.
+- Served GLB SHA256 `98b0bb7c56f7fc730b798b57c20adce9a43eeb534004a05bf0fe1afa810fb7c8`; served painted texture SHA256 `43fadceb09f6a1f7a4fc3e882294ab2516aa9863ecb6340e0ac16acd32c4f728`. Both match repository bytes. GLB served as `model/gltf-binary`.
+- `qa/production/visual-results.json`: all five worlds, device DPR 3 with renderer capped to 1.5, 4× CPU slowdown, 5 seconds per biome. 301–302 frames per sample; p95 16.7–16.8ms; zero >250ms stalls; at most 166,478 sampled triangles including shadows. Tested portrait widths 320/375/390 and 844×390 landscape. Forced context loss retained steering; blocked model downloads fell back cleanly; zero uncaught browser exceptions.
+- `qa/production/peer-results.json`: fresh production co-op and versus invitations established direct local connections; both clients displayed damage and actual engineer repair, including 320/375/390px guest HUDs. Multi-touch passed. This verifies the website on this Mac's Chrome, not physical-phone GPU performance or every Wi-Fi/hotspot configuration.
+- Confirming: the live solo/co-op expedition now uses original Blender-authored 3D models and the generated material. Versus rules/renderer and the successful direct WebRTC/local simulation are unchanged. No Worker restart or protocol migration was necessary.
+- Concept, runtime assets, editable `.blend`, generator, MCP bridge and verification receipts are all checked in. Current-session tool discovery was not hot-reloaded; restart/reload Codex to expose the newly registered native MCP tool list. The bridge itself was independently exercised successfully over MCP.
