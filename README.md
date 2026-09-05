@@ -1,60 +1,66 @@
-# PAL DUEL!
+# Two Oars
 
-Summon. Return. Win.
+Two Oars is a tiny same-team browser game for two phones. One person creates a
+boat and texts its link. The recipient taps once, automatically takes the empty
+oar, and the trip begins. There are no accounts, installs, ready buttons, or
+room-code steps in the primary flow.
 
-PongApp is a fast RackeTapp-themed browser duel. Every match is a vertical,
-first-to-five air-hockey battle with free 2D mallet movement, physical goals,
-and persistent tiny heroes. Bumper steals and clears, Hook lassos and slings,
-and Captain invades enemy ice to grab and shoot the puck.
+Each player has one hold button. Both oars accelerate the shared boat; only the
+left oar turns it right and only the right oar turns it left. Together, the
+players collect fireflies, avoid rocks, protect three shared hearts, and chase
+one shared score during a 75-second trip.
 
-Guest play is instant. Choose an AI opponent, share one complete room link, or
-put two players on the same phone. Online movement, scores, puck physics,
-energy, Pal AI, possession, ropes, Power Stars, and results are authoritative
-on the room server.
+## Why this game
 
-## Local development
+The interaction is designed around real mobile-network constraints:
 
-Requirements: Node 22 and pnpm 10.
+- Each control update is one scalar paddle value, not a continuous position.
+- The button and oar animate locally, so input always feels immediate.
+- Only the shared boat and river use authoritative edge snapshots.
+- Coordination is important, but a brief delay cannot invalidate a precise hit.
+- A reconnect token preserves the player's left/right seat through a dropped
+  connection or backgrounded mobile browser.
+
+## Architecture
+
+- React/Vite client published at `https://www.jonathangu.com/pongapp/`
+- Cloudflare Worker room API and one Durable Object per six-character room
+- Authoritative deterministic simulation at 60 Hz
+- Compact WebSocket snapshots at 30 Hz, plus event-triggered snapshots
+- Protocol v4 with automatic two-seat assignment and reconnect ownership
+- Native Web Share when available, clipboard fallback, code entry only as backup
+
+The complete invite route is `#/room/CODE`. The URL is the lobby: a new guest
+opening it receives the first open oar, while a returning guest with the room's
+stored reconnect token reclaims the original oar.
+
+## Development
+
+Requires Node 22+ and pnpm 10.
 
 ```bash
 pnpm install
 pnpm dev
-pnpm dev:server
+pnpm dev:worker
 ```
 
-The client runs at `http://localhost:5173/pongapp/`; the room service runs at
-`http://localhost:8080`.
+Run the full verifier:
 
 ```bash
 pnpm check
-ROOM_SERVER_URL=http://127.0.0.1:8080 pnpm smoke:room
 ```
 
-## Repository layout
+Run a local end-to-end room check with the Worker running on port 8787:
 
-- `apps/web` — React shell, PixiJS court, inputs, audio, and room UI.
-- `apps/room-server` — authoritative Node/WebSocket room service for Fly.io.
-- `packages/game-core` — deterministic Pal Duel simulation and AI.
-- `packages/protocol` — strict protocol-v3 client/server contracts.
+```bash
+ROOM_SERVER_URL=http://127.0.0.1:8787 pnpm smoke:room
+```
 
-## Hosting
-
-The static client is built at `/pongapp/` and deployed through GitHub Pages to
-`https://www.jonathangu.com/pongapp/`. Online rooms run on Cloudflare at
-`https://pongapp-room.pongapp-room-worker.workers.dev`. Each invite gets one
-authoritative Durable Object placed near the player who creates the room; its
-state and WebSocket session stay together at the edge. Override the client
-endpoint with `VITE_ROOM_SERVER_URL`.
+Deploy and verify production:
 
 ```bash
 pnpm deploy:worker
-ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev pnpm smoke:room
 pnpm smoke:prod
 ```
 
-The previous Fly service remains an emergency rollback target. See
-[`docs/EDGE_OPERATIONS.md`](docs/EDGE_OPERATIONS.md) for local testing,
-deployment, verification, and rollback.
-
-PongApp remains standalone. Guest identity and progression are device-local;
-RackeTapp code, accounts, legal flows, and Supabase are not involved.
+The static site deploys from `main` via `.github/workflows/pages.yml`.

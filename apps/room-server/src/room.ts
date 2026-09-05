@@ -1,14 +1,4 @@
-import {
-  aiInputs,
-  buildMatchConfig,
-  createAiMemory,
-  createGame,
-  restartGame,
-  stepGame,
-  type AiControllerMemory,
-  type GameInput,
-  type GameState,
-} from '@pongapp/game-core'
+import { advanceCoopGame, createCoopGame, restartCoopGame, type CoopGameState, type CoopInputs } from '@pongapp/game-core'
 import {
   PROTOCOL_VERSION,
   encodeServerMessage,
@@ -30,11 +20,9 @@ const SNAPSHOT_EVERY_TICKS = 2
 export class GameRoom {
   private readonly participants = new Map<string, InternalParticipant>()
   private readonly sockets = new Map<WebSocket, string | null>()
-  private game: GameState | null = null
-  private inputs: Record<string, GameInput> = {}
-  private aiMemory: AiControllerMemory = createAiMemory()
+  private game: CoopGameState | null = null
+  private inputs: CoopInputs = {}
   private loop: ReturnType<typeof setInterval> | null = null
-  private balanceSummaryLogged = false
 
   constructor(
     readonly config: StoredRoomConfig,
@@ -48,10 +36,7 @@ export class GameRoom {
         participant.disconnectedAt = Date.now()
         this.participants.set(participant.id, participant)
       }
-      this.game = restored.game?.rulesetVersion === 3 ? structuredClone(restored.game) : null
-      if (this.game) {
-        for (const player of Object.values(this.game.players)) player.isAi = true
-      }
+      this.game = restored.game?.rulesetVersion === 4 ? structuredClone(restored.game) : null
     }
     if (this.game && this.game.phase !== 'finished') this.startLoop()
   }
@@ -80,7 +65,7 @@ export class GameRoom {
       try {
         const candidate = JSON.parse(raw) as { type?: unknown; version?: unknown }
         if (candidate.type === 'hello' && candidate.version !== PROTOCOL_VERSION) {
-          this.send(socket, { type: 'error', code: 'refresh_required', message: 'Pal Duel became air hockey. Refresh to play the new version.', recoverable: false })
+          this.send(socket, { type: 'error', code: 'refresh_required', message: 'The river changed. Refresh to play Two Oars.', recoverable: false })
           return
         }
       } catch { /* invalid JSON uses the normal message below */ }
@@ -109,11 +94,7 @@ export class GameRoom {
     if (!participant) return
     participant.connected = false
     participant.disconnectedAt = Date.now()
-    const player = this.game?.players[participant.id]
-    if (player && this.game?.phase !== 'finished') {
-      player.isAi = true
-      player.aiDifficulty = 'rally'
-    }
+    this.inputs[participant.id] = { paddle: 0 }
     this.transferHost()
     await this.persist()
     this.broadcastLobby()
@@ -139,11 +120,6 @@ export class GameRoom {
       participant.connected = true
       participant.disconnectedAt = null
       participant.displayName = message.displayName
-      const player = this.game?.players[participant.id]
-      if (player) {
-        player.isAi = false
-        player.aiDifficulty = undefined
-      }
     } else {
       const usedSlots = new Set([...this.participants.values()].map((candidate) => candidate.slot).filter((slot): slot is number => slot !== null))
       let slot: number | null = null
@@ -163,8 +139,7 @@ export class GameRoom {
         connected: true,
         reconnectToken: crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''),
         lastSeq: 0,
-        lastTargetX: 0.5,
-        lastTargetY: slot === 1 ? 0.18 : 0.82,
+        lastPaddle: 0,
         disconnectedAt: null,
       }
       this.participants.set(id, participant)
@@ -191,26 +166,13 @@ export class GameRoom {
   private async handleParticipantMessage(socket: WebSocket, participant: InternalParticipant, message: ClientMessage): Promise<void> {
     if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
       participant.lastSeq = message.seq
-      participant.lastTargetX = message.targetX
-      participant.lastTargetY = message.targetY
-      this.inputs[participant.id] = {
-        targetX: message.targetX,
-        targetY: message.targetY,
-        palAction: message.palAction ?? this.inputs[participant.id]?.palAction ?? null,
-      }
+      participant.lastPaddle = message.paddle
+      this.inputs[participant.id] = { paddle: message.paddle }
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
-      this.game = restartGame(this.game, Date.now() >>> 0)
-      this.aiMemory = createAiMemory()
-      this.balanceSummaryLogged = false
-      for (const candidate of this.participants.values()) {
-        const player = this.game.players[candidate.id]
-        if (player) {
-          player.isAi = !candidate.connected
-          player.aiDifficulty = candidate.connected ? undefined : 'rally'
-        }
-      }
+      this.game = restartCoopGame(this.game, Date.now() >>> 0)
+      this.inputs = {}
       await this.persist()
       this.startLoop()
       this.broadcastLobby()
@@ -226,12 +188,7 @@ export class GameRoom {
       .filter((participant) => participant.slot !== null && participant.connected)
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (players.length < 2) return
-    this.game = createGame(buildMatchConfig({
-      humanPlayers: players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
-      seed: Date.now() >>> 0,
-    }))
-    this.aiMemory = createAiMemory()
-    this.balanceSummaryLogged = false
+    this.game = createCoopGame(players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })), Date.now() >>> 0)
     await this.persist()
     this.startLoop()
     this.broadcastLobby()
@@ -245,10 +202,7 @@ export class GameRoom {
 
   private async tick(): Promise<void> {
     if (!this.game) return
-    const automatic = aiInputs(this.game, this.aiMemory)
-    stepGame(this.game, { ...this.inputs, ...automatic })
-    this.logBalanceEvents()
-    for (const input of Object.values(this.inputs)) input.palAction = null
+    advanceCoopGame(this.game, this.inputs)
     const important = this.game.events.length > 0
     if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
     if (important || this.game.tick % 60 === 0) await this.persist()
@@ -260,57 +214,6 @@ export class GameRoom {
     }
   }
 
-  /**
-   * Structured balance telemetry deliberately excludes room codes, player IDs,
-   * names, guest IDs, reconnect tokens, and input coordinates. It describes
-   * only the rules and anonymous top/bottom outcomes of online matches.
-   */
-  private logBalanceEvents(): void {
-    const game = this.game
-    if (!game) return
-    const players = Object.values(game.players).sort((a, b) => a.side.localeCompare(b.side))
-    for (const event of game.events) {
-      if (event.type !== 'score') continue
-      const defender = game.players[event.againstPlayerId]
-      const scorer = game.players[event.scorerId]
-      console.info(JSON.stringify({
-        event: 'pongapp.balance.goal.v1',
-        rulesetVersion: game.rulesetVersion,
-        tick: game.tick,
-        rallyHits: event.rallyHits,
-        scorerSide: scorer?.side ?? null,
-        defenderSide: defender?.side ?? null,
-        defenderCamping: event.defenderCamping,
-        goalNumber: Object.values(game.scores).reduce((total, score) => total + score, 0),
-        score: players.map((player) => ({ side: player.side, points: game.scores[player.team] ?? 0 })),
-      }))
-    }
-    if (game.phase !== 'finished' || this.balanceSummaryLogged) return
-    this.balanceSummaryLogged = true
-    console.info(JSON.stringify({
-      event: 'pongapp.balance.match.v1',
-      rulesetVersion: game.rulesetVersion,
-      durationSeconds: Math.round(game.tick / 6) / 10,
-      overtime: game.overtime,
-      longestRallyHits: game.longestRallyHits,
-      players: players.map((player) => ({
-        side: player.side,
-        isAi: player.isAi,
-        points: game.scores[player.team] ?? 0,
-        returns: player.returns,
-        cleanStrikes: player.cleanStrikes,
-        palsSummoned: player.palsSummoned,
-        palHits: player.palHits,
-        palSteals: player.palSteals,
-        goalCampSeconds: Math.round((player.goalCampTicks ?? 0) / 6) / 10,
-        goalsConceded: player.goalsConceded ?? 0,
-        campedGoalsConceded: player.campedGoalsConceded ?? 0,
-        openPostShots: player.openPostShots ?? 0,
-        bankShots: player.bankShots ?? 0,
-      })),
-    }))
-  }
-
   private publicParticipant(participant: InternalParticipant): RoomParticipant {
     const { id, profileId, displayName, slot, isHost, isAi, connected } = participant
     return { id, profileId, displayName, slot, isHost, isAi, connected }
@@ -319,7 +222,7 @@ export class GameRoom {
   private lobby(): RoomLobby {
     return {
       roomCode: this.config.roomCode,
-      roomName: this.config.roomName ?? `${this.config.hostName}'s Arena`,
+      roomName: this.config.roomName ?? `${this.config.hostName}'s Boat`,
       supportTraceId: this.config.roomCode,
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',

@@ -1,9 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Pal Duel air hockey">
-  <rect width="128" height="128" rx="28" fill="#0b1611"/>
-  <circle cx="38" cy="90" r="22" fill="#dfff68" stroke="#fffdf7" stroke-width="4"/>
-  <circle cx="90" cy="38" r="22" fill="#f36f44" stroke="#fffdf7" stroke-width="4"/>
-  <circle cx="64" cy="64" r="10" fill="#101b16" stroke="#fffdf7" stroke-width="4"/>
-  <path d="m51 22 13-17 13 17 15-9-6 24H42l-6-24z" fill="#dfff68"/>
-  <circle cx="31" cy="85" r="3" fill="#0b1611"/><circle cx="45" cy="85" r="3" fill="#0b1611"/>
-  <path d="M32 96q6 5 12 0" fill="none" stroke="#0b1611" stroke-width="3" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Two Oars cooperative river game">
+  <rect width="128" height="128" rx="28" fill="#071c22"/>
+  <circle cx="94" cy="28" r="17" fill="#ffe77a"/><circle cx="102" cy="22" r="17" fill="#071c22"/>
+  <path d="M20 82h88L92 116H36z" fill="#ff7d68"/>
+  <path d="M12 76l43 17M116 76 73 93" stroke="#f1d5a2" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="51" cy="76" r="9" fill="#ffe0ad"/><circle cx="77" cy="76" r="9" fill="#ffe0ad"/>
+  <path d="M8 120q28-12 56 0t56 0" fill="none" stroke="#65e6d4" stroke-width="5" stroke-linecap="round"/>
 </svg>

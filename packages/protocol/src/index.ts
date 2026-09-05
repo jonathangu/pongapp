@@ -1,9 +1,7 @@
-import type { GameState, PalType } from '@pongapp/game-core'
+import type { CoopGameState } from '@pongapp/game-core'
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 3 as const
-
-const palTypeSchema = z.enum(['guard', 'striker', 'captain'])
+export const PROTOCOL_VERSION = 4 as const
 
 export const createRoomRequestSchema = z.object({
   hostName: z.string().trim().min(2).max(16),
@@ -27,9 +25,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('input'),
     seq: z.number().int().nonnegative(),
-    targetX: z.number().min(0).max(1),
-    targetY: z.number().min(0).max(1),
-    palAction: palTypeSchema.nullable(),
+    paddle: z.number().min(0).max(1),
     controlActive: z.boolean().optional(),
   }),
   z.object({ type: z.literal('emote'), emote: z.enum(['gg', 'wow', 'nice', 'oops']) }),
@@ -83,10 +79,10 @@ export type ServerMessage =
       lobby: RoomLobby
     }
   | { type: 'lobby'; lobby: RoomLobby }
-  | { type: 'snapshot'; serverTick: number; acknowledgedSeq: number; state: GameState }
-  | { type: 'event'; event: GameState['events'][number] }
+  | { type: 'snapshot'; serverTick: number; acknowledgedSeq: number; state: CoopGameState }
+  | { type: 'event'; event: CoopGameState['events'][number] }
   | { type: 'emote'; playerId: string; emote: 'gg' | 'wow' | 'nice' | 'oops' }
-  | { type: 'result'; state: GameState }
+  | { type: 'result'; state: CoopGameState }
   | { type: 'pong'; sentAt: number; serverAt: number }
   | { type: 'error'; code: string; message: string; recoverable: boolean }
 
@@ -111,5 +107,3 @@ export function parseWireMessage(value: string): ClientMessage | null {
 export function encodeServerMessage(message: ServerMessage): string {
   return JSON.stringify(message)
 }
-
-export type { PalType }

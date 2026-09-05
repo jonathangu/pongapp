@@ -1,6 +1,5 @@
 const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
-const PROTOCOL_VERSION = 3
-const EXPECTED_MALLET_RADIUS = 0.078
+const PROTOCOL_VERSION = 4
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)
@@ -53,7 +52,7 @@ async function connect(roomCode, index, reconnect = null, expectedSlot = index) 
   }))
   const welcome = await waitFor(client, (message) => message.type === 'welcome')
   invariant(welcome.version === PROTOCOL_VERSION, `${name} received the wrong protocol`)
-  invariant(welcome.lobby.roomName === 'Smoke Arena', `${name} received the wrong room name`)
+  invariant(welcome.lobby.roomName === 'Smoke Boat', `${name} received the wrong room name`)
   invariant(/^[A-F0-9]{8}$/.test(welcome.lobby.supportTraceId), `${name} received an invalid support trace`)
   invariant(welcome.participant.slot === expectedSlot, `${name} did not receive slot ${expectedSlot}`)
   client.playerId = welcome.participant.id
@@ -69,7 +68,7 @@ invariant(health.protocol === PROTOCOL_VERSION, `Expected protocol ${PROTOCOL_VE
 const createResponse = await fetch(new URL('/api/rooms', serverUrl), {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ hostName: 'Player 1', roomName: 'Smoke Arena' }),
+  body: JSON.stringify({ hostName: 'Player 1', roomName: 'Smoke Boat' }),
 })
 invariant(createResponse.status === 201, `Room creation failed with ${createResponse.status}`)
 const { roomCode } = await createResponse.json()
@@ -87,20 +86,18 @@ try {
     15_000,
   )
   const players = Object.values(snapshot.state.players)
-  invariant(players.length === 2, `Expected a two-player duel, received ${players.length}`)
-  invariant(players.every((player) => !player.isAi), 'Expected exactly two human players')
-  invariant(players.every((player) => player.radius === EXPECTED_MALLET_RADIUS), `Expected ${EXPECTED_MALLET_RADIUS} mallet radius from the authoritative server`)
+  invariant(players.length === 2, `Expected two rowers, received ${players.length}`)
+  invariant(players.some((player) => player.side === 'left') && players.some((player) => player.side === 'right'), 'Expected one player on each oar')
 
   clients[0].socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'control_surface_visible' }))
-  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, targetX: 0.2, targetY: 0.62, palAction: 'guard', controlActive: true }))
-  const summoned = await waitFor(
+  clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, paddle: 1, controlActive: true }))
+  const paddled = await waitFor(
     clients[0],
     (message) => message.type === 'snapshot'
       && message.acknowledgedSeq >= 1
-      && message.state.pals.some((pal) => pal.ownerId === clients[0].playerId && pal.type === 'guard'),
+      && message.state.paddles.left === 1,
   )
-  const owner = summoned.state.players[clients[0].playerId]
-  invariant(owner.palEnergy === 0, `Guard did not spend two energy; player has ${owner.palEnergy}`)
+  invariant(paddled.state.rulesetVersion === 4, 'Expected the cooperative v4 ruleset')
 
   const latencySamples = []
   for (let index = 0; index < 7; index += 1) {
@@ -132,13 +129,13 @@ try {
   invariant(replacementHost.playerId === originalHost.playerId, 'Replacement host did not reclaim the original seat')
   replacementHost.socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'control_surface_visible' }))
   const replacementControlled = waitFor(replacementHost, (message) => message.type === 'snapshot' && message.acknowledgedSeq >= 2)
-  replacementHost.socket.send(JSON.stringify({ type: 'input', seq: 2, targetX: 0.7, targetY: 0.58, palAction: null, controlActive: true }))
+  replacementHost.socket.send(JSON.stringify({ type: 'input', seq: 2, paddle: 0.5, controlActive: true }))
   await replacementControlled
   const reconnectPingAt = Date.now()
   replacementHost.socket.send(JSON.stringify({ type: 'ping', sentAt: reconnectPingAt }))
   await waitFor(replacementHost, (message) => message.type === 'pong' && message.sentAt === reconnectPingAt)
 
-  console.log(`room-smoke ok: ${roomCode} / Smoke Arena, ${EXPECTED_MALLET_RADIUS} mallets, 2 humans auto-started, third player shown a full room, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
+  console.log(`room-smoke ok: ${roomCode} / Smoke Boat, two rowers auto-started, paddle acknowledged, third player shown a full boat, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')

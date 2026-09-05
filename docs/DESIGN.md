@@ -1,102 +1,59 @@
-# Pal Duel visual and interaction contract
+# Two Oars product and interaction design
 
-Read this before editing `PixiCourt.ts`, game styles, or the shared palette.
+## Product promise
 
-## The hierarchy
+“Text one link. Take one oar each. Play together in seconds.”
 
-The puck is always the brightest fast-moving object. The local round mallet is
-always at the bottom on that player's phone. Pals are expressive secondary
-actors, while the forest air-hockey table remains quiet furniture. Effects may
-celebrate contact but must never conceal the puck or resemble unexplained lines.
+The invite is not a pre-game workflow; it is the lobby. Creating a trip returns
+one complete URL. Opening it joins the room automatically and assigns the first
+available oar. Two connected rowers trigger a three-second countdown without a
+ready button.
 
-The phone layout is an immersive 9:16 arena with a thin score strip above and
-the three-card Pal tray below. Play a Friend is the dominant menu action; AI,
-same-phone, and room-code entry remain visible as secondary choices.
+## Core loop
 
-## One palette, distinct silhouettes
+The shared boat moves down a moonlit river for 75 seconds:
 
-`packages/game-core/src/palette.ts` is the source of renderer colours.
-`tokens.css` mirrors it, and `tokens.test.ts` fails if they drift. Players are
-round mallets distinguished by both colour and face marks.
+- Both players hold: maximum forward speed and a straight course.
+- Left player holds: the boat turns right.
+- Right player holds: the boat turns left.
+- Fireflies add points and grow a shared streak.
+- Rocks remove one of three shared hearts and reset the streak.
+- Rare hearts repair one shared heart.
 
-Pals communicate role before decoration:
+There is no individual score, winner, or blame surface. Every reward and cost is
+shared. A trip ends at sunrise or when all three hearts are gone; either player
+can immediately start a rematch.
 
-- Bumper is broad, cyan, shielded, and happiest near its goal.
-- Hook is small, orange, and carries a visible rope coil; an active tether is a
-  curved warm rope from Hook to puck.
-- Captain is large, lime, crowned, caped, and allowed across midfield.
-- Hatchlings are tiny pale scrappers with pointed ears.
+## Join state machine
 
-Every Pal has a generated high-resolution character skin over a procedural
-owner-colour base, plus health pips, a spawn ring, stun stars, a command pulse,
-and a gold Star aura when powered. Command, Hook wind-up, and possession draw a
-short intent trail toward the puck or target goal. Possession, damage, stun,
-tether, knockout, and power use must read without text.
+1. Host presses “Row with someone.”
+2. Client creates a nearest-edge room and replaces the URL with `#/room/CODE`.
+3. Host sends the URL using native share or clipboard fallback.
+4. Guest opens it and sends a guest ID in the protocol-v4 hello.
+5. The room assigns slot 0/left or slot 1/right and starts at two connected seats.
+6. A per-room reconnect token reclaims the same participant and closes a stale
+   duplicate socket with code 4001.
+7. A third browser sees a clear full-boat screen and cannot affect controls.
 
-## Simulation truth
+## Latency strategy
 
-The fixed 60Hz game core owns 2D movement, circular collisions, goals, rails,
-energy, Pal health and state, possession, ropes, Star collection, hitstop, and
-every command. The renderer consumes events; it never invents gameplay.
+The server remains authoritative, but the mechanic avoids latency-sensitive
+collisions between players:
 
-Static court geometry is rebuilt only on resize. Moving actors and short-lived
-particles update each frame. Puck heat drives only a short local trail, glow,
-and impact energy. A serve or goal teleport clears the trail immediately; Pixi
-arcs must explicitly begin their paths so they never draw accidental diagonals.
-Reduced motion suppresses camera punch and dense particles but cannot change
-authoritative hitstop.
+- Control payload: `{seq, paddle, controlActive}` where paddle is 0…1.
+- Press and release are flushed immediately, with a 30 Hz safety loop.
+- Local button state and the local oar animate before server acknowledgement.
+- Boat position is interpolated from recent snapshots using an adaptive 1.5–4
+  tick buffer based on round-trip time, jitter, and snapshot gaps.
+- A visible client reconnects a stale stream after two seconds without messages.
+- A disconnected participant's paddle is zeroed server-side immediately.
 
-## Online smoothness
+The resulting game remains understandable on ordinary cellular latency while a
+good edge connection still feels crisp.
 
-The client can flush changed 2D targets at 60Hz, sends no idle target traffic,
-and previews its own mallet immediately. Remote mallets and Pals use an adaptive
-25–67ms snapshot buffer: stable edge connections use the shortest buffer and
-noisier connections trade a little delay for continuity. The puck
-continues between snapshots, blends small corrections, and snaps after a large
-error, possession change, serve, or score. Connection quality uses rolling
-median, p95, jitter, and snapshot-gap p95 rather than one noisy ping.
+## Privacy-safe operations
 
-Never add a second independent predictor inside the renderer. Prediction has
-one owner: `RoomClient` online and the local match loop offline.
-
-## Competitive balance and telemetry
-
-The goal mouth must leave a visible open post around a centred mallet. Computer
-opponents and attacking Pals predict the defender's short movement, choose the
-post with more space, and may use a real one-rail bank against a goalie sitting
-in the mouth. They do not teleport the puck or bypass ordinary collision rules.
-
-Online rooms emit structured `pongapp.balance.goal.v1` and
-`pongapp.balance.match.v1` server logs so goal width, camping, rally length, and
-Pal shot selection can be tuned from aggregate outcomes. These records contain
-only top/bottom sides and gameplay counters—never room codes, names, player or
-guest IDs, reconnect tokens, or input coordinates. Offline matches remain
-device-local and emit no balance telemetry.
-
-Room support uses indexed `pongapp.room.lifecycle.v2` events correlated by
-random room, match, connection, and page-session IDs. The UI exposes only a
-short opaque support trace. Lifecycle events follow the same privacy boundary
-and additionally reject all free-form client telemetry.
-
-## Input and explanation
-
-- Pointer/touch maps both axes through the same 180° view transform as drawing.
-- A touch target leads 48–80px toward centre court and draws a finger-to-target
-  tether, so the local mallet is never hidden underneath the player's thumb.
-- Arrow keys or WASD move in two axes; number keys 1/2/3 use the Pal cards.
-- Same-phone play owns a pointer independently per half and rotates the top tray.
-- Tapping an inactive card summons; tapping its lit active card commands.
-- The progressive coach explains free movement, persistence, commands, enemy
-  possession, rope cutting, and Power Stars exactly when each becomes relevant.
-
-The canvas mirrors scores and important moments into accessible DOM. Touch
-controls remain at least 44px. Reduced-motion preference is honored in CSS and
-Pixi effects.
-
-## Asset policy
-
-Competitive hitboxes, owner identity, state indicators, and fallback actors
-remain code-drawn. Generated 512×512 transparent Pal skins are a visual layer
-only; they cannot change radii or gameplay power. The four optimized PNGs total
-under 750KB, load once through Pixi's asset cache, and retain the procedural
-fallback if loading fails.
+Lifecycle telemetry uses server-generated room and match correlation IDs. It
+records connection transitions, anonymous seat numbers, timing, network quality,
+and final aggregate trip metrics. It does not log room codes, names, guest IDs,
+participant IDs, reconnect tokens, invite URLs, or paddle values.

@@ -1,26 +1,25 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { GameState } from '@pongapp/game-core'
+import type { CoopGameState } from '@pongapp/game-core'
 import type { RoomParticipant, StoredRoomConfig } from '@pongapp/protocol'
 
 export interface StoredParticipant extends RoomParticipant {
   guestId: string
   reconnectToken: string
   lastSeq: number
-  lastTargetX: number
-  lastTargetY: number
+  lastPaddle: number
   disconnectedAt: number | null
 }
 
 export interface StoredRoomRecord {
   config: StoredRoomConfig
   participants: StoredParticipant[]
-  game: GameState | null
+  game: CoopGameState | null
   updatedAt: number
 }
 
 interface RoomDatabase {
-  version: 3
+  version: 4
   rooms: Record<string, StoredRoomRecord>
 }
 
@@ -33,9 +32,9 @@ export class FileRoomStore {
   async load(): Promise<Map<string, StoredRoomRecord>> {
     try {
       const parsed = JSON.parse(await readFile(this.path, 'utf8')) as Partial<RoomDatabase>
-      // v3 is intentionally a hard ruleset cut. Ignore persisted older rooms so
+      // v4 is intentionally a hard ruleset cut. Ignore persisted older rooms so
       // the server can boot cleanly on the existing Fly volume.
-      if (parsed.version !== 3 || !parsed.rooms) return new Map()
+      if (parsed.version !== 4 || !parsed.rooms) return new Map()
       for (const [code, record] of Object.entries(parsed.rooms)) this.records.set(code, record)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -45,7 +44,7 @@ export class FileRoomStore {
 
   save(code: string, record: StoredRoomRecord): Promise<void> {
     this.records.set(code, structuredClone(record))
-    const database: RoomDatabase = { version: 3, rooms: Object.fromEntries(this.records) }
+    const database: RoomDatabase = { version: 4, rooms: Object.fromEntries(this.records) }
     const payload = JSON.stringify(database)
     const temporaryPath = `${this.path}.next`
     this.writeQueue = this.writeQueue.catch((error: unknown) => {

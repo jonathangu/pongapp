@@ -1,12 +1,12 @@
 {
-  "name": "PAL DUEL! by RackeTapp",
-  "short_name": "PAL DUEL!",
-  "description": "Air hockey with persistent tiny heroes you call and command.",
+  "name": "Two Oars",
+  "short_name": "Two Oars",
+  "description": "One boat, two phones, same team.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",
-  "background_color": "#0b1611",
-  "theme_color": "#0b1611",
+  "background_color": "#071c22",
+  "theme_color": "#071c22",
   "orientation": "portrait-primary",
   "icons": [
     {

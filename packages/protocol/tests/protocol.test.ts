@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createRoomRequestSchema, parseWireMessage, PROTOCOL_VERSION } from '../src'
 
-describe('Pal Duel air-hockey protocol v3', () => {
+describe('Two Oars co-op protocol v4', () => {
   it('accepts the deliberately small room request', () => {
     expect(createRoomRequestSchema.parse({ hostName: 'Jonathan' })).toEqual({ hostName: 'Jonathan' })
     expect(createRoomRequestSchema.parse({ hostName: 'Jonathan', roomName: "Jonathan's Arena" })).toEqual({
@@ -14,10 +14,10 @@ describe('Pal Duel air-hockey protocol v3', () => {
     expect(createRoomRequestSchema.safeParse({ hostName: 'Jonathan', mode: 'arena' }).success).toBe(false)
   })
 
-  it('accepts two-dimensional Pal commands and rejects incompatible clients', () => {
+  it('accepts tiny paddle inputs and rejects incompatible clients', () => {
     expect(parseWireMessage(JSON.stringify({
-      type: 'input', seq: 3, targetX: 0.7, targetY: 0.3, palAction: 'striker',
-    }))).toEqual({ type: 'input', seq: 3, targetX: 0.7, targetY: 0.3, palAction: 'striker' })
+      type: 'input', seq: 3, paddle: 0.7,
+    }))).toEqual({ type: 'input', seq: 3, paddle: 0.7 })
     expect(parseWireMessage(JSON.stringify({
       type: 'hello', version: PROTOCOL_VERSION - 1,
       guestId: 'guest-12345678', displayName: 'Player', role: 'player',

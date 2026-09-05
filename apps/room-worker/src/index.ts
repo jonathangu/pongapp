@@ -1,14 +1,10 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
-  aiInputs,
-  buildMatchConfig,
-  createAiMemory,
-  createGame,
-  restartGame,
-  stepGame,
-  type AiControllerMemory,
-  type GameInput,
-  type GameState,
+  advanceCoopGame,
+  createCoopGame,
+  restartCoopGame,
+  type CoopGameState,
+  type CoopInputs,
 } from '@pongapp/game-core'
 import {
   createRoomRequestSchema,
@@ -33,8 +29,7 @@ interface InternalParticipant extends RoomParticipant {
   guestId: string
   reconnectToken: string
   lastSeq: number
-  lastTargetX: number
-  lastTargetY: number
+  lastPaddle: number
   disconnectedAt: number | null
 }
 
@@ -42,7 +37,7 @@ interface StoredRoomRecord {
   version: typeof PROTOCOL_VERSION
   config: StoredRoomConfig
   participants: InternalParticipant[]
-  game: GameState | null
+  game: CoopGameState | null
   telemetryRoomId?: string
   matchSessionId?: string | null
   updatedAt: number
@@ -64,11 +59,11 @@ interface SocketAttachment {
 const MAX_BODY_BYTES = 16_384
 const RECONNECT_GRACE_MS = 20_000
 const SNAPSHOT_EVERY_TICKS = 2
-const ROOM_STORAGE_KEY = 'room-v3'
+const ROOM_STORAGE_KEY = 'room-v4'
 const LEGACY_ROOM_STORAGE_KEY = 'room'
 
 function displayRoomName(config: StoredRoomConfig): string {
-  return config.roomName ?? `${config.hostName}'s Arena`
+  return config.roomName ?? `${config.hostName}'s Boat`
 }
 
 function corsHeaders(request: Request): HeadersInit {
@@ -147,11 +142,9 @@ export class GameRoom extends DurableObject<Env> {
   private occupied = false
   private config: StoredRoomConfig | null = null
   private participants = new Map<string, InternalParticipant>()
-  private game: GameState | null = null
-  private inputs: Record<string, GameInput> = {}
-  private aiMemory: AiControllerMemory = createAiMemory()
+  private game: CoopGameState | null = null
+  private inputs: CoopInputs = {}
   private loop: ReturnType<typeof setInterval> | null = null
-  private balanceSummaryLogged = false
   private telemetryRoomId: string = crypto.randomUUID()
   private matchSessionId: string | null = null
   private closedConnectionIds = new Set<string>()
@@ -214,7 +207,7 @@ export class GameRoom extends DurableObject<Env> {
             reason: 'version_mismatch',
             announcedVersion: typeof candidate.version === 'number' && Number.isInteger(candidate.version) ? candidate.version : null,
           })
-          this.send(socket, { type: 'error', code: 'refresh_required', message: 'Pal Duel became air hockey. Refresh to play the new version.', recoverable: false })
+          this.send(socket, { type: 'error', code: 'refresh_required', message: 'The river changed. Refresh to play Two Oars.', recoverable: false })
           return
         }
       } catch { /* invalid JSON uses the normal message below */ }
@@ -258,7 +251,7 @@ export class GameRoom extends DurableObject<Env> {
       this.telemetryRoomId = stored.telemetryRoomId ?? crypto.randomUUID()
       this.matchSessionId = stored.matchSessionId ?? null
       this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
-      this.game = stored.game?.rulesetVersion === 3 ? stored.game : null
+      this.game = stored.game?.rulesetVersion === 4 ? stored.game : null
       const connectedIds = new Set(this.ctx.getWebSockets().map((socket) =>
         (socket.deserializeAttachment() as SocketAttachment | null)?.participantId,
       ).filter((id): id is string => Boolean(id)))
@@ -314,11 +307,7 @@ export class GameRoom extends DurableObject<Env> {
     }
     participant.connected = false
     participant.disconnectedAt = Date.now()
-    const player = this.game?.players[participant.id]
-    if (player && this.game?.phase !== 'finished') {
-      player.isAi = true
-      player.aiDifficulty = 'rally'
-    }
+    this.inputs[participant.id] = { paddle: 0 }
     this.transferHost()
     await this.persist()
     this.logLifecycle('socket_closed', closeDetail)
@@ -348,11 +337,6 @@ export class GameRoom extends DurableObject<Env> {
       participant.connected = true
       participant.disconnectedAt = null
       participant.displayName = message.displayName
-      const player = this.game?.players[participant.id]
-      if (player) {
-        player.isAi = false
-        player.aiDifficulty = undefined
-      }
     } else {
       const usedSlots = new Set([...this.participants.values()].map((candidate) => candidate.slot).filter((slot): slot is number => slot !== null))
       let slot: number | null = null
@@ -372,8 +356,7 @@ export class GameRoom extends DurableObject<Env> {
         connected: true,
         reconnectToken: crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', ''),
         lastSeq: 0,
-        lastTargetX: 0.5,
-        lastTargetY: slot === 1 ? 0.18 : 0.82,
+        lastPaddle: 0,
         disconnectedAt: null,
       }
       this.participants.set(id, participant)
@@ -440,13 +423,8 @@ export class GameRoom extends DurableObject<Env> {
         })
       }
       participant.lastSeq = message.seq
-      participant.lastTargetX = message.targetX
-      participant.lastTargetY = message.targetY
-      this.inputs[participant.id] = {
-        targetX: message.targetX,
-        targetY: message.targetY,
-        palAction: message.palAction ?? this.inputs[participant.id]?.palAction ?? null,
-      }
+      participant.lastPaddle = message.paddle
+      this.inputs[participant.id] = { paddle: message.paddle }
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
     } else if (message.type === 'clientTelemetry') {
@@ -483,17 +461,9 @@ export class GameRoom extends DurableObject<Env> {
         renderQuality: message.renderQuality ?? null,
       })
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
-      this.game = restartGame(this.game, Date.now() >>> 0)
+      this.game = restartCoopGame(this.game, Date.now() >>> 0)
       this.matchSessionId = crypto.randomUUID()
-      this.aiMemory = createAiMemory()
-      this.balanceSummaryLogged = false
-      for (const candidate of this.participants.values()) {
-        const player = this.game.players[candidate.id]
-        if (player) {
-          player.isAi = !candidate.connected
-          player.aiDifficulty = candidate.connected ? undefined : 'rally'
-        }
-      }
+      this.inputs = {}
       await this.persist()
       this.logLifecycle('rematch_started')
       this.startLoop()
@@ -511,12 +481,10 @@ export class GameRoom extends DurableObject<Env> {
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (players.length < 2) return
     this.matchSessionId = crypto.randomUUID()
-    this.game = createGame(buildMatchConfig({
-      humanPlayers: players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
-      seed: Date.now() >>> 0,
-    }))
-    this.aiMemory = createAiMemory()
-    this.balanceSummaryLogged = false
+    this.game = createCoopGame(
+      players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
+      Date.now() >>> 0,
+    )
     await this.persist()
     this.logLifecycle('match_started', {
       msAfterRoomCreated: this.config ? Date.now() - this.config.createdAt : null,
@@ -533,69 +501,22 @@ export class GameRoom extends DurableObject<Env> {
 
   private async tick(): Promise<void> {
     if (!this.game) return
-    const automatic = aiInputs(this.game, this.aiMemory)
-    stepGame(this.game, { ...this.inputs, ...automatic })
-    this.logBalanceEvents()
-    for (const input of Object.values(this.inputs)) input.palAction = null
+    advanceCoopGame(this.game, this.inputs)
     const important = this.game.events.length > 0
     if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
     if (important || this.game.tick % 60 === 0) await this.persist()
     if (this.game.phase === 'finished') {
       if (this.loop) clearInterval(this.loop)
       this.loop = null
-      this.logLifecycle('match_finished', { durationSeconds: Math.round(this.game.tick / 6) / 10 })
+      this.logLifecycle('match_finished', {
+        durationSeconds: Math.round(this.game.tick / 6) / 10,
+        score: this.game.score,
+        distance: Math.round(this.game.distance),
+        bestStreak: this.game.bestStreak,
+      })
       this.broadcast({ type: 'result', state: this.game })
       this.broadcastLobby()
     }
-  }
-
-  /** Balance records exclude room codes, names, player IDs, tokens, and input coordinates. */
-  private logBalanceEvents(): void {
-    const game = this.game
-    if (!game) return
-    const players = Object.values(game.players).sort((a, b) => a.side.localeCompare(b.side))
-    for (const event of game.events) {
-      if (event.type !== 'score') continue
-      const defender = game.players[event.againstPlayerId]
-      const scorer = game.players[event.scorerId]
-      console.info({
-        event: 'pongapp.balance.goal.v1',
-        matchSessionId: this.matchSessionId,
-        rulesetVersion: game.rulesetVersion,
-        tick: game.tick,
-        rallyHits: event.rallyHits,
-        scorerSide: scorer?.side ?? null,
-        defenderSide: defender?.side ?? null,
-        defenderCamping: event.defenderCamping,
-        goalNumber: Object.values(game.scores).reduce((total, score) => total + score, 0),
-        score: players.map((player) => ({ side: player.side, points: game.scores[player.team] ?? 0 })),
-      })
-    }
-    if (game.phase !== 'finished' || this.balanceSummaryLogged) return
-    this.balanceSummaryLogged = true
-    console.info({
-      event: 'pongapp.balance.match.v1',
-      matchSessionId: this.matchSessionId,
-      rulesetVersion: game.rulesetVersion,
-      durationSeconds: Math.round(game.tick / 6) / 10,
-      overtime: game.overtime,
-      longestRallyHits: game.longestRallyHits,
-      players: players.map((player) => ({
-        side: player.side,
-        isAi: player.isAi,
-        points: game.scores[player.team] ?? 0,
-        returns: player.returns,
-        cleanStrikes: player.cleanStrikes,
-        palsSummoned: player.palsSummoned,
-        palHits: player.palHits,
-        palSteals: player.palSteals,
-        goalCampSeconds: Math.round((player.goalCampTicks ?? 0) / 6) / 10,
-        goalsConceded: player.goalsConceded ?? 0,
-        campedGoalsConceded: player.campedGoalsConceded ?? 0,
-        openPostShots: player.openPostShots ?? 0,
-        bankShots: player.bankShots ?? 0,
-      })),
-    })
   }
 
   /**
