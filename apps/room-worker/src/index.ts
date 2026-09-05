@@ -1,10 +1,14 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
   advanceCoopGame,
+  advanceVersusGame,
   createCoopGame,
+  createVersusGame,
   restartCoopGame,
-  type CoopGameState,
+  restartVersusGame,
   type CoopInputs,
+  type CoopGameState,
+  type VersusGameState,
 } from '@pongapp/game-core'
 import {
   createRoomRequestSchema,
@@ -37,7 +41,7 @@ interface StoredRoomRecord {
   version: typeof PROTOCOL_VERSION
   config: StoredRoomConfig
   participants: InternalParticipant[]
-  game: CoopGameState | null
+  game: CoopGameState | VersusGameState | null
   telemetryRoomId?: string
   matchSessionId?: string | null
   updatedAt: number
@@ -59,11 +63,11 @@ interface SocketAttachment {
 const MAX_BODY_BYTES = 16_384
 const RECONNECT_GRACE_MS = 20_000
 const SNAPSHOT_EVERY_TICKS = 2
-const ROOM_STORAGE_KEY = 'room-v4'
+const ROOM_STORAGE_KEY = 'room-v5'
 const LEGACY_ROOM_STORAGE_KEY = 'room'
 
 function displayRoomName(config: StoredRoomConfig): string {
-  return config.roomName ?? `${config.hostName}'s Boat`
+  return config.roomName ?? (config.mode === 'versus' ? `${config.hostName}'s River Race` : `${config.hostName}'s Boat`)
 }
 
 function corsHeaders(request: Request): HeadersInit {
@@ -142,7 +146,7 @@ export class GameRoom extends DurableObject<Env> {
   private occupied = false
   private config: StoredRoomConfig | null = null
   private participants = new Map<string, InternalParticipant>()
-  private game: CoopGameState | null = null
+  private game: CoopGameState | VersusGameState | null = null
   private inputs: CoopInputs = {}
   private loop: ReturnType<typeof setInterval> | null = null
   private telemetryRoomId: string = crypto.randomUUID()
@@ -155,7 +159,7 @@ export class GameRoom extends DurableObject<Env> {
     if (url.pathname === '/configure' && request.method === 'POST') {
       if (this.occupied) return new Response('exists', { status: 409 })
       const value = await request.json() as Partial<StoredRoomConfig>
-      const parsed = createRoomRequestSchema.safeParse({ hostName: value.hostName, roomName: value.roomName })
+      const parsed = createRoomRequestSchema.safeParse({ hostName: value.hostName, roomName: value.roomName, mode: value.mode })
       if (!parsed.success || typeof value.roomCode !== 'string' || !validRoomCode(value.roomCode)
         || typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt)) {
         return new Response('invalid', { status: 400 })
@@ -251,7 +255,7 @@ export class GameRoom extends DurableObject<Env> {
       this.telemetryRoomId = stored.telemetryRoomId ?? crypto.randomUUID()
       this.matchSessionId = stored.matchSessionId ?? null
       this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
-      this.game = stored.game?.rulesetVersion === 4 ? stored.game : null
+      this.game = stored.game && (stored.game.rulesetVersion === 5 || stored.game.rulesetVersion === 6) ? stored.game : null
       const connectedIds = new Set(this.ctx.getWebSockets().map((socket) =>
         (socket.deserializeAttachment() as SocketAttachment | null)?.participantId,
       ).filter((id): id is string => Boolean(id)))
@@ -461,7 +465,9 @@ export class GameRoom extends DurableObject<Env> {
         renderQuality: message.renderQuality ?? null,
       })
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
-      this.game = restartCoopGame(this.game, Date.now() >>> 0)
+      this.game = this.game.rulesetVersion === 6
+        ? restartVersusGame(this.game, Date.now() >>> 0)
+        : restartCoopGame(this.game, Date.now() >>> 0)
       this.matchSessionId = crypto.randomUUID()
       this.inputs = {}
       await this.persist()
@@ -481,10 +487,10 @@ export class GameRoom extends DurableObject<Env> {
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (players.length < 2) return
     this.matchSessionId = crypto.randomUUID()
-    this.game = createCoopGame(
-      players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })),
-      Date.now() >>> 0,
-    )
+    const roster = players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName }))
+    this.game = this.config?.mode === 'versus'
+      ? createVersusGame(roster, Date.now() >>> 0)
+      : createCoopGame(roster, Date.now() >>> 0)
     await this.persist()
     this.logLifecycle('match_started', {
       msAfterRoomCreated: this.config ? Date.now() - this.config.createdAt : null,
@@ -501,18 +507,20 @@ export class GameRoom extends DurableObject<Env> {
 
   private async tick(): Promise<void> {
     if (!this.game) return
-    advanceCoopGame(this.game, this.inputs)
+    if (this.game.rulesetVersion === 6) advanceVersusGame(this.game, this.inputs)
+    else advanceCoopGame(this.game, this.inputs)
     const important = this.game.events.length > 0
     if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
     if (important || this.game.tick % 60 === 0) await this.persist()
     if (this.game.phase === 'finished') {
       if (this.loop) clearInterval(this.loop)
       this.loop = null
-      this.logLifecycle('match_finished', {
+      this.logLifecycle('match_finished', this.game.rulesetVersion === 6 ? {
         durationSeconds: Math.round(this.game.tick / 6) / 10,
-        score: this.game.score,
-        distance: Math.round(this.game.distance),
-        bestStreak: this.game.bestStreak,
+        mode: 'versus',
+      } : {
+        durationSeconds: Math.round(this.game.tick / 6) / 10,
+        mode: 'coop', score: this.game.score, distance: Math.round(this.game.distance), bestStreak: this.game.bestStreak,
       })
       this.broadcast({ type: 'result', state: this.game })
       this.broadcastLobby()
@@ -556,6 +564,7 @@ export class GameRoom extends DurableObject<Env> {
       supportTraceId: this.telemetryRoomId.slice(0, 8).toUpperCase(),
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
+      mode: this.config.mode,
     }
   }
 

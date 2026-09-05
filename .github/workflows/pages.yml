@@ -70,3 +70,8 @@ jobs:
         run: node scripts/room-smoke.mjs
         env:
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
+      - name: Verify authoritative production versus
+        run: node scripts/room-smoke.mjs
+        env:
+          GAME_MODE: versus
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev

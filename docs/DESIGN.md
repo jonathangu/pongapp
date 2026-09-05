@@ -2,7 +2,7 @@
 
 ## Product promise
 
-“Text one link. Take one oar each. Play together in seconds.”
+“Text one link. Play together or race each other in seconds.”
 
 The invite is not a pre-game workflow; it is the lobby. Creating a trip returns
 one complete URL. Opening it joins the room automatically and assigns the first
@@ -11,7 +11,7 @@ ready button.
 
 ## Core loop
 
-The shared boat moves down a moonlit river for 75 seconds:
+The shared boat moves through moonlight, aurora, and dawn for 90 seconds:
 
 - Both players hold: maximum forward speed and a straight course.
 - Left player holds: the boat turns right.
@@ -19,17 +19,25 @@ The shared boat moves down a moonlit river for 75 seconds:
 - Fireflies add points and grow a shared streak.
 - Rocks remove one of three shared hearts and reset the streak.
 - Rare hearts repair one shared heart.
+- Sustained synchronized rowing fills Harmony and triggers a three-second Rush
+  that attracts fireflies, doubles their points, and smashes hazards.
+- Rare lanterns create an eight-second magnet power; moving logs and near-miss
+  bonuses add risk and surprise.
 
-There is no individual score, winner, or blame surface. Every reward and cost is
+There is no individual score, winner, or blame surface in co-op. Every reward and cost is
 shared. A trip ends at sunrise or when all three hearts are gone; either player
-can immediately start a rematch.
+can immediately start a rematch. Rapid Rivals is an intentionally separate
+competitive mode: tapping switches the player's boat between two lanes and
+adds a speed kick, with rocks, boost stars, and ramps shared deterministically.
+Solo Adventure runs the co-op simulation locally with a hazard-aware AI oar.
 
 ## Join state machine
 
 1. Host presses “Row with someone.”
-2. Client creates a nearest-edge room and replaces the URL with `#/room/CODE`.
+2. Client creates a nearest-edge room with `mode: coop|versus` and replaces the
+   URL with `#/room/CODE` or `#/race/CODE`.
 3. Host sends the URL using native share or clipboard fallback.
-4. Guest opens it and sends a guest ID in the protocol-v4 hello.
+4. Guest opens it and sends a guest ID in the protocol-v5 hello.
 5. The room assigns slot 0/left or slot 1/right and starts at two connected seats.
 6. A per-room reconnect token reclaims the same participant and closes a stale
    duplicate socket with code 4001.

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createRoomRequestSchema, parseWireMessage, PROTOCOL_VERSION } from '../src'
 
-describe('Two Oars co-op protocol v4', () => {
+describe('Two Oars co-op protocol v5', () => {
   it('accepts the deliberately small room request', () => {
-    expect(createRoomRequestSchema.parse({ hostName: 'Jonathan' })).toEqual({ hostName: 'Jonathan' })
+    expect(createRoomRequestSchema.parse({ hostName: 'Jonathan' })).toEqual({ hostName: 'Jonathan', mode: 'coop' })
     expect(createRoomRequestSchema.parse({ hostName: 'Jonathan', roomName: "Jonathan's Arena" })).toEqual({
-      hostName: 'Jonathan', roomName: "Jonathan's Arena",
+      hostName: 'Jonathan', roomName: "Jonathan's Arena", mode: 'coop',
     })
+    expect(createRoomRequestSchema.parse({ hostName: 'Jonathan', mode: 'versus' }).mode).toBe('versus')
     expect(createRoomRequestSchema.safeParse({ hostName: 'Jonathan', roomName: 'A' }).success).toBe(false)
   })
 

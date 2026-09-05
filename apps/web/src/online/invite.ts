@@ -5,12 +5,12 @@ export function normalizeRoomCode(value: string): string | null {
   return ROOM_CODE.test(code) ? code : null
 }
 
-export function inviteUrlFor(origin: string, baseUrl: string, roomCode: string, quickStart: boolean): string | null {
+export function inviteUrlFor(origin: string, baseUrl: string, roomCode: string, quickStart: boolean, mode: 'coop' | 'versus' = 'coop'): string | null {
   const code = normalizeRoomCode(roomCode)
   if (!code) return null
   const url = new URL(baseUrl, origin)
   if (quickStart) url.searchParams.set('quick', '1')
-  url.hash = `/room/${code}`
+  url.hash = `/${mode === 'versus' ? 'race' : 'room'}/${code}`
   return url.toString()
 }
 

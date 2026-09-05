@@ -1,14 +1,22 @@
 # Two Oars
 
-Two Oars is a tiny same-team browser game for two phones. One person creates a
-boat and texts its link. The recipient taps once, automatically takes the empty
-oar, and the trip begins. There are no accounts, installs, ready buttons, or
-room-code steps in the primary flow.
+Two Oars is a set of instant one-thumb river games. One person chooses co-op or
+versus and texts its link. The recipient taps once, automatically takes the
+empty oar or boat, and play begins. There are no accounts, installs, ready
+buttons, or room-code steps in the primary flow.
 
-Each player has one hold button. Both oars accelerate the shared boat; only the
-left oar turns it right and only the right oar turns it left. Together, the
-players collect fireflies, avoid rocks, protect three shared hearts, and chase
-one shared score during a 75-second trip.
+Modes:
+
+- **Co-op Adventure:** each player has one hold button. Both oars accelerate a
+  shared boat; alternating oars steers. Synchronized rowing charges Harmony
+  Rush, a temporary firefly magnet that smashes hazards. Rare lanterns add
+  another power state, while swarms, moving logs, near misses, and three river
+  biomes make each 90-second run escalate.
+- **Rapid Rivals:** each player gets a boat. A tap switches lanes and adds a
+  speed kick. Racers dodge rocks, collect boost stars, hit ramps, and race to
+  620 metres.
+- **Solo Adventure:** the co-op river runs locally with Scout AI controlling the
+  right oar and reacting to upcoming hazards and prizes.
 
 ## Why this game
 
@@ -27,12 +35,13 @@ The interaction is designed around real mobile-network constraints:
 - Cloudflare Worker room API and one Durable Object per six-character room
 - Authoritative deterministic simulation at 60 Hz
 - Compact WebSocket snapshots at 30 Hz, plus event-triggered snapshots
-- Protocol v4 with automatic two-seat assignment and reconnect ownership
+- Protocol v5 with explicit co-op/versus rooms, automatic two-seat assignment,
+  and reconnect ownership
 - Native Web Share when available, clipboard fallback, code entry only as backup
 
-The complete invite route is `#/room/CODE`. The URL is the lobby: a new guest
-opening it receives the first open oar, while a returning guest with the room's
-stored reconnect token reclaims the original oar.
+Co-op links use `#/room/CODE`; versus links use `#/race/CODE`. The URL is the
+lobby: a new guest receives the first open oar or boat, while a returning guest
+with the room's stored reconnect token reclaims the original seat.
 
 ## Development
 

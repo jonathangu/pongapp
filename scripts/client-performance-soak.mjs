@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 const chromePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const baseUrl = process.env.UI_URL ?? 'http://127.0.0.1:4173/pongapp/'
-const mode = process.env.PERF_MODE === 'online' ? 'online' : 'practice'
+const mode = process.env.PERF_MODE === 'online' ? 'online' : 'solo'
 const roomServerUrl = process.env.ROOM_SERVER_URL ?? 'https://pongapp-room.pongapp-room-worker.workers.dev'
 const durationMs = Math.max(5_000, Math.min(120_000, Number(process.env.PERF_DURATION_MS ?? 20_000)))
 const cpuRate = Math.max(1, Math.min(20, Number(process.env.PERF_CPU_RATE ?? 4)))
@@ -79,7 +79,7 @@ try {
     const response = await fetch(new URL('/api/rooms', roomServerUrl), {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: new URL(baseUrl).origin },
-      body: JSON.stringify({ hostName: 'Perf Host', roomName: 'Client Soak' }),
+      body: JSON.stringify({ hostName: 'Perf Host', roomName: 'Client Soak', mode: 'coop' }),
     })
     if (!response.ok) throw new Error(`Could not create an online soak room (${response.status}).`)
     const { roomCode } = await response.json()
@@ -87,8 +87,8 @@ try {
   }
   await send('Page.navigate', { url: targetUrl }, sessionId)
   await sleep(2_000)
-  if (mode === 'practice') {
-    await evaluate(sessionId, `[...document.querySelectorAll('button')].find((button) => button.textContent.includes('Practice Now'))?.click()`)
+  if (mode === 'solo') {
+    await evaluate(sessionId, `[...document.querySelectorAll('button')].find((button) => button.textContent.includes('Solo Adventure'))?.click()`)
   } else {
     const roomCode = new URL(targetUrl).hash.split('/').at(-1)
     const peerUrl = new URL(`/api/rooms/${roomCode}/websocket`, roomServerUrl)
@@ -99,7 +99,7 @@ try {
       peerSocket.addEventListener('error', reject, { once: true })
     })
     peerSocket.send(JSON.stringify({
-      type: 'hello', version: 3, guestId: `perf-peer-${crypto.randomUUID()}`,
+      type: 'hello', version: 5, guestId: `perf-peer-${crypto.randomUUID()}`,
       displayName: 'Perf Peer', role: 'player', clientSessionId: crypto.randomUUID(), reconnectAttempt: 0,
     }))
   }
@@ -111,12 +111,10 @@ try {
     const frame = (now) => { sample.gaps.push(now - previous); previous = now; sample.frame = requestAnimationFrame(frame) }
     sample.frame = requestAnimationFrame(frame)
     try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) sample.longTasks.push(entry.duration) }).observe({ type: 'longtask', buffered: true }) } catch {}
-    sample.cardTimer = setInterval(() => document.querySelector('.pg-pal-card.is-ready')?.click(), 700)
   })()`)
-  const bounds = await evaluate(sessionId, `(() => { const rect = document.querySelector('.pg-canvas-wrap')?.getBoundingClientRect(); return rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null })()`)
-  if (!bounds) throw new Error('The practice court did not mount.')
+  const bounds = await evaluate(sessionId, `(() => { const rect = document.querySelector('.river-paddle')?.getBoundingClientRect(); return rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null })()`)
+  if (!bounds) throw new Error('The river controls did not mount.')
   const startedAt = Date.now()
-  let touchStarted = false
   let step = 0
   let networkDropComplete = false
   while (Date.now() - startedAt < durationMs) {
@@ -130,22 +128,21 @@ try {
         offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
       }, sessionId)
     }
-    const phase = step / 8
-    const x = bounds.left + bounds.width * (0.5 + Math.sin(phase) * 0.32)
-    const y = bounds.top + bounds.height * (0.74 + Math.cos(phase * 0.73) * 0.16)
+    const x = bounds.left + bounds.width * 0.5
+    const y = bounds.top + bounds.height * 0.5
     await send('Input.dispatchTouchEvent', {
-      type: touchStarted ? 'touchMove' : 'touchStart',
+      type: 'touchStart',
       touchPoints: [{ id: 1, x, y, radiusX: 9, radiusY: 9, force: 1 }],
     }, sessionId)
-    touchStarted = true
+    await sleep(240)
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
     step += 1
-    await sleep(100)
+    await sleep(step % 3 === 0 ? 520 : 260)
   }
-  if (touchStarted) await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
   const after = metricsByName(await send('Performance.getMetrics', {}, sessionId))
   const sample = await evaluate(sessionId, `(() => {
     const sample = globalThis.__pongClientSoak
-    cancelAnimationFrame(sample.frame); clearInterval(sample.cardTimer)
+    cancelAnimationFrame(sample.frame)
     const percentile = (values, fraction) => { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * fraction))] ?? 0 }
     return {
       frames: sample.gaps.length,
@@ -161,11 +158,11 @@ try {
     }
   })()`)
   const finalPageState = await evaluate(sessionId, `({
-    canvasPresent: Boolean(document.querySelector('.pg-canvas-wrap canvas')),
-    networkLabel: document.querySelector('.pg-network')?.textContent?.trim() ?? null,
-    connectionError: document.querySelector('.pg-status--error')?.textContent?.trim() ?? null,
-    distractionOverlayCount: document.querySelectorAll('.pg-coach, .pg-moment').length,
-    palCoachTextPresent: document.body.textContent?.includes('PAL COACH') ?? false,
+    riverPresent: Boolean(document.querySelector('.river-world')),
+    harmonyPresent: Boolean(document.querySelector('.river-harmony')),
+    paddlePresent: Boolean(document.querySelector('.river-paddle')),
+    connectionError: document.body.textContent?.includes('Connection lost') ?? false,
+    blockingOverlayCount: document.querySelectorAll('.river-finish, .room-error').length,
   })`)
   console.log(JSON.stringify({
     url: baseUrl,

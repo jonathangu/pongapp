@@ -31,12 +31,12 @@ async function connect(baseUrl: string, roomCode: string, index: number): Promis
 }
 
 describe('local Two Oars room server', () => {
-  it('creates an authoritative co-op trip, acknowledges paddle input, and persists v4', async () => {
+  it('creates an authoritative co-op trip, acknowledges paddle input, and persists v5', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pongapp-room-'))
     const dataPath = join(directory, 'rooms.json')
     const roomServer = await createRoomServer({ dataPath }); openServers.push(roomServer)
     const baseUrl = `http://127.0.0.1:${await roomServer.start()}`
-    expect(await fetch(`${baseUrl}/api/health`).then((response) => response.json())).toMatchObject({ status: 'ok', protocol: 4 })
+    expect(await fetch(`${baseUrl}/api/health`).then((response) => response.json())).toMatchObject({ status: 'ok', protocol: 5 })
     const response = await fetch(`${baseUrl}/api/rooms`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ hostName: 'Player 1' }) })
     expect(response.status).toBe(201)
     const { roomCode } = await response.json() as { roomCode: string }
@@ -45,10 +45,10 @@ describe('local Two Oars room server', () => {
     const acknowledged = waitFor(host, (message) => message.type === 'snapshot' && message.acknowledgedSeq === 1)
     host.send(JSON.stringify({ type: 'input', seq: 1, paddle: 1, controlActive: true }))
     const snapshot = await acknowledged
-    expect(snapshot.type === 'snapshot' && snapshot.state.rulesetVersion).toBe(4)
+    expect(snapshot.type === 'snapshot' && snapshot.state.rulesetVersion).toBe(5)
     host.close(); guest.close(); await roomServer.close(); openServers.splice(openServers.indexOf(roomServer), 1)
     const database = JSON.parse(await readFile(dataPath, 'utf8')) as { version: number; rooms: Record<string, unknown> }
-    expect(database.version).toBe(4); expect(database.rooms[roomCode]).toBeDefined()
+    expect(database.version).toBe(5); expect(database.rooms[roomCode]).toBeDefined()
   })
 
   it('rejects untrusted browser origins', async () => {

@@ -1,5 +1,7 @@
 const serverUrl = process.env.ROOM_SERVER_URL ?? 'http://127.0.0.1:8080'
-const PROTOCOL_VERSION = 4
+const PROTOCOL_VERSION = 5
+const gameMode = process.env.GAME_MODE === 'versus' ? 'versus' : 'coop'
+const roomName = gameMode === 'versus' ? 'Smoke Race' : 'Smoke Boat'
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)
@@ -52,7 +54,8 @@ async function connect(roomCode, index, reconnect = null, expectedSlot = index) 
   }))
   const welcome = await waitFor(client, (message) => message.type === 'welcome')
   invariant(welcome.version === PROTOCOL_VERSION, `${name} received the wrong protocol`)
-  invariant(welcome.lobby.roomName === 'Smoke Boat', `${name} received the wrong room name`)
+  invariant(welcome.lobby.roomName === roomName, `${name} received the wrong room name`)
+  invariant(welcome.lobby.mode === gameMode, `${name} received the wrong game mode`)
   invariant(/^[A-F0-9]{8}$/.test(welcome.lobby.supportTraceId), `${name} received an invalid support trace`)
   invariant(welcome.participant.slot === expectedSlot, `${name} did not receive slot ${expectedSlot}`)
   client.playerId = welcome.participant.id
@@ -68,7 +71,7 @@ invariant(health.protocol === PROTOCOL_VERSION, `Expected protocol ${PROTOCOL_VE
 const createResponse = await fetch(new URL('/api/rooms', serverUrl), {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ hostName: 'Player 1', roomName: 'Smoke Boat' }),
+  body: JSON.stringify({ hostName: 'Player 1', roomName, mode: gameMode }),
 })
 invariant(createResponse.status === 201, `Room creation failed with ${createResponse.status}`)
 const { roomCode } = await createResponse.json()
@@ -85,9 +88,15 @@ try {
     (message) => message.type === 'snapshot' && message.state.phase === 'playing',
     15_000,
   )
-  const players = Object.values(snapshot.state.players)
-  invariant(players.length === 2, `Expected two rowers, received ${players.length}`)
-  invariant(players.some((player) => player.side === 'left') && players.some((player) => player.side === 'right'), 'Expected one player on each oar')
+  if (gameMode === 'coop') {
+    const players = Object.values(snapshot.state.players)
+    invariant(players.length === 2, `Expected two rowers, received ${players.length}`)
+    invariant(players.some((player) => player.side === 'left') && players.some((player) => player.side === 'right'), 'Expected one player on each oar')
+  } else {
+    const racers = Object.values(snapshot.state.racers)
+    invariant(racers.length === 2, `Expected two racers, received ${racers.length}`)
+    invariant(racers.some((racer) => racer.slot === 0) && racers.some((racer) => racer.slot === 1), 'Expected one racer in each boat')
+  }
 
   clients[0].socket.send(JSON.stringify({ type: 'clientTelemetry', event: 'control_surface_visible' }))
   clients[0].socket.send(JSON.stringify({ type: 'input', seq: 1, paddle: 1, controlActive: true }))
@@ -95,9 +104,9 @@ try {
     clients[0],
     (message) => message.type === 'snapshot'
       && message.acknowledgedSeq >= 1
-      && message.state.paddles.left === 1,
+      && (gameMode === 'versus' ? message.state.racers[clients[0].playerId].lane === 1 : message.state.paddles.left === 1),
   )
-  invariant(paddled.state.rulesetVersion === 4, 'Expected the cooperative v4 ruleset')
+  invariant(paddled.state.rulesetVersion === (gameMode === 'versus' ? 6 : 5), `Expected the ${gameMode} ruleset`)
 
   const latencySamples = []
   for (let index = 0; index < 7; index += 1) {
@@ -135,7 +144,7 @@ try {
   replacementHost.socket.send(JSON.stringify({ type: 'ping', sentAt: reconnectPingAt }))
   await waitFor(replacementHost, (message) => message.type === 'pong' && message.sentAt === reconnectPingAt)
 
-  console.log(`room-smoke ok: ${roomCode} / Smoke Boat, two rowers auto-started, paddle acknowledged, third player shown a full boat, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
+  console.log(`room-smoke ok: ${roomCode} / ${roomName}, ${gameMode} auto-started, input acknowledged, third player blocked, duplicate host seat transferred once and controlled, room RTT median ${medianLatency} ms / p95 ${p95Latency} ms`)
   completed = true
 } finally {
   for (const client of clients) client.socket.close(1000, 'smoke complete')

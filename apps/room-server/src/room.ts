@@ -1,4 +1,4 @@
-import { advanceCoopGame, createCoopGame, restartCoopGame, type CoopGameState, type CoopInputs } from '@pongapp/game-core'
+import { advanceCoopGame, advanceVersusGame, createCoopGame, createVersusGame, restartCoopGame, restartVersusGame, type CoopGameState, type CoopInputs, type VersusGameState } from '@pongapp/game-core'
 import {
   PROTOCOL_VERSION,
   encodeServerMessage,
@@ -20,7 +20,7 @@ const SNAPSHOT_EVERY_TICKS = 2
 export class GameRoom {
   private readonly participants = new Map<string, InternalParticipant>()
   private readonly sockets = new Map<WebSocket, string | null>()
-  private game: CoopGameState | null = null
+  private game: CoopGameState | VersusGameState | null = null
   private inputs: CoopInputs = {}
   private loop: ReturnType<typeof setInterval> | null = null
 
@@ -36,7 +36,7 @@ export class GameRoom {
         participant.disconnectedAt = Date.now()
         this.participants.set(participant.id, participant)
       }
-      this.game = restored.game?.rulesetVersion === 4 ? structuredClone(restored.game) : null
+      this.game = restored.game && (restored.game.rulesetVersion === 5 || restored.game.rulesetVersion === 6) ? structuredClone(restored.game) : null
     }
     if (this.game && this.game.phase !== 'finished') this.startLoop()
   }
@@ -171,7 +171,7 @@ export class GameRoom {
     } else if (message.type === 'emote') {
       this.broadcast({ type: 'emote', playerId: participant.id, emote: message.emote })
     } else if (message.type === 'rematch' && this.game?.phase === 'finished') {
-      this.game = restartCoopGame(this.game, Date.now() >>> 0)
+      this.game = this.game.rulesetVersion === 6 ? restartVersusGame(this.game, Date.now() >>> 0) : restartCoopGame(this.game, Date.now() >>> 0)
       this.inputs = {}
       await this.persist()
       this.startLoop()
@@ -188,7 +188,8 @@ export class GameRoom {
       .filter((participant) => participant.slot !== null && participant.connected)
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (players.length < 2) return
-    this.game = createCoopGame(players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName })), Date.now() >>> 0)
+    const roster = players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName }))
+    this.game = this.config.mode === 'versus' ? createVersusGame(roster, Date.now() >>> 0) : createCoopGame(roster, Date.now() >>> 0)
     await this.persist()
     this.startLoop()
     this.broadcastLobby()
@@ -202,7 +203,8 @@ export class GameRoom {
 
   private async tick(): Promise<void> {
     if (!this.game) return
-    advanceCoopGame(this.game, this.inputs)
+    if (this.game.rulesetVersion === 6) advanceVersusGame(this.game, this.inputs)
+    else advanceCoopGame(this.game, this.inputs)
     const important = this.game.events.length > 0
     if (this.game.tick % SNAPSHOT_EVERY_TICKS === 0 || important) this.broadcastSnapshot()
     if (important || this.game.tick % 60 === 0) await this.persist()
@@ -222,10 +224,11 @@ export class GameRoom {
   private lobby(): RoomLobby {
     return {
       roomCode: this.config.roomCode,
-      roomName: this.config.roomName ?? `${this.config.hostName}'s Boat`,
+      roomName: this.config.roomName ?? (this.config.mode === 'versus' ? `${this.config.hostName}'s River Race` : `${this.config.hostName}'s Boat`),
       supportTraceId: this.config.roomCode,
       participants: [...this.participants.values()].map((participant) => this.publicParticipant(participant)),
       phase: this.game?.phase ?? 'lobby',
+      mode: this.config.mode,
     }
   }
 

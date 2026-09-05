@@ -34,4 +34,11 @@ describe('Two Oars cooperative simulation', () => {
     for (let tick = 0; tick < 300; tick += 1) { advanceCoopGame(one, {}); advanceCoopGame(two, {}) }
     expect(one).toEqual(two)
   })
+
+  it('rewards sustained synchronized paddling with a Harmony Rush', () => {
+    const state = start()
+    for (let tick = 0; tick < 100; tick += 1) advanceCoopGame(state, { left: { paddle: 1 }, right: { paddle: 1 } })
+    expect(state.rushTicks).toBeGreaterThan(0)
+    expect(state.boat.speed).toBeGreaterThan(0.009)
+  })
 })

@@ -1,7 +1,7 @@
 {
   "name": "Two Oars",
   "short_name": "Two Oars",
-  "description": "One boat, two phones, same team.",
+  "description": "Instant co-op adventures and friendly river races for two phones.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",

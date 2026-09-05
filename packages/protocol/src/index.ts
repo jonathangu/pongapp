@@ -1,11 +1,12 @@
-import type { CoopGameState } from '@pongapp/game-core'
+import type { CoopGameState, VersusGameState } from '@pongapp/game-core'
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 4 as const
+export const PROTOCOL_VERSION = 5 as const
 
 export const createRoomRequestSchema = z.object({
   hostName: z.string().trim().min(2).max(16),
   roomName: z.string().trim().min(2).max(32).optional(),
+  mode: z.enum(['coop', 'versus']).default('coop'),
 }).strict()
 
 export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>
@@ -67,7 +68,10 @@ export interface RoomLobby {
   supportTraceId: string
   participants: RoomParticipant[]
   phase: 'lobby' | 'countdown' | 'playing' | 'finished'
+  mode: 'coop' | 'versus'
 }
+
+export type OnlineGameState = CoopGameState | VersusGameState
 
 export type ServerMessage =
   | {
@@ -79,10 +83,10 @@ export type ServerMessage =
       lobby: RoomLobby
     }
   | { type: 'lobby'; lobby: RoomLobby }
-  | { type: 'snapshot'; serverTick: number; acknowledgedSeq: number; state: CoopGameState }
-  | { type: 'event'; event: CoopGameState['events'][number] }
+  | { type: 'snapshot'; serverTick: number; acknowledgedSeq: number; state: OnlineGameState }
+  | { type: 'event'; event: OnlineGameState['events'][number] }
   | { type: 'emote'; playerId: string; emote: 'gg' | 'wow' | 'nice' | 'oops' }
-  | { type: 'result'; state: CoopGameState }
+  | { type: 'result'; state: OnlineGameState }
   | { type: 'pong'; sentAt: number; serverAt: number }
   | { type: 'error'; code: string; message: string; recoverable: boolean }
 

@@ -111,6 +111,7 @@ export class RoomClient {
       const participant = message.lobby.participants.find((candidate) => candidate.id === this.view.participant?.id) ?? this.view.participant
       this.patch({ participant, lobby: message.lobby, status: message.lobby.phase === 'lobby' ? 'lobby' : 'playing' })
     } else if (message.type === 'snapshot' || message.type === 'result') {
+      if (message.state.rulesetVersion !== 5) return
       const now = performance.now(); const previousReceipt = this.snapshots.at(-1)?.receivedAt
       if (previousReceipt !== undefined) { this.snapshotGapSamples.push(now - previousReceipt); if (this.snapshotGapSamples.length > 60) this.snapshotGapSamples.shift() }
       this.snapshots.push({ state: message.state, receivedAt: now }); if (this.snapshots.length > 4) this.snapshots.shift()
