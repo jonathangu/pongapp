@@ -25,6 +25,9 @@ async function verifyDeployment() {
   const script = await scriptResponse.text()
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
   invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
+  for (const text of ['FOUR BUTTONS. ONE TEAM.', 'Tap to nudge', 'Big splash shell', 'RECOVERED +1 HEART']) {
+    invariant(script.includes(text), `PongApp bundle is missing tap-combat release marker: ${text}`)
+  }
 
   const sceneChunk = script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
   invariant(sceneChunk, 'PongApp bundle did not include the lazy 3D renderer')

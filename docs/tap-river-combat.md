@@ -31,5 +31,6 @@ Each Shoot tap queues a shell with 100-tick maximum flight, speed .009 normalize
 - Five worlds with active shells/blasts, DPR capped1.5 and 4× CPU: p95 frame gap16.7–16.8ms, zero >250ms freezes, at most28 draw calls and178772 triangles. GPU context loss and blocked GLB download retain usable fallback.
 - Seeded heuristic (three Shoot taps/sec plus steering/repair) wins20/20 without invulnerability in109–110 seconds. Idle simulation never wins across12 seeds. This is not a human difficulty rating.
 - WebKit testing found Space-repeat's default click could add a shot on release. Preventing defaults for repeat keydown and focused-button keyup repairs it; regression also covers Enter.
+- Chromium and WebKit each pass320×568,390×844,844×390 and1440×900: real tap/mouse actions, six-tap repair, focused Space/Enter repeat, zoom, guide and unobscured controls. Zero browser exceptions.
 
 Evidence: workspace `task-artifacts/tap-river-combat/` (check log, JSON, screenshots). Physical phones/hotspot hardware are not measured. Production release status is recorded separately after exact-SHA CI and public verification; this local evidence is not a deployment claim.
