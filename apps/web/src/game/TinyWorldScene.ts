@@ -172,6 +172,10 @@ export class TinyWorldScene {
     const projection=tinyWorldCamera(width,height);this.camera=projection.camera;this.depth=projection.depth
     this.dpr=Math.min(devicePixelRatio||1,1.5);this.renderer.setPixelRatio(this.dpr);this.renderer.setSize(width,height,false)
   }
+  setZoom(zoom: number) {
+    const value=Math.max(1,Math.min(1.35,zoom))
+    if(this.camera.zoom!==value){this.camera.zoom=value;this.camera.updateProjectionMatrix()}
+  }
   private add(name: string,x: number,y: number,z: number,sx=1,sy=sx,sz=sx,rotation=0,color=0xffffff,rx=0,rz=0) {
     this.transform.position.set(x,y,z);this.transform.scale.set(sx,sy,sz);this.transform.rotation.set(rx,rotation,rz);this.transform.updateMatrix()
     this.batches.get(name)?.add(this.transform.matrix,this.tint.setHex(color))

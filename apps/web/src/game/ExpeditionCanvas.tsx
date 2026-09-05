@@ -209,11 +209,15 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   const vignette=ctx.createRadialGradient(w*.5,h*.5,w*.15,w*.5,h*.5,Math.max(w,h)*.7);vignette.addColorStop(0,'transparent');vignette.addColorStop(1,'#080d294a');ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h)
 }
 
-export function ExpeditionCanvas({ getState, preview = false, onTarget }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void }) {
+export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = 1, onZoom }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void; zoom?: number; onZoom?: (zoom: number) => void }) {
   const ref=useRef<HTMLCanvasElement>(null)
   const fallbackRef=useRef<HTMLCanvasElement>(null)
   const sceneRef=useRef<TinyWorldScene|null>(null)
   const stateRef=useRef(getState);stateRef.current=getState
+  const zoomRef=useRef(zoom);zoomRef.current=zoom
+  const pointers=useRef(new Map<number,{x:number;y:number}>())
+  const tap=useRef<{x:number;y:number}|null>(null)
+  const pinch=useRef<{distance:number;zoom:number}|null>(null)
   useEffect(()=>{
     const canvas=ref.current,fallback=fallbackRef.current;const ctx=fallback?.getContext('2d',{alpha:false});if(!canvas||!fallback||!ctx)return
     let frame=0;let width=0;let height=0;let lastDraw=0
@@ -225,8 +229,25 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget }: { getS
     // Invite/controls and the fallback draw immediately; the larger 3D bundle is non-blocking.
     void import('./TinyWorldScene').then(async({TinyWorldScene})=>{if(!active)return;scene=new TinyWorldScene(canvas,preview);sceneRef.current=scene;resize();await scene.load();if(failed&&active)useFallback()}).catch(()=>{if(active)useFallback()})
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize()
-    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current();let drawn=false;try{drawn=!!scene&&!failed&&scene.draw(state,now)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else drawExpedition(ctx,width,height,state,now);lastDraw=now}frame=requestAnimationFrame(draw)}
+    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current();let drawn=false;try{scene?.setZoom(zoomRef.current);drawn=!!scene&&!failed&&scene.draw(state,now)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else{ctx.save();ctx.translate(width/2,height/2);ctx.scale(zoomRef.current,zoomRef.current);ctx.translate(-width/2,-height/2);drawExpedition(ctx,width,height,state,now);ctx.restore()}lastDraw=now}frame=requestAnimationFrame(draw)}
     frame=requestAnimationFrame(draw);return()=>{active=false;cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',contextLost);scene?.dispose();sceneRef.current=null}
   },[preview])
-  return <><canvas ref={fallbackRef} className="expedition-canvas-fallback" aria-hidden="true" style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}/><canvas ref={ref} className="expedition-canvas" style={{position:'relative',opacity:0}} onPointerDown={e=>{if(!onTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}const targets=getState().objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y);return {id:o.id,d:Math.hypot(p[0]-(e.clientX-r.left),p[1]-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)}} aria-label="Sculpted 3D crew expedition through jungle, desert, mountains, rainbow skies and space" /></>
+  return <><canvas ref={fallbackRef} className="expedition-canvas-fallback" aria-hidden="true" style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}/><canvas ref={ref} className="expedition-canvas" data-zoom={zoom.toFixed(2)} style={{position:'relative',opacity:0,touchAction:preview?'pan-y':'none'}} onPointerDown={e=>{
+    if(preview)return
+    e.currentTarget.setPointerCapture(e.pointerId);pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.current.size===1)tap.current={x:e.clientX,y:e.clientY}
+    if(pointers.current.size===2){tap.current=null;const [a,b]=[...pointers.current.values()];pinch.current={distance:Math.hypot(a!.x-b!.x,a!.y-b!.y),zoom}}
+  }} onPointerMove={e=>{
+    if(!pointers.current.has(e.pointerId))return
+    pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY})
+    if(pointers.current.size===2&&pinch.current){const [a,b]=[...pointers.current.values()];onZoom?.(Math.max(1,Math.min(1.35,pinch.current.zoom*Math.hypot(a!.x-b!.x,a!.y-b!.y)/Math.max(1,pinch.current.distance))))}
+    if(tap.current&&Math.hypot(e.clientX-tap.current.x,e.clientY-tap.current.y)>8)tap.current=null
+  }} onPointerUp={e=>{
+    const select=!!tap.current&&!pinch.current;tap.current=null;pointers.current.delete(e.pointerId);if(!pointers.current.size)pinch.current=null
+    if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)
+    if(!select||!onTarget)return
+    const r=e.currentTarget.getBoundingClientRect()
+    if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}
+    const targets=getState().objects.filter(o=>o.type==='predator').map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
+  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Sculpted 3D crew expedition. Pinch to zoom; as gunner, tap a predator to target it." /></>
 }

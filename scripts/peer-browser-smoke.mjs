@@ -59,8 +59,12 @@ try{
     const after=await evaluate(b,'({epoch:qa.peer.epoch,tick:qa.peer.getState().tick,peer:qav.peer})')
     if(after.epoch!==epoch||after.peer.paused)throw Error('Fallback restarted or stalled the match')
     // Guest rematch adopts exactly the host's new epoch.
-    await evaluate(a,"qa.peer.state.phase='finished'");await sleep(200)
-    await evaluate(b,'qa.rematch()');await sleep(300)
+    await evaluate(a,"qa.peer.state.phase='finished'")
+    try{await waitFor(b,"qa.peer.getState().phase==='finished'")}catch(error){console.log('Terminal relay diagnostic',mode,await evaluate(a,'({host:qa.peer.host,phase:qa.peer.getState().phase,tick:qa.peer.getState().tick,epoch:qa.peer.epoch,status:qav.peer})'),await evaluate(b,'({host:qa.peer.host,phase:qa.peer.getState().phase,tick:qa.peer.getState().tick,epoch:qa.peer.epoch,status:qav.peer})'));throw error}
+    await evaluate(b,'qa.rematch()')
+    await waitFor(a,`qa.peer.epoch!==${JSON.stringify(epoch)}`)
+    const expectedEpoch=await evaluate(a,'qa.peer.epoch')
+    await waitFor(b,`qa.peer.epoch===${JSON.stringify(expectedEpoch)}`)
     const rematchA=await evaluate(a,'qa.peer.epoch'),rematchB=await evaluate(b,'qa.peer.epoch')
     if(rematchA===epoch||rematchA!==rematchB)throw Error('Rematch epoch mismatch')
     await evaluate(b,'qa.peer.receiveRelay('+JSON.stringify(JSON.stringify(oldFrame))+')')
@@ -117,6 +121,17 @@ try{
         await screenshot(guest,'guest-hull-'+width)
       }
       results.push({health:'host+guest damage and actual engineer repair passed',guestWidths:[320,375,390],vectorHearts:'visible'})
+    } else {
+      for(const [width,height] of [[320,568],[390,844],[844,390],[1440,900]]){
+        await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},guest)
+        await evaluate(guest,'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+        const track=await evaluate(guest,"(()=>{const b=document.querySelector('.race-controls>button'),r=b.getBoundingClientRect(),w=document.querySelector('.race-world').getBoundingClientRect();return {overflow:document.documentElement.scrollWidth>innerWidth,button:r.toJSON(),world:w.toJSON(),uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})()")
+        if(track.overflow||track.button.bottom>height||track.button.right>width||track.world.height<140||!track.uncovered)throw Error('Race controls clipped '+JSON.stringify(track))
+        await screenshot(guest,'race-controls-'+width+'x'+height)
+      }
+      await evaluate(guest,"document.querySelector('.race-controls>button').click()")
+      await waitFor(guest,"document.querySelector('.race-controls>button').dataset.active==='true'")
+      results.push({mode:'versus',mobileControls:'320x568 through desktop, landscape, instant button feedback passed'})
     }
     results.push({mode,invitationUI:'passed',directPath:'local'})
   }
