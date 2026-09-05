@@ -48,6 +48,8 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
   const exit = () => { window.history.replaceState(null, '', pongHomeUrlFor(window.location.origin, import.meta.env.BASE_URL)); onExit() }
   const getState = useCallback(() => { if (clientRef.current) return clientRef.current.getRenderState(); if (fallbackRef.current) return fallbackRef.current; throw new Error('No river state is available.') }, [])
   const subscribeState = useCallback((listener: (state: CoopGameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
+  const setPaddle = useCallback((power: number) => clientRef.current?.setPaddle(power), [])
+  const rematch = useCallback(() => clientRef.current?.rematch(), [])
   const participantId = view.participant?.id
   const activeRoomCode = normalizeRoomCode(view.roomCode || roomCode || view.lobby?.roomCode || '')
   const roomName = view.lobby?.roomName ?? createRequest?.roomName ?? (activeRoomCode ? `Boat ${activeRoomCode}` : 'Your boat')
@@ -102,5 +104,5 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
     </section>
   }
 
-  return <CoopRiver getState={getState} subscribe={subscribeState} localPlayerId={participantId} title={roomName} roomCode={view.roomCode} network={{ latencyMs: view.latencyMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting' }} onPaddle={(power) => clientRef.current?.setPaddle(power)} onExit={exit} onRematch={() => clientRef.current?.rematch()} />
+  return <CoopRiver getState={getState} subscribe={subscribeState} localPlayerId={participantId} title={roomName} roomCode={view.roomCode} network={{ latencyMs: view.latencyMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting' }} onPaddle={setPaddle} onExit={exit} onRematch={rematch} />
 }
