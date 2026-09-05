@@ -5,6 +5,7 @@ import { OnlineRoom } from './online/OnlineRoom'
 import { OnlineVersusRoom } from './online/OnlineVersusRoom'
 import { normalizeRoomCode, pongHomeUrlFor } from './online/invite'
 import { loadProfile, saveProfile, type GuestProfile } from './store'
+import { ExpeditionPreview } from './game/ExpeditionPreview'
 
 type Screen =
   | { type: 'home' }
@@ -17,10 +18,6 @@ function screenFromHash(): Screen {
   const code = normalizeRoomCode(match?.[2] ?? '')
   if (!code) return { type: 'home' }
   return { type: match?.[1]?.toLowerCase() === 'race' ? 'versus' : 'coop', roomCode: code }
-}
-
-function BoatArt() {
-  return <div className="oars-hero-art" aria-label="Two friends rowing one boat"><div className="oars-moon">☾</div><i className="oars-star oars-star--1">✦</i><i className="oars-star oars-star--2">✦</i><i className="oars-star oars-star--3">✦</i><div className="oars-ripple oars-ripple--1"/><div className="oars-ripple oars-ripple--2"/><div className="oars-illustration"><span className="oars-illustration__left"/><span className="oars-illustration__right"/><div><b>●</b><b>●</b></div></div></div>
 }
 
 export default function App() {
@@ -45,11 +42,11 @@ export default function App() {
     <main className="oars-home">
       <section className="oars-hero">
         <div className="oars-hero-copy">
-          <p className="oars-kicker">Instant games for two people</p>
-          <h1>Share a link.<br/><em>Make a memory.</em></h1>
-          <p className="oars-tagline">Same team or friendly rivals. One thumb each, zero setup, and a living river full of fireflies, boosts, near misses, and glorious bonks.</p>
+          <p className="oars-kicker">Two people. A whole little universe.</p>
+          <h1>Go somewhere<br/><em>extraordinary.</em></h1>
+          <p className="oars-tagline">Paddle wild rivers. Drive monster trucks into the sunset. Sail an airship through rainbows. Reach the stars together.</p>
           <div className="oars-mode-grid">
-            <button className="oars-launch" onClick={launchCoop}><span>♥</span><strong>Co-op Adventure</strong><small>One boat · two oars · win together</small><em>BEST FOR COUPLES</em></button>
+            <button className="oars-launch" onClick={launchCoop}><span>♥</span><strong>Co-op Adventure</strong><small>Five worlds · one team · shared adventure</small><em>BEST FOR COUPLES</em></button>
             <button className="oars-launch oars-launch--versus" onClick={launchVersus}><span>⚡</span><strong>Rapid Rivals</strong><small>Two boats · tap lanes · race a friend</small><em>NEW</em></button>
             <button className="oars-launch oars-launch--solo" onClick={() => setScreen({ type: 'solo' })}><span>✦</span><strong>Solo Adventure</strong><small>Scout AI takes the other oar</small><em>PLAY NOW</em></button>
           </div>
@@ -57,12 +54,12 @@ export default function App() {
           {joinOpen && <div className="oars-join oars-join--choice"><input value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} placeholder="6-LETTER CODE" maxLength={6} aria-label="Room code"/><button onClick={() => join('coop')}>Join co-op</button><button onClick={() => join('versus')}>Join race</button></div>}
           <label className="oars-name"><span>Your name on the boat</span><input value={profile.name} maxLength={16} onChange={(event) => rename(event.target.value)}/></label>
         </div>
-        <BoatArt/>
+        <ExpeditionPreview/>
       </section>
-      <section className="oars-feature-band"><div><span>⚡</span><p><strong>Harmony Rush</strong><small>Row in sync to charge a shared rock-smashing super.</small></p></div><div><span>◆</span><p><strong>Lantern power</strong><small>Rare lanterns magnetize whole firefly swarms.</small></p></div><div><span>▲</span><p><strong>Rival ramps</strong><small>Hit jumps, steal stars, and switch lanes at speed.</small></p></div></section>
+      <section className="oars-feature-band"><div><span>⚡</span><p><strong>Harmony Rush</strong><small>Row in sync to charge a shared rock-smashing super.</small></p></div><div><span>◆</span><p><strong>Rescue & explore</strong><small>Save little friends, discover relics, thread golden gates.</small></p></div><div><span>▲</span><p><strong>Outsmart predators</strong><small>Spot the warning. Dodge together. Fire a shared flare.</small></p></div></section>
       <section className="oars-promise"><article><b>01 · INVITE</b><h2>The link is the lobby</h2><p>Your friend taps once and lands in the open boat or oar. No signup, install, ready button, or code ritual.</p></article><article><b>02 · CO-OP</b><h2>Find your rhythm</h2><p>Hold together to fly, alternate to steer, chain fireflies, and turn perfect teamwork into a Harmony Rush.</p></article><article><b>03 · VERSUS</b><h2>Race, don’t wait</h2><p>Every tap switches lanes and gives a speed kick. Dodge rocks, hit ramps, and grab the finish first.</p></article></section>
     </main>
-    <footer className="oars-footer"><span>Built for two phones and one couch.</span><span>60Hz edge simulation · reconnect-safe seats</span></footer>
-    {howOpen && <div className="oars-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setHowOpen(false) }}><section className="oars-modal" role="dialog" aria-modal="true"><button className="oars-modal__close" onClick={() => setHowOpen(false)}>Close</button><p className="oars-kicker">Pick your river</p><h2>One thumb. Instant fun.</h2><div className="oars-how"><div><span>♥</span><p><strong>Co-op Adventure</strong><small>Each person owns one oar. Hold together for speed; alternate to steer. Fill Harmony for a super rush.</small></p></div><div><span>⚡</span><p><strong>Rapid Rivals</strong><small>Each person has a boat. Tap to switch lanes and boost. Dodge rocks, hit ramps, and race to 620m.</small></p></div><div><span>✦</span><p><strong>Solo Adventure</strong><small>Scout AI reads hazards and prizes from the right oar while you steer from the left.</small></p></div></div><p>Every multiplayer mode starts from one complete link and automatically begins when the second person arrives.</p><button className="oars-primary" onClick={() => { setHowOpen(false); launchCoop() }}>Start co-op</button></section></div>}
+    <footer className="oars-footer"><span>Two phones. Same Wi-Fi or hotspot. One adventure.</span><span>Local play · direct peer connection when available</span></footer>
+    {howOpen && <div className="oars-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setHowOpen(false) }}><section className="oars-modal" role="dialog" aria-modal="true"><button className="oars-modal__close" onClick={() => setHowOpen(false)}>Close</button><p className="oars-kicker">Pick your river</p><h2>One thumb. Instant fun.</h2><div className="oars-how"><div><span>♥</span><p><strong>Co-op Adventure</strong><small>Each person controls one side. Hold together for speed; alternate to steer. Flare scares predators. Collect relics, rescue friends and cross gates through five worlds.</small></p></div><div><span>⚡</span><p><strong>Rapid Rivals</strong><small>Each person has a boat. Tap to switch lanes and boost. Dodge rocks, hit ramps, and race to 620m.</small></p></div><div><span>✦</span><p><strong>Solo Adventure</strong><small>Scout AI reads hazards and prizes from the right oar while you steer from the left.</small></p></div></div><p>Every multiplayer mode starts from one complete link and automatically begins when the second person arrives.</p><button className="oars-primary" onClick={() => { setHowOpen(false); launchCoop() }}>Start co-op</button></section></div>}
   </div>
 }

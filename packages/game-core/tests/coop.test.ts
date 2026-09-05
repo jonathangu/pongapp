@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceCoopGame, createCoopGame } from '../src'
+import { advanceCoopGame, createCoopGame, expeditionWorld } from '../src'
 
 function start() {
   const state = createCoopGame([{ id: 'left', name: 'Left' }, { id: 'right', name: 'Right' }], 42)
@@ -8,6 +8,23 @@ function start() {
 }
 
 describe('Two Oars cooperative simulation', () => {
+  it('visits all five worlds and finishes at the stars',()=>{
+    const state=start();const worlds=new Set<number>()
+    for(let i=0;i<state.durationTicks;i++){state.invulnerableTicks=120;advanceCoopGame(state,{});worlds.add(expeditionWorld(state))}
+    expect([...worlds]).toEqual([0,1,2,3,4]);expect(state.phase).toBe('finished')
+  })
+  it('a shared flare clears nearby predators and has a shared cooldown',()=>{
+    const state=start();state.objects=[{id:99,type:'predator',x:.5,y:.65,radius:.04,phase:0,drift:0}]
+    advanceCoopGame(state,{left:{paddle:0,flare:true},right:{paddle:0,flare:true}})
+    expect(state.objects).toHaveLength(0);expect(state.hearts).toBe(3);expect(state.score).toBe(40)
+    expect(state.flareCooldown).toBe(420)
+    advanceCoopGame(state,{left:{paddle:0,flare:true}});expect(state.flareCooldown).toBe(419)
+  })
+  it('rewards rescues and relics and protects against consecutive collision damage',()=>{
+    const state=start()
+    for(const type of ['rescue','relic','rock','rock'] as const){state.objects=[{id:99,type,x:state.boat.x,y:.758,radius:.04,phase:0,drift:0}];advanceCoopGame(state,{})}
+    expect(state.rescued).toBe(1);expect(state.relics).toBe(1);expect(state.hearts).toBe(2)
+  })
   it('assigns one oar to each player and starts after a short countdown', () => {
     const state = start()
     expect(state.phase).toBe('playing')

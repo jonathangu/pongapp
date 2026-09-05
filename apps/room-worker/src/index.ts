@@ -414,6 +414,16 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async handleParticipantMessage(socket: WebSocket, participant: InternalParticipant, message: ClientMessage): Promise<void> {
+    if (message.type === 'peerSignal') {
+      if (participant.slot === null || participant.id === message.targetId) return
+      if (this.participants.get(message.targetId)?.slot == null) return
+      for (const target of this.ctx.getWebSockets()) {
+        if ((target.deserializeAttachment() as SocketAttachment | null)?.participantId === message.targetId) {
+          this.send(target, { type: 'peerSignal', fromId: participant.id, data: message.data })
+        }
+      }
+      return
+    }
     if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
       const attachment = socket.deserializeAttachment() as SocketAttachment | null
       if (attachment && !attachment.firstInputAt && message.controlActive === true) {

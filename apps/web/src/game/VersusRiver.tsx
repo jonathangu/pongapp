@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { COOP_TICK_RATE, versusSecondsRemaining, type RacerState, type VersusGameState } from '@pongapp/game-core'
+import { peerLabel, type PeerStatus } from '../online/PeerSession'
+import { useWakeLock } from './useWakeLock'
 
 interface Props {
+  peer?: PeerStatus
   initialState: VersusGameState
   subscribe: (listener: (state: VersusGameState) => void) => () => void
   localPlayerId: string
@@ -28,7 +31,8 @@ function RacerTrack({ racer, state, local }: { racer: RacerState; state: VersusG
   </div>
 }
 
-export function VersusRiver({ initialState, subscribe, localPlayerId, title, roomCode, latencyMs, reconnecting, onTap, onExit, onRematch }: Props) {
+export function VersusRiver({ initialState, subscribe, localPlayerId, title, roomCode, latencyMs, reconnecting, peer, onTap, onExit, onRematch }: Props) {
+  useWakeLock()
   const [state, setState] = useState(initialState)
   useEffect(() => subscribe(setState), [subscribe])
   const racers = useMemo(() => Object.values(state.racers).sort((a,b) => a.slot - b.slot), [state.racers])
@@ -46,9 +50,10 @@ export function VersusRiver({ initialState, subscribe, localPlayerId, title, roo
 
   if (!local || !rival) return null
   return <main className="race-game">
-    <header className="race-topbar"><button onClick={onExit}>←</button><div><strong>RAPID RIVALS</strong><span>{title} · {roomCode}</span></div><b>{reconnecting ? 'REJOINING' : latencyMs === null ? 'EDGE' : `${latencyMs}ms`}</b></header>
+    <header className="race-topbar"><button onClick={onExit}>←</button><div><strong>RAPID RIVALS</strong><span>{title} · {roomCode}</span></div><b data-path={peer?.path}>{peer ? peerLabel(peer) : reconnecting ? 'REJOINING' : latencyMs === null ? 'CONNECTING' : `${latencyMs}ms`}</b></header>
     <section className="race-scorebar"><div><span>{local.name}</span><strong>{Math.round(local.distance)}m</strong></div><p><small>TIME</small><b>{versusSecondsRemaining(state)}</b></p><div><span>{rival.name}</span><strong>{Math.round(rival.distance)}m</strong></div></section>
     <section className="race-world"><RacerTrack racer={local} state={state} local/><div className="race-divider"><span>VS</span></div><RacerTrack racer={rival} state={state} local={false}/>
+      {peer?.paused && <div className="expedition-pause"><strong>Waiting for your rival</strong><span>Keep both game tabs open to resume.</span></div>}
       {countdown && <div className="race-countdown"><small>FIRST TO {state.finishDistance}M</small><strong>{countdown}</strong><span>Tap to switch lanes. Grab stars. Hit ramps.</span></div>}
       {state.phase === 'finished' && <div className="race-finish"><small>{winner?.id === localPlayerId ? 'YOU TOOK THE RIVER!' : `${winner?.name ?? 'RIVAL'} WINS!`}</small><h1>{winner?.id === localPlayerId ? 'VICTORY' : 'REMATCH?'}</h1><p>{Math.round(local.distance)}m vs {Math.round(rival.distance)}m<br/>{local.score} bonus points</p><button onClick={onRematch}>Race again</button><button className="race-finish__quiet" onClick={onExit}>Back home</button></div>}
     </section>

@@ -31,6 +31,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('emote'), emote: z.enum(['gg', 'wow', 'nice', 'oops']) }),
   z.object({ type: z.literal('rematch') }),
+  z.object({ type: z.literal('peerSignal'), targetId: z.string().uuid(), data: z.string().max(60000) }).strict(),
   z.object({ type: z.literal('ping'), sentAt: z.number() }),
   z.object({
     type: z.literal('clientTelemetry'),
@@ -74,6 +75,7 @@ export interface RoomLobby {
 export type OnlineGameState = CoopGameState | VersusGameState
 
 export type ServerMessage =
+  | { type: 'peerSignal'; fromId: string; data: string }
   | {
       type: 'welcome'
       version: typeof PROTOCOL_VERSION

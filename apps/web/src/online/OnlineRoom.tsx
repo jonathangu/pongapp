@@ -49,6 +49,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
   const getState = useCallback(() => { if (clientRef.current) return clientRef.current.getRenderState(); if (fallbackRef.current) return fallbackRef.current; throw new Error('No river state is available.') }, [])
   const subscribeState = useCallback((listener: (state: CoopGameState) => void) => clientRef.current?.subscribeState(listener) ?? (() => undefined), [])
   const setPaddle = useCallback((power: number) => clientRef.current?.setPaddle(power), [])
+  const flare = useCallback(() => clientRef.current?.flare(), [])
   const rematch = useCallback(() => clientRef.current?.rematch(), [])
   const participantId = view.participant?.id
   const activeRoomCode = normalizeRoomCode(view.roomCode || roomCode || view.lobby?.roomCode || '')
@@ -90,6 +91,7 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
           <p className="oars-kicker">One boat · two oars · same team</p>
           <h2>{isHost ? 'Text this link. That’s the lobby.' : `You’re aboard ${roomName}`}</h2>
           <p className="oars-lede">Your friend taps once and takes the other oar. The trip starts automatically—no account, app, or setup.</p>
+          <p className="oars-local-hint">Nearby? Use the same Wi-Fi or phone hotspot. We connect your phones directly when the network allows it. Keep both game tabs open.</p>
           <div className="oars-steps"><span className="is-done"><b>✓</b>Boat ready</span><i/><span className={shared ? 'is-done' : 'is-now'}><b>{shared ? '✓' : '2'}</b>{shared ? 'Link sent' : 'Send link'}</span><i/><span className={players.length >= 2 ? 'is-done' : ''}><b>{players.length >= 2 ? '✓' : '3'}</b>Row together</span></div>
           <p className={`oars-edge oars-edge--${view.connectionQuality}`}><i />{edgeLabel}</p>
           {isHost && <button className="oars-share" onClick={() => void shareInvite()}><span>↗</span><strong>{copied ? 'Invite copied!' : 'Text the invite'}</strong><small>Opens straight into the empty oar</small></button>}
@@ -104,5 +106,5 @@ export function OnlineRoom({ serverUrl, roomCode, createRequest, identity, onExi
     </section>
   }
 
-  return <CoopRiver getState={getState} subscribe={subscribeState} localPlayerId={participantId} title={roomName} roomCode={view.roomCode} network={{ latencyMs: view.latencyMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting' }} onPaddle={setPaddle} onExit={exit} onRematch={rematch} />
+  return <CoopRiver getState={getState} subscribe={subscribeState} localPlayerId={participantId} title={roomName} roomCode={view.roomCode} network={{ latencyMs: view.latencyMs, quality: view.connectionQuality, reconnecting: view.status === 'connecting', peer: view.peer }} onPaddle={setPaddle} onFlare={flare} onExit={exit} onRematch={rematch} />
 }

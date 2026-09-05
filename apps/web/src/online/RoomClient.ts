@@ -1,9 +1,11 @@
 import { COOP_TICK_RATE, type CoopGameState } from '@pongapp/game-core'
 import { PROTOCOL_VERSION, type ClientMessage, type CreateRoomRequest, type RoomLobby, type RoomParticipant, type ServerMessage } from '@pongapp/protocol'
+import { PeerSession, type PeerStatus } from './PeerSession'
 
 export type RoomClientStatus = 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
 export type ConnectionQuality = 'good' | 'fair' | 'poor'
 export interface RoomClientView {
+  peer?: PeerStatus
   status: RoomClientStatus; roomCode: string; lobby: RoomLobby | null; gameState: CoopGameState | null
   participant: RoomParticipant | null; error: string | null; latencyMs: number | null; latencyP95Ms: number | null
   jitterMs: number | null; snapshotGapP95Ms: number | null; connectionQuality: ConnectionQuality
@@ -33,6 +35,8 @@ function cloneState(state: CoopGameState): CoopGameState {
 }
 
 export class RoomClient {
+  private peer: PeerSession | null = null
+  private queuedSignals: Array<{ fromId: string; data: string }> = []
   private socket: WebSocket | null = null
   private listeners = new Set<(view: RoomClientView) => void>()
   private stateListeners = new Set<(state: CoopGameState) => void>()
@@ -79,6 +83,8 @@ export class RoomClient {
   subscribe(listener: (view: RoomClientView) => void): () => void { this.listeners.add(listener); listener(this.view); return () => this.listeners.delete(listener) }
   subscribeState(listener: (state: CoopGameState) => void): () => void { this.stateListeners.add(listener); if (this.view.gameState) listener(this.view.gameState); return () => this.stateListeners.delete(listener) }
   getRenderState(): CoopGameState {
+    const local = this.peer?.getState()
+    if (local?.rulesetVersion === 5) return local
     const latest = this.snapshots.at(-1)
     if (!latest) { if (!this.view.gameState) throw new Error('No river snapshot is available.'); return cloneState(this.view.gameState) }
     const clone = cloneState(latest.state); const previous = this.snapshots.at(-2)
@@ -89,12 +95,13 @@ export class RoomClient {
     clone.boat.heading = previous.state.boat.heading + (latest.state.boat.heading - previous.state.boat.heading) * amount
     return clone
   }
-  setPaddle(power: number): void { const next = Math.max(0, Math.min(1, power)); if (next === this.paddle) return; this.paddle = next; this.paddleChanged = true; this.controlActivated = true; this.flushInput() }
+  setPaddle(power: number): void { const next = Math.max(0, Math.min(1, power)); if (next === this.paddle) return; this.paddle = next; if (this.peer) { this.peer.setPaddle(next); return }; this.paddleChanged = true; this.controlActivated = true; this.flushInput() }
+  flare(): void { this.peer?.flare() }
   reportTelemetry(event: 'control_surface_visible' | 'room_full_visible'): void { this.send({ type: 'clientTelemetry', event }) }
   reportPerformance(sample: ClientPerformanceSample): void { this.send({ type: 'clientTelemetry', event: 'performance_sample', ...sample }) }
   sendEmote(emote: 'gg' | 'wow' | 'nice' | 'oops'): void { this.send({ type: 'emote', emote }) }
-  rematch(): void { this.send({ type: 'rematch' }) }
-  close(): void { this.closedByUser = true; window.clearInterval(this.inputTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); window.clearTimeout(this.reconnectTimer); this.socket?.close(1000, 'player left'); this.socket = null; this.snapshots = []; this.patch({ status: 'closed' }) }
+  rematch(): void { if (this.peer) this.peer.rematch(); else this.send({ type: 'rematch' }) }
+  close(): void { this.peer?.close(); this.peer = null; this.closedByUser = true; window.clearInterval(this.inputTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); window.clearTimeout(this.reconnectTimer); this.socket?.close(1000, 'player left'); this.socket = null; this.snapshots = []; this.patch({ status: 'closed' }) }
   private flushInput(): void {
     if (this.socket?.readyState !== WebSocket.OPEN || !this.view.participant || this.view.participant.slot === null || this.socket.bufferedAmount > 4_096 || !hasRoomInputToFlush(this.paddleChanged)) return
     this.inputSeq += 1; this.paddleChanged = false
@@ -103,6 +110,11 @@ export class RoomClient {
   private send(message: ClientMessage): void { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)) }
   private onMessage(raw: string): void {
     let message: ServerMessage; try { message = JSON.parse(raw) as ServerMessage } catch { return }
+    if (message.type === 'peerSignal') {
+      if (this.peer) this.peer.receiveRelay(message.data)
+      else if (this.queuedSignals.length < 64) this.queuedSignals.push(message)
+      return
+    }
     if (message.type === 'welcome') {
       this.reconnectAttempt = 0; this.reconnectToken = message.reconnectToken
       try { localStorage.setItem(`pongapp.room.${this.roomCode}.token`, message.reconnectToken) } catch { /* storage unavailable */ }
@@ -112,6 +124,23 @@ export class RoomClient {
       this.patch({ participant, lobby: message.lobby, status: message.lobby.phase === 'lobby' ? 'lobby' : 'playing' })
     } else if (message.type === 'snapshot' || message.type === 'result') {
       if (message.state.rulesetVersion !== 5) return
+      if (this.peer) return
+      const me = this.view.participant
+      const other = this.view.lobby?.participants.find((p) => p.slot !== null && p.id !== me?.id)
+      if (me && me.slot !== null && other) {
+        this.peer = new PeerSession(me.id, other.id, me.slot === 0, message.state,
+          (data) => this.send({ type: 'peerSignal', targetId: other.id, data }),
+          (state) => {
+            if (state.rulesetVersion !== 5) return
+            this.view = { ...this.view, gameState: state, status: 'playing' }
+            // HUD updates are throttled; the canvas reads local state every frame.
+            if (state.tick % 6 === 0 || state.events.length || state.phase === 'finished') for (const listener of this.listeners) listener(this.view)
+            for (const listener of this.stateListeners) listener(state)
+          },
+          (peer) => this.patch({ peer }))
+        this.peer.setPaddle(this.paddle)
+        for (const signal of this.queuedSignals.splice(0)) if (signal.fromId === other.id) this.peer.receiveRelay(signal.data)
+      }
       const now = performance.now(); const previousReceipt = this.snapshots.at(-1)?.receivedAt
       if (previousReceipt !== undefined) { this.snapshotGapSamples.push(now - previousReceipt); if (this.snapshotGapSamples.length > 60) this.snapshotGapSamples.shift() }
       this.snapshots.push({ state: message.state, receivedAt: now }); if (this.snapshots.length > 4) this.snapshots.shift()
@@ -135,9 +164,9 @@ export class RoomClient {
     if (socket !== this.socket) return
     window.clearInterval(this.inputTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer)
     if (this.closedByUser) return
-    if (!shouldReconnectAfterClose(event.code)) { this.socket = null; this.patch({ status: 'closed', error: 'This oar moved to another tab or device. Continue playing there.' }); return }
+    if (!shouldReconnectAfterClose(event.code)) { this.peer?.close(); this.socket = null; this.patch({ status: 'closed', error: 'This oar moved to another tab or device. Continue playing there.' }); return }
     this.socket = null; this.scheduleReconnect()
   }
-  private scheduleReconnect(): void { window.clearInterval(this.inputTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); window.clearTimeout(this.reconnectTimer); if (this.reconnectAttempt >= 4) { this.patch({ status: 'error', error: 'Connection lost. Return home and open the invite again.' }); return } this.reconnectAttempt += 1; this.patch({ status: 'connecting', error: null }); this.reconnectTimer = window.setTimeout(() => this.connect(), Math.min(2_000, 250 * 2 ** (this.reconnectAttempt - 1))) }
+  private scheduleReconnect(): void { if (this.peer && this.view.peer && !this.view.peer.paused && this.view.peer.path !== 'relay') this.reconnectAttempt = 0; window.clearInterval(this.inputTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); window.clearTimeout(this.reconnectTimer); if (this.reconnectAttempt >= 4) { this.patch({ status: 'error', error: 'Connection lost. Return home and open the invite again.' }); return } this.reconnectAttempt += 1; this.patch({ status: 'connecting', error: null }); this.reconnectTimer = window.setTimeout(() => this.connect(), Math.min(2_000, 250 * 2 ** (this.reconnectAttempt - 1))) }
   private patch(next: Partial<RoomClientView>): void { this.view = { ...this.view, ...next }; for (const listener of this.listeners) listener(this.view) }
 }

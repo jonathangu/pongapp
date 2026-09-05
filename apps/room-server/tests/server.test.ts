@@ -46,6 +46,19 @@ describe('local Two Oars room server', () => {
     host.send(JSON.stringify({ type: 'input', seq: 1, paddle: 1, controlActive: true }))
     const snapshot = await acknowledged
     expect(snapshot.type === 'snapshot' && snapshot.state.rulesetVersion).toBe(5)
+    if (snapshot.type !== 'snapshot' || snapshot.state.rulesetVersion !== 5) throw new Error('Missing game')
+    const seats = Object.values(snapshot.state.players)
+    const fromId = seats.find((p) => p.side === 'left')!.id
+    const targetId = seats.find((p) => p.side === 'right')!.id
+    const forwarded = waitFor(guest, (message) => message.type === 'peerSignal')
+    host.send(JSON.stringify({type:'peerSignal',targetId,data:'{"kind":"ping","at":123}'}))
+    expect(await forwarded).toMatchObject({type:'peerSignal',fromId,data:'{"kind":"ping","at":123}'})
+    const third = await connect(baseUrl,roomCode,3)
+    let injected = false
+    guest.on('message',raw=>{const m=JSON.parse(raw.toString());if(m.type==='peerSignal'&&m.data==='unauthorized')injected=true})
+    third.send(JSON.stringify({type:'peerSignal',targetId,data:'unauthorized'}))
+    await new Promise(resolve=>setTimeout(resolve,80))
+    expect(injected).toBe(false);third.close()
     host.close(); guest.close(); await roomServer.close(); openServers.splice(openServers.indexOf(roomServer), 1)
     const database = JSON.parse(await readFile(dataPath, 'utf8')) as { version: number; rooms: Record<string, unknown> }
     expect(database.version).toBe(5); expect(database.rooms[roomCode]).toBeDefined()

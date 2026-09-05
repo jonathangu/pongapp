@@ -164,6 +164,12 @@ export class GameRoom {
   }
 
   private async handleParticipantMessage(socket: WebSocket, participant: InternalParticipant, message: ClientMessage): Promise<void> {
+    if (message.type === 'peerSignal') {
+      if (participant.slot === null || participant.id === message.targetId) return
+      if (this.participants.get(message.targetId)?.slot == null) return
+      for (const [target, id] of this.sockets) if (id === message.targetId) this.send(target, { type: 'peerSignal', fromId: participant.id, data: message.data })
+      return
+    }
     if (message.type === 'input' && participant.slot !== null && message.seq > participant.lastSeq) {
       participant.lastSeq = message.seq
       participant.lastPaddle = message.paddle

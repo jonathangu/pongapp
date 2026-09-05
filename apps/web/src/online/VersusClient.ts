@@ -1,7 +1,9 @@
 import type { VersusGameState } from '@pongapp/game-core'
 import { PROTOCOL_VERSION, type ClientMessage, type CreateRoomRequest, type RoomLobby, type RoomParticipant, type ServerMessage } from '@pongapp/protocol'
+import { PeerSession, type PeerStatus } from './PeerSession'
 
 export interface VersusClientView {
+  peer?: PeerStatus
   status: 'idle' | 'connecting' | 'lobby' | 'playing' | 'closed' | 'error'
   roomCode: string
   lobby: RoomLobby | null
@@ -17,6 +19,8 @@ function socketUrl(serverUrl: string, roomCode: string): string {
 }
 
 export class VersusClient {
+  private peer: PeerSession | null = null
+  private queuedSignals: Array<{ fromId: string; data: string }> = []
   private socket: WebSocket | null = null
   private listeners = new Set<(view: VersusClientView) => void>()
   private stateListeners = new Set<(state: VersusGameState) => void>()
@@ -54,15 +58,21 @@ export class VersusClient {
   subscribe(listener: (view: VersusClientView) => void): () => void { this.listeners.add(listener); listener(this.view); return () => this.listeners.delete(listener) }
   subscribeState(listener: (state: VersusGameState) => void): () => void { this.stateListeners.add(listener); if (this.view.gameState) listener(this.view.gameState); return () => this.stateListeners.delete(listener) }
   tap(): void {
+    if (this.peer) { this.peer.tap(); return }
     if (this.socket?.readyState !== WebSocket.OPEN || this.view.participant?.slot === null) return
     this.seq += 1; this.send({ type: 'input', seq: this.seq, paddle: 1, controlActive: true })
     window.setTimeout(() => { this.seq += 1; this.send({ type: 'input', seq: this.seq, paddle: 0, controlActive: true }) }, 45)
   }
-  rematch(): void { this.send({ type: 'rematch' }) }
-  close(): void { this.closed = true; window.clearTimeout(this.reconnectTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); this.socket?.close(1000, 'left race'); this.socket = null }
+  rematch(): void { if (this.peer) this.peer.rematch(); else this.send({ type: 'rematch' }) }
+  close(): void { this.peer?.close(); this.peer = null; this.closed = true; window.clearTimeout(this.reconnectTimer); window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); this.socket?.close(1000, 'left race'); this.socket = null }
   private send(message: ClientMessage): void { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)) }
   private onMessage(raw: string): void {
     let message: ServerMessage; try { message = JSON.parse(raw) as ServerMessage } catch { return }
+    if (message.type === 'peerSignal') {
+      if (this.peer) this.peer.receiveRelay(message.data)
+      else if (this.queuedSignals.length < 64) this.queuedSignals.push(message)
+      return
+    }
     if (message.type === 'welcome') {
       this.reconnects = 0; this.reconnectToken = message.reconnectToken
       try { localStorage.setItem(`pongapp.room.${this.roomCode}.token`, message.reconnectToken) } catch { /* unavailable */ }
@@ -70,13 +80,27 @@ export class VersusClient {
     } else if (message.type === 'lobby') {
       this.patch({ lobby: message.lobby, participant: message.lobby.participants.find((person) => person.id === this.view.participant?.id) ?? this.view.participant, status: message.lobby.phase === 'lobby' ? 'lobby' : 'playing' })
     } else if ((message.type === 'snapshot' || message.type === 'result') && message.state.rulesetVersion === 6) {
+      if (this.peer) return
+      const me = this.view.participant
+      const other = this.view.lobby?.participants.find((p) => p.slot !== null && p.id !== me?.id)
+      if (me && me.slot !== null && other) {
+        this.peer = new PeerSession(me.id, other.id, me.slot === 0, message.state,
+          (data) => this.send({ type: 'peerSignal', targetId: other.id, data }),
+          (state) => {
+            if (state.rulesetVersion !== 6) return
+            this.view = { ...this.view, gameState: { ...state }, status: 'playing' }
+            if (state.tick % 6 === 0 || state.phase === 'finished') for (const listener of this.listeners) listener(this.view)
+            for (const listener of this.stateListeners) listener({ ...state })
+          }, (peer) => this.patch({ peer }))
+        for (const signal of this.queuedSignals.splice(0)) if (signal.fromId === other.id) this.peer.receiveRelay(signal.data)
+      }
       this.view = { ...this.view, gameState: message.state, status: 'playing' }
       for (const listener of this.listeners) listener(this.view); for (const listener of this.stateListeners) listener(message.state)
     } else if (message.type === 'pong') this.patch({ latencyMs: Math.max(0, Date.now() - message.sentAt) })
     else if (message.type === 'error') this.patch({ status: message.recoverable ? this.view.status : 'error', error: message.message })
   }
   private checkHealth(): void { if (document.visibilityState !== 'visible' || this.socket?.readyState !== WebSocket.OPEN || performance.now() - this.lastMessageAt < 2200) return; const stale = this.socket; this.socket = null; stale.close(4002, 'stale'); this.reconnect() }
-  private onClose(socket: WebSocket, code: number): void { if (socket !== this.socket || this.closed) return; this.socket = null; if (code === 4001) { this.patch({ status: 'closed', error: 'This racer moved to another tab.' }); return }; this.reconnect() }
-  private reconnect(): void { window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); if (this.reconnects >= 5) { this.patch({ status: 'error', error: 'The race connection was lost.' }); return }; this.reconnects += 1; this.patch({ status: 'connecting' }); this.reconnectTimer = window.setTimeout(() => this.connect(), Math.min(2200, 250 * 2 ** (this.reconnects - 1))) }
+  private onClose(socket: WebSocket, code: number): void { if (socket !== this.socket || this.closed) return; this.socket = null; if (code === 4001) { this.peer?.close(); this.patch({ status: 'closed', error: 'This racer moved to another tab.' }); return }; this.reconnect() }
+  private reconnect(): void { if (this.peer && this.view.peer && !this.view.peer.paused && this.view.peer.path !== 'relay') this.reconnects = 0; window.clearInterval(this.pingTimer); window.clearInterval(this.healthTimer); if (this.reconnects >= 5) { this.patch({ status: 'error', error: 'The race connection was lost.' }); return }; this.reconnects += 1; this.patch({ status: 'connecting' }); this.reconnectTimer = window.setTimeout(() => this.connect(), Math.min(2200, 250 * 2 ** (this.reconnects - 1))) }
   private patch(next: Partial<VersusClientView>): void { this.view = { ...this.view, ...next }; for (const listener of this.listeners) listener(this.view) }
 }

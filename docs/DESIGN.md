@@ -1,67 +1,52 @@
-# Two Oars product and interaction design
+# Two Oars expedition design
 
-## Product promise
+The invitation stays effortless: create a private room, text the complete URL,
+and automatically begin when the second person opens it. Co-op uses
+`#/room/CODE`; versus uses `#/race/CODE`. No shared-screen mode.
 
-“Text one link. Play together or race each other in seconds.”
+## Worlds and cooperative actions
 
-The invite is not a pre-game workflow; it is the lobby. Creating a trip returns
-one complete URL. Opening it joins the room automatically and assigns the first
-available oar. Two connected rowers trigger a three-second countdown without a
-ready button.
+Five 24-second chapters use an isometric canvas with depth-sorted terrain,
+vehicles, creatures, pickups, shadows and sky panoramas:
 
-## Core loop
+1. Emerald Wilds — boat, jungle banks, crocodiles, ruins and fireflies.
+2. Sunset Mesa — monster truck, warm canyon cliffs and a setting sun.
+3. Alpine Kingdom — monster truck, snow peaks and crystal passes.
+4. Rainbow Skies — airship, floating cloud islands and a rainbow.
+5. Starlight Frontier — spacecraft, rings, stars and cosmic predators.
 
-The shared boat moves through moonlight, aurora, and dawn for 90 seconds:
+The shared controls remain familiar across vehicles: hold both sides for speed,
+alternate to steer. Harmony rewards synchronized holding with a hazard-smashing
+rush. Predators track the vehicle while their warning is visible, then commit
+to their approach. Either player can fire a shared flare to clear nearby
+predators; its seven-second cooldown is visible to both. Relics recharge it.
+Rescue targets and golden gates add optional team objectives and scores.
+Two seconds of invulnerability after a crash prevents clustered instant deaths.
 
-- Both players hold: maximum forward speed and a straight course.
-- Left player holds: the boat turns right.
-- Right player holds: the boat turns left.
-- Fireflies add points and grow a shared streak.
-- Rocks remove one of three shared hearts and reset the streak.
-- Rare hearts repair one shared heart.
-- Sustained synchronized rowing fills Harmony and triggers a three-second Rush
-  that attracts fireflies, doubles their points, and smashes hazards.
-- Rare lanterns create an eight-second magnet power; moving logs and near-miss
-  bonuses add risk and surprise.
+The canvas reads the simulation each animation frame. React handles the HUD at
+about 10 Hz plus important events. Canvas resolution is capped at 1.5 device
+pixels per CSS pixel. The home preview lets players inspect all five worlds.
 
-There is no individual score, winner, or blame surface in co-op. Every reward and cost is
-shared. A trip ends at sunrise or when all three hearts are gone; either player
-can immediately start a rematch. Rapid Rivals is an intentionally separate
-competitive mode: tapping switches the player's boat between two lanes and
-adds a speed kick, with rocks, boost stars, and ramps shared deterministically.
-Solo Adventure runs the co-op simulation locally with a hazard-aware AI oar.
+## Local connection
 
-## Join state machine
+The server authenticates seats and forwards only room-scoped peer messages.
+Slot zero hosts physics and results; both phones execute the same deterministic
+simulation. A guest predicts its own input without waiting for acknowledgement.
+Host snapshots carry consumed action counters so corrections do not repeat taps.
 
-1. Host presses “Row with someone.”
-2. Client creates a nearest-edge room with `mode: coop|versus` and replaces the
-   URL with `#/room/CODE` or `#/race/CODE`.
-3. Host sends the URL using native share or clipboard fallback.
-4. Guest opens it and sends a guest ID in the protocol-v5 hello.
-5. The room assigns slot 0/left or slot 1/right and starts at two connected seats.
-6. A per-room reconnect token reclaims the same participant and closes a stale
-   duplicate socket with code 4001.
-7. A third browser sees a clear full-boat screen and cannot affect controls.
+WebRTC ICE negotiates a direct route. Reliable ordered controls are independent
+from unordered snapshots with zero retransmissions. A WebSocket relay preserves
+the same simulation if ICE is blocked or a data channel fails. Shared epochs
+identify rematches and reject older frames. An absent/backgrounded peer pauses
+play. The screen wake lock is requested when supported.
 
-## Latency strategy
+Path labels come from the selected ICE pair, and the displayed RTT is a peer
+round trip. It is separate from touch-to-visible latency. Physical phones and
+hotspot combinations must be tested directly before claiming hardware coverage.
 
-The server remains authoritative, but the mechanic avoids latency-sensitive
-collisions between players:
+## Limits
 
-- Control payload: `{seq, paddle, controlActive}` where paddle is 0…1.
-- Press and release are flushed immediately, with a 30 Hz safety loop.
-- Local button state and the local oar animate before server acknowledgement.
-- Boat position is interpolated from recent snapshots using an adaptive 1.5–4
-  tick buffer based on round-trip time, jitter, and snapshot gaps.
-- A visible client reconnects a stale stream after two seconds without messages.
-- A disconnected participant's paddle is zeroed server-side immediately.
-
-The resulting game remains understandable on ordinary cellular latency while a
-good edge connection still feels crisp.
-
-## Privacy-safe operations
-
-Lifecycle telemetry uses server-generated room and match correlation IDs. It
-records connection transitions, anonymous seat numbers, timing, network quality,
-and final aggregate trip metrics. It does not log room codes, names, guest IDs,
-participant IDs, reconnect tokens, invite URLs, or paddle values.
+This is a private casual game, not a cheat-resistant ranked service: the host
+phone owns the match. A host page reload starts a new expedition. The initial
+page and signaling require internet even if subsequent play takes a local path.
+A same-network connection is attempted, never promised merely from proximity.
