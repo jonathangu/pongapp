@@ -20,6 +20,8 @@ export class RescueAudio {
   private epoch = 0
   private settings: RescueAudioSettings = { music: .5, effects: .65 }
   private voices = 0
+  private analyser: AnalyserNode | null = null
+  private samples = new Float32Array(256)
   private disposed = false
   private visibility = () => { if (document.hidden) void this.context?.suspend(); else if (!this.disposed) void this.context?.resume().catch(() => {}) }
   async unlock() {
@@ -27,12 +29,13 @@ export class RescueAudio {
     if (!this.context) {
       const c = new AudioContext(); this.context = c
       const master = c.createGain(); master.gain.value = .7
-      const limiter = c.createDynamicsCompressor(); limiter.threshold.value = -12; limiter.ratio.value = 8; master.connect(limiter); limiter.connect(c.destination)
+      const limiter = c.createDynamicsCompressor(); limiter.threshold.value = -12; limiter.ratio.value = 8; master.connect(limiter)
+      this.analyser = c.createAnalyser(); this.analyser.fftSize = 256; limiter.connect(this.analyser); this.analyser.connect(c.destination)
       this.music = c.createGain(); this.fx = c.createGain(); this.music.connect(master); this.fx.connect(master)
       this.reverb = c.createConvolver(); const impulse = c.createBuffer(2, Math.floor(c.sampleRate * 1.7), c.sampleRate)
       let seed = 9372
       for (let channel = 0; channel < 2; channel++) { const data = impulse.getChannelData(channel); for (let i = 0; i < data.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; data[i] = (seed / 0xffffffff * 2 - 1) * Math.exp(-i / c.sampleRate * 4) * .25 } }
-      this.reverb.buffer = impulse; const wet = c.createGain(); wet.gain.value = .22; this.reverb.connect(wet); wet.connect(master)
+      this.reverb.buffer = impulse; const wet = c.createGain(); wet.gain.value = .22; this.reverb.connect(wet); wet.connect(this.music)
       this.noise = c.createBuffer(1, c.sampleRate * 2, c.sampleRate)
       const data = this.noise.getChannelData(0); let previous = 0
       for (let i = 0; i < data.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; previous = (previous + (seed / 0xffffffff * 2 - 1) * .08) / 1.025; data[i] = previous * 4 }
@@ -104,6 +107,6 @@ export class RescueAudio {
     else if (e.kind === 'lose') for (const [i, n] of [62, 59, 54, 47].entries()) this.note(n, at + i * .22, 1.4, .16, fx, 'triangle')
     else if (e.kind === 'seat' || e.kind === 'order' || e.kind === 'dock') this.note(e.kind === 'dock' ? 62 : 79, at, .15, .1, fx)
   }
-  stats() { return { state: this.context?.state ?? 'locked', voices: this.voices, beat: this.beat, music: this.settings.music, effects: this.settings.effects } }
+  stats() { this.analyser?.getFloatTimeDomainData(this.samples); const rms = Math.sqrt(this.samples.reduce((sum, value) => sum + value * value, 0) / this.samples.length); return { state: this.context?.state ?? 'locked', voices: this.voices, beat: this.beat, music: this.settings.music, effects: this.settings.effects, rms } }
   dispose() { this.disposed = true; if (this.timer) clearInterval(this.timer); document.removeEventListener('visibilitychange', this.visibility); void this.context?.close() }
 }

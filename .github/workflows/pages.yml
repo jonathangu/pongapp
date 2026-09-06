@@ -75,3 +75,7 @@ jobs:
         env:
           GAME_MODE: versus
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
+      - name: Verify Starling eight-player rescue rooms
+        run: node scripts/starling-room-smoke.mjs
+        env:
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev

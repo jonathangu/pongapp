@@ -10,7 +10,7 @@ export type RescueClientMessage =
   | { type: 'ping'; at: number }
 export interface RescuePresence { id: string; name: string; connected: boolean; pet: boolean }
 export interface RescueFrame {
-  type: 'frame'; state: Omit<RescueState, 'world'>; world: Pick<RescueWorld, 'cages' | 'gifts'> & { fog?: number[] }
+  type: 'frame'; state: Omit<RescueState, 'world' | 'voyage' | 'docks'>; world: Pick<RescueWorld, 'cages' | 'gifts'> & { fog?: number[] }
   acks: Record<string, number>; presence: RescuePresence[]; started: boolean
 }
 export type RescueServerMessage =
@@ -42,9 +42,9 @@ export function parseRescueClientMessage(raw: string): RescueClientMessage | nul
 /** Round wire coordinates only. Authoritative physics keeps its full precision. */
 export const encodeRescueMessage = (message: RescueServerMessage) => JSON.stringify(message, (_key, value: unknown) => typeof value === 'number' && !Number.isInteger(value) ? Math.round(value * 10000) / 10000 : value)
 export function rescueFrame(state: RescueState, acks: Record<string, number>, presence: RescuePresence[], started: boolean, fog = false): RescueFrame {
-  const { world, ...dynamic } = state
+  const { world, voyage: _voyage, docks: _docks, ...dynamic } = state
   return { type: 'frame', state: dynamic, world: { cages: world.cages, gifts: world.gifts, ...(fog ? { fog: world.fog } : {}) }, acks, presence, started }
 }
 export function mergeRescueFrame(previous: RescueState, frame: RescueFrame): RescueState {
-  return { ...frame.state, world: { ...previous.world, ...frame.world, fog: frame.world.fog ?? previous.world.fog } }
+  return { ...frame.state, voyage: previous.voyage, docks: previous.docks, world: { ...previous.world, ...frame.world, fog: frame.world.fog ?? previous.world.fog } }
 }

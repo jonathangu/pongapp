@@ -1,9 +1,11 @@
 import { DurableObject } from 'cloudflare:workers'
+import { validateVoyage } from '@pongapp/game-core'
+import type { VoyageDirector } from './index'
 import { MAX_RESCUE_CREW, MAX_RESCUE_HUMANS, RESCUE_CREW_COLORS, advanceRescueGame, applyRescueAction, createRescueCrew, createRescueGame, decodeRescueSave, neutralRescueInput, restartRescueGame, type RescueInput, type RescueState } from '@pongapp/game-core'
 import { RESCUE_PROTOCOL_VERSION, encodeRescueMessage, parseRescueClientMessage, parseRescueRoomRequest, rescueFrame,
   type RescuePresence, type RescueRoomRequest, type RescueServerMessage } from '@pongapp/protocol'
 
-interface RescueRoomEnv { RESCUE_ROOMS: DurableObjectNamespace<RescueRoom> }
+interface RescueRoomEnv { RESCUE_ROOMS: DurableObjectNamespace<RescueRoom>; VOYAGES: DurableObjectNamespace<VoyageDirector> }
 interface Member { id: string; guestId: string; name: string; token: string; connected: boolean; disconnectedAt: number | null; seq: number }
 interface RecordData { protocol: number; config: RescueRoomRequest & { code: string }; state: RescueState; members: Member[]; started: boolean; savedAt: number }
 interface Attachment { id: string | null; at: number; lastMessageAt: number; messages: number }
@@ -13,6 +15,8 @@ const STORAGE = 'starling-room-v1', GRACE = 20_000, ROOM_TTL = 24 * 60 * 60 * 10
 export class RescueRoom extends DurableObject<RescueRoomEnv> {
   private record: RecordData | null = null
   private inputs: Record<string, RescueInput> = {}
+  private presses: Record<string, number> = {}
+  private commands: Record<string, RescueInput> = {}
   private loop: ReturnType<typeof setInterval> | null = null
   private lastTime = 0
   private accumulator = 0
@@ -45,6 +49,9 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       const state = (config.save ? decodeRescueSave(config.save) : null) ?? createRescueGame({ seed: config.seed, biome: config.biome, solo: true, players: [{ id: 'pending-host', name: config.name }] }); state.paused = true
       for (const crew of state.crew) if (crew.origin === 'human') { crew.pet = true; crew.lastSeq = -1; crew.lastButtons = 0 }
       delete config.save
+      if (config.voyageKey && !state.voyage) {
+        try { const response = await this.env.VOYAGES.get(this.env.VOYAGES.idFromName('ark-v1-global-budget')).fetch('https://voyage.internal/api/voyages?key=' + encodeURIComponent(config.voyageKey)); const result = await response.json() as { pack?: unknown }; const pack = validateVoyage(result.pack); if (pack?.source === 'generated') state.voyage = pack } catch { /* Read-only cached recipe lookup: opening a game never generates or spends. */ }
+      }
       this.record = { protocol: RESCUE_PROTOCOL_VERSION, config: { ...config, code: raw.code }, state, members: [], started: false, savedAt: Date.now() }
       await this.persist(); await this.ctx.storage.setAlarm(Date.now() + ROOM_TTL)
       return new Response('created', { status: 201 })
@@ -95,6 +102,7 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       member.connected = true; member.disconnectedAt = null
       const crew = r.state.crew.find(p => p.id === member!.id)!
       crew.pet = false; this.inputs[member.id] = neutralRescueInput(Math.max(0, member.seq))
+      delete this.presses[member.id]; delete this.commands[member.id]
       attachment.id = member.id; socket.serializeAttachment(attachment)
       r.started = true; r.state.paused = false; r.state.solo = r.members.filter(m => m.connected).length <= 1
       this.send(socket, { type: 'welcome', version: RESCUE_PROTOCOL_VERSION, playerId: member.id, token: member.token, code: r.config.code, state: r.state, presence: this.presence(), started: r.started })
@@ -104,7 +112,12 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
     if (!member) return
     if (message.type === 'input') {
       if (message.epoch !== this.record.state.epoch || message.input.seq <= member.seq) return
-      member.seq = message.input.seq; this.inputs[member.id] = message.input
+      member.seq = message.input.seq
+      if (message.input.active) {
+        this.presses[member.id] = (this.presses[member.id] ?? 0) | message.input.buttons & ~(this.inputs[member.id]?.buttons ?? 0)
+        if (message.input.command) this.commands[member.id] = message.input
+      } else { delete this.presses[member.id]; delete this.commands[member.id] }
+      this.inputs[member.id] = message.input
     } else if (message.type === 'action' && message.epoch === this.record.state.epoch) {
       const host = this.record.members.find(m => m.connected)
       if (host?.id !== member.id) { this.send(socket, { type: 'error', code: 'host_action', message: 'The connected captain chooses docking, crew and ship upgrades.' }); return }
@@ -112,11 +125,12 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       if (!updated) { this.send(socket, { type: 'error', code: 'action_unavailable', message: 'Approach slowly, dock first, or check your available salvage.' }); return }
       const changed = updated.epoch !== this.record.state.epoch
       this.record.state = updated
-      if (changed) { for (const m of this.record.members) { m.seq = -1; this.inputs[m.id] = neutralRescueInput() } }
+      if (changed) { this.presses = {}; this.commands = {}; for (const m of this.record.members) { m.seq = -1; this.inputs[m.id] = neutralRescueInput() } }
       this.eventQueue.push(...updated.events); this.broadcastWelcomeStates(); await this.persist()
     } else if (message.type === 'rematch' && message.epoch === this.record.state.epoch && this.record.state.phase !== 'playing' && this.record.members.find(m => m.connected)?.id === member.id) {
       this.record.state = restartRescueGame(this.record.state, message.next && this.record.state.phase === 'won')
       this.record.state.paused = !this.record.members.some(m => m.connected)
+      this.presses = {}; this.commands = {}
       for (const m of this.record.members) { m.seq = -1; this.inputs[m.id] = neutralRescueInput() }
       this.eventQueue = []; this.broadcastWelcomeStates(); await this.persist()
     }
@@ -156,7 +170,14 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
     this.accumulator += elapsed / 1000
     let steps = 0
     while (this.accumulator >= 1 / 60 && steps < 4) {
-      if (r.started) { advanceRescueGame(r.state, this.inputs); this.eventQueue.push(...r.state.events) }
+      if (r.started) {
+        const sampled: Record<string, RescueInput> = {}
+        for (const [id, input] of Object.entries(this.inputs)) {
+          const command = this.commands[id]
+          sampled[id] = { ...input, buttons: input.buttons | (this.presses[id] ?? 0), ...(command ? { command: command.command, commandCrew: command.commandCrew } : {}) }
+        }
+        advanceRescueGame(r.state, sampled); this.presses = {}; this.commands = {}; this.eventQueue.push(...r.state.events)
+      }
       this.accumulator -= 1 / 60; steps++; this.sinceFrame++
     }
     if (steps === 4) this.accumulator = Math.min(this.accumulator, 1 / 60)

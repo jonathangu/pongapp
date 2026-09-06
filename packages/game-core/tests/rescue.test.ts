@@ -113,6 +113,22 @@ describe('Starling stations, physics and combat', () => {
     expect(segmentCircle(-100, 0, 100, 0, 0, 0, 1)).toBeCloseTo(.495)
     expect(segmentCircle(-100, 2, 100, 2, 0, 0, 1)).toBeNull()
   })
+  it('metal flail uses bounded angular inertia and damages at its physical tip', () => {
+    const s = createRescueGame({ solo: false }); seat(s, 'east'); s.nextWave = 999
+    const station = s.stations.find(st => st.id === 'east')!; station.upgrade = 'metal'; station.flailAngle = -Math.PI / 2
+    let previous = station.flailAngle, movement = 0
+    for (let i = 0; i < 180; i++) {
+      tick(s, { buttons: RESCUE_BUTTON.fire, aimX: 1 })
+      const delta = Math.abs(Math.atan2(Math.sin(station.flailAngle - previous), Math.cos(station.flailAngle - previous)))
+      expect(delta).toBeLessThanOrEqual(12 / 60 + .001); movement += delta; previous = station.flailAngle
+      expect(Math.abs(station.flailSpeed)).toBeLessThanOrEqual(12)
+    }
+    expect(movement).toBeGreaterThan(2); expect(s.stats.shots).toBeGreaterThan(5)
+    expect(s.bullets).toHaveLength(0)
+    const target = spawnRescueEnemy(s, 'moth', s.ship.x + HULL_RADIUS + .6 + Math.cos(station.flailAngle) * 3.3, s.ship.y + Math.sin(station.flailAngle) * 3.3)!
+    station.cooldown = 0; tick(s, { buttons: RESCUE_BUTTON.fire, aimX: 1 })
+    expect(target.hp).toBeLessThan(target.maxHp)
+  })
 })
 
 describe('Starling rescue mission and physical upgrades', () => {

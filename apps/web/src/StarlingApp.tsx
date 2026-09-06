@@ -1,9 +1,10 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
-import { decodeRescueSave, type RescueState } from '@pongapp/game-core'
+import { DEFAULT_VOYAGE, decodeRescueSave, type RescueState } from '@pongapp/game-core'
 import { loadProfile, saveProfile } from './store'
 import { RescueGame, downloadRescueSave } from './game/rescue/RescueGame'
 import { SAVE_KEY, type RescueSessionOptions } from './game/rescue/RescueSession'
 import { OfflinePack } from './game/rescue/OfflinePack'
+import { VoyageWorkshop } from './game/VoyageWorkshop'
 import './styles/starling.css'
 
 const LegacyApp = lazy(() => import('./App'))
@@ -11,10 +12,11 @@ const SERVER = import.meta.env.VITE_ROOM_SERVER_URL || (import.meta.env.PROD ? '
 function savedVoyage() { try { return decodeRescueSave(localStorage.getItem(SAVE_KEY) ?? '') } catch { return null } }
 export default function StarlingApp() {
   const [profile, setProfile] = useState(loadProfile), [saved, setSaved] = useState(savedVoyage)
+  const [voyage, setVoyage] = useState(DEFAULT_VOYAGE)
   const [legacy, setLegacy] = useState(() => /^#\/(room|race|classic)(\/|$)/i.test(location.hash))
   const [launch, setLaunch] = useState<{ online: boolean; code?: string; saved?: RescueState } | null>(() => { const code = /^#\/rescue\/([A-Z2-9]{6})$/i.exec(location.hash)?.[1]; return code ? { online: true, code: code.toUpperCase() } : null })
   const [code, setCode] = useState(''), [join, setJoin] = useState(false), [message, setMessage] = useState('')
-  const options: RescueSessionOptions | null = useMemo(() => launch ? { name: profile.name, guestId: profile.id, server: SERVER, ...launch } : null, [launch, profile.name, profile.id])
+  const options: RescueSessionOptions | null = useMemo(() => launch ? { name: profile.name, guestId: profile.id, server: SERVER, voyage, ...launch } : null, [launch, profile.name, profile.id, voyage])
   const home = () => { setLaunch(null); setSaved(savedVoyage()); history.replaceState(null, '', import.meta.env.BASE_URL) }
   const start = (online: boolean, continuing = false) => {
     if (!continuing) { try { const raw = localStorage.getItem(SAVE_KEY); if (raw) localStorage.setItem('starling-rescue.previous-save.v1', raw) } catch { /* previous save remains available for export */ } }
@@ -28,6 +30,7 @@ export default function StarlingApp() {
     <section className="sr-features"><article><span>01 / A LITTLE TEAMWORK</span><h2>Find your station.</h2><p>Run, jump and climb between nine stations. Steer the engines, swing the shield, fire the cannons—or cook something good.</p></article><article><span>02 / A BIG LITTLE WORLD</span><h2>Beyond the horizon.</h2><p>Dock at towns and islands. Follow rivers into the jungle. Launch from a sky station into the stars.</p></article><article><span>03 / FRIENDS, NOT FOREVER</span><h2>Until we meet again.</h2><p>Rescue gifted crewmates. Share a voyage, say goodbye at a port, then reunite with an old friend somewhere new.</p></article></section>
     <section className="sr-save-section"><div><p className="sr-kicker">YOUR ADVENTURE GOES WITH YOU</p><h2>A voyage worth keeping.</h2><p>Automatic device saves, portable save files, and solo or shared continuation. Online rooms support up to eight humans and sixteen total crew.</p></div><div className="sr-save-actions"><label className="sr-file-button">Import a voyage<input type="file" accept=".json,application/json" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 512000) { setMessage('This file is too large to be a voyage save.'); return }; const raw = await file.text(), imported = decodeRescueSave(raw); if (!imported) { setMessage('That save is damaged or belongs to an incompatible version. Your current save is unchanged.'); return }; try { const previous = localStorage.getItem(SAVE_KEY); if (previous) localStorage.setItem('starling-rescue.previous-save.v1', previous); localStorage.setItem(SAVE_KEY, raw); setSaved(imported); setMessage('Voyage imported. Continue solo or bring your friends.') } catch { setMessage('Your device cannot store this save right now.') }; e.target.value = '' }}/></label><button disabled={!saved} onClick={() => { const raw = localStorage.getItem(SAVE_KEY); if (raw) downloadRescueSave(raw) }}>Export saved voyage</button></div></section>
     <OfflinePack/>
+    <div className="sr-workshop"><VoyageWorkshop serverUrl={SERVER} pack={voyage} onPack={setVoyage}/><p className="sr-small">In Starling, these four recipe families dress six authored creature types. Names, colors, ornaments and bounded body/armor traits change; physics never waits on AI.</p></div>
     {message && <p role="status" className="sr-home-message">{message}</p>}
     </main><footer className="sr-home-footer"><span>STARLING RESCUE · A TWO OARS ADVENTURE</span><span>Original art. Original score. Made for getting lost together.</span></footer>
   </div>

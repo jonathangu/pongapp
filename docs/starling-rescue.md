@@ -30,7 +30,7 @@ Runtime session `01a0369d-0914-7190-ac0e-b4d37e1fc052`. Baseline `fb5c5fafea086b
 
 Targets are measured, not presumed:60Hzsimulation,60fps typical/30fpslow-effects, readable18–24CSSpxcrew, ≤5MBcriticalcompressedtransfer wherefeasible,10minaction/20minlifecyclesoak,150msRTT+loss,reconnect, clean replay/old-epoch handling. Physical phone and human-user playtest gaps must be labeled; automated browser/bot checks are not human fun ratings.
 
-Ledger/evidence: `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-rescue-release/PROGRESS.md`. Status: requirements recorded; implementation starts next. Planning alone is0%implementation.
+Ledger/evidence: `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-rescue-release/PROGRESS.md`. Status: implemented and in final local verification; public release is not yet claimed. Planning alone is0%implementation.
 
 ## Principal expansion during implementation
 

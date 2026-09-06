@@ -14,9 +14,14 @@ export const RESCUE_ENEMY_STATS: Record<EnemyKind, { hp: number; radius: number 
   needle: { hp: 34, radius: .85 }, sentinel: { hp: 135, radius: 1.5 }, guardian: { hp: 620, radius: 3.25 },
 }
 export const RESCUE_MAX_ENEMIES = 12, RESCUE_MAX_BULLETS = 160
+export function rescueEnemyRecipe(s: RescueState, kind: EnemyKind) {
+  const family = kind === 'moth' ? 'manta' : kind === 'beetle' || kind === 'sentinel' ? 'crab' : kind === 'needle' ? 'wyrm' : 'jelly'
+  return s.voyage?.monsters.find(recipe => recipe.family === family) ?? null
+}
 export function spawnRescueEnemy(s: RescueState, kind: EnemyKind, x: number, y: number) {
   if (s.enemies.length >= RESCUE_MAX_ENEMIES) return null
-  const stats = RESCUE_ENEMY_STATS[kind]
+  const recipe = rescueEnemyRecipe(s, kind), base = RESCUE_ENEMY_STATS[kind]
+  const stats = { hp: base.hp * (recipe?.trait === 'bulwark' ? 1.2 : recipe?.trait === 'skirmisher' ? .9 : 1), radius: base.radius * (recipe?.scale ?? 1) }
   const enemy: RescueEnemy = { id: s.nextId++, kind, x, y, hp: stats.hp, maxHp: stats.hp, radius: stats.radius, angle: 0,
     vx: 0, vy: 0, age: 0, phase: 'stalk', phaseTime: 0, targetX: s.ship.x, targetY: s.ship.y, cooldown: 1.5 + rescueRandom(s), variant: Math.floor(rescueRandom(s) * 4) }
   s.enemies.push(enemy)
@@ -81,7 +86,7 @@ export function advanceRescueEnemies(s: RescueState, dt: number) {
       } else if (e.phaseTime > 2.5) { e.phase = 'stalk'; e.cooldown = 1 }
     } else {
       e.angle = angle
-      const desired = e.kind === 'guardian' ? 15 : e.kind === 'needle' ? 12 : e.kind === 'jelly' ? 14 : 12
+      const desired = e.kind === 'guardian' ? 12.5 : e.kind === 'needle' ? 9.5 : e.kind === 'jelly' ? 10 : 9
       const radial = clampRescue((distance - desired) * .6, -1.2, e.kind === 'guardian' ? 3 : 2.6)
       const orbit = e.kind === 'needle' ? 2.5 : e.kind === 'moth' ? 1 : .3
       if (e.phase !== 'tell') { e.x += (dx / distance * radial - dy / distance * orbit) * dt; e.y += (dy / distance * radial + dx / distance * orbit) * dt }

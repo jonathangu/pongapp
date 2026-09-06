@@ -3,6 +3,7 @@ import { RESCUE_RULESET, RESCUE_CREW_COLORS, type RescueState } from './types'
 import { isRescueStation, RESCUE_STATIONS, RESCUE_LADDERS } from './interior'
 import { RESCUE_NAV } from './navigation'
 import { rescueMapReachable } from './world'
+import { validateMonster, validVoyageKey } from '../bestiary'
 
 export const RESCUE_SAVE_VERSION = 1
 export const RESCUE_SAVE_MAX_BYTES = 512_000
@@ -22,7 +23,7 @@ const stationId: Check = isRescueStation
 const crew = record({ ...xy, ...velocity, id: text(), name: text(16), color: one(...RESCUE_CREW_COLORS), pet: bool, origin: one('human', 'companion', 'recruit'), ability, abilityCooldown: time, tourEnds: counter,
   grounded: bool, ladder: nullable(one(...RESCUE_LADDERS.map(l => l.id))), facing: one(-1, 1), seat: nullable(stationId), gem: nullable(id), coyote: time, jumpBuffer: time, dropTime: time,
   lastButtons: num(0, 31, true), lastSeq: seq, commandSeq: seq, step: time, order: stationId, route: array(num(0, RESCUE_NAV.nodes.length - 1, true), 128), routeAt: num(0, 128, true), routeAge: time, routeLastX: num(), routeLastY: num() })
-const station = record({ id: stationId, angle: num(-Math.PI - .01, Math.PI + .01), cooldown: time, charge: num(0, 1), heat: num(0, 2), upgrade: nullable(gemKind), operated: bool, firing: bool, lingering: time })
+const station = record({ id: stationId, angle: num(-Math.PI - .01, Math.PI + .01), cooldown: time, charge: num(0, 1), heat: num(0, 2), upgrade: nullable(gemKind), operated: bool, firing: bool, lingering: time, flailAngle: num(-Math.PI - .01, Math.PI + .01), flailSpeed: num(-12, 12) })
 const ship = record({ ...xy, ...velocity, angle: one(0), angularVelocity: one(0), hp: num(0, 30), maxHp: num(1, 30), invulnerable: time, thrust: num(0, 1), hitAngle: num(-Math.PI - .01, Math.PI + .01), shieldHits: counter })
 const stations = array(station, RESCUE_STATIONS.length, RESCUE_STATIONS.length)
 const world = record({ width: one(112), height: one(104), title: text(80), portal: record(xy), fog: array(one(0, 1), 700, 700),
@@ -31,13 +32,14 @@ const world = record({ width: one(112), height: one(104), title: text(80), porta
   gifts: array(record({ ...xy, id, kind: gemKind, opened: bool }), 3, 3) })
 const stateCheck = record({ rulesetVersion: one(RESCUE_RULESET), tick: counter, time, seed: num(0, 0xffffffff, true), initialSeed: num(0, 0xffffffff, true), epoch: num(1, 1e9, true),
   biome: one(0, 1, 2), phase: one('playing', 'won', 'lost'), solo: bool, paused: bool, ship, crew: array(crew, 16, 1), stations, world,
-  enemies: array(record({ ...xy, ...velocity, id, kind: one('moth', 'beetle', 'jelly', 'needle', 'sentinel', 'guardian'), hp: num(-1000, 620), maxHp: num(1, 620), radius: num(.1, 4), angle: num(), age: time, phase: one('stalk', 'tell', 'attack', 'recover'), phaseTime: time, targetX: num(), targetY: num(), cooldown: num(-1e8, 1e8), variant: num(0, 3, true) }), 12),
+  enemies: array(record({ ...xy, ...velocity, id, kind: one('moth', 'beetle', 'jelly', 'needle', 'sentinel', 'guardian'), hp: num(-1000, 1000), maxHp: num(1, 1000), radius: num(.1, 5), angle: num(), age: time, phase: one('stalk', 'tell', 'attack', 'recover'), phaseTime: time, targetX: num(), targetY: num(), cooldown: num(-1e8, 1e8), variant: num(0, 3, true) }), 12),
   bullets: array(record({ ...xy, ...velocity, id, radius: num(0, 1), damage: num(0, 300), life: num(0, 10), owner: nullable(text()), enemy: bool, kind: one('bolt', 'needle', 'orb'), pierce: num(-1, 30, true), hit: array(id, 64) }), 160),
   gems: array(record({ ...xy, ...velocity, id, kind: gemKind, heldBy: nullable(text()), socket: nullable(stationId), thrown: bool }), 16),
   events: array(record({ ...xy, id, kind: text(), angle: num(), size: num(0, 100), value: num(), color: optional(gemKind), actor: optional(text()) }), 80),
   nextId: num(1000, 1e9, true), nextWave: time, guardianSpawned: bool, guardianDefeated: bool, extraction: time,
   stats: record({ shots: counter, blocks: counter, damage: num(0, 1e9), rescues: num(0, 5, true), sockets: counter, travel: num(0, 1e9), kills: counter }),
   inspiration: v => typeof v === 'string' && v.length <= 80,
+  voyage: nullable(record({ key: validVoyageKey, title: text(60), source: one('builtin', 'generated'), monsters: array(v => Boolean(validateMonster(v)), 4, 4), model: optional(text(100)), generatedAt: optional(text(100)), latencyMs: optional(num(0, 1e8)) })),
   campaign: record({ salvage: num(0, 1e8, true), upgrades: record({ hull: num(0, 3, true), drive: num(0, 3, true), reactor: num(0, 3, true), tractor: num(0, 3, true) }), completed: array(one(0, 1, 2), 3), voyages: counter, portVisits: counter,
     alumni: array(record({ id: text(), name: text(16), color: one(...RESCUE_CREW_COLORS), ability, availableAt: counter, reunions: counter }), 64) }),
   vessels: array(record({ id, name: text(40), role: one('ally', 'merchant', 'raider'), ship, crew: array(crew, 8, 1), stations, targetX: num(), targetY: num(), visited: bool, cooldown: time, disabled: bool }), 3),

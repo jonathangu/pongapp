@@ -1,4 +1,4 @@
-import { RESCUE_BUTTON, neutralRescueInput, type RescueCrew, type RescueInput, type RescueState, type StationId } from './types'
+import { HULL_RADIUS, RESCUE_BUTTON, neutralRescueInput, type RescueCrew, type RescueInput, type RescueState, type StationId } from './types'
 import { RESCUE_LADDERS, RESCUE_PLATFORMS, RESCUE_STATIONS, advanceRescueCrew, createRescueCrew, stationSpec, supportingPlatform } from './interior'
 
 export interface RescueNavNode { id: number; x: number; y: number; platform: string }
@@ -102,7 +102,9 @@ export function petRescueInput(s: RescueState, p: RescueCrew, dt: number): Rescu
     if (target) {
       const angle = Math.atan2(target.y - s.ship.y, target.x - s.ship.x)
       const order: StationId = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle)) ? Math.cos(angle) > 0 ? 'east' : 'west' : Math.sin(angle) > 0 ? 'north' : 'south'
-      if (order !== p.order && !s.crew.some(c => c.id !== p.id && c.seat === order)) { p.order = order; p.route = [] }
+      const candidates: StationId[] = [order, 'east', 'west', 'north', 'south', 'shield', s.meal.remaining < 10 ? 'galley' : 'map']
+      const available = candidates.find(id => !s.crew.some(c => c.id !== p.id && (c.seat === id || c.pet && c.order === id)))
+      if (available && available !== p.order) { p.order = available; p.route = [] }
     }
   }
   if (p.seat !== p.order) return routeRescueCrew(p, p.order, s.tick, dt)
@@ -124,14 +126,21 @@ export function petRescueInput(s: RescueState, p: RescueCrew, dt: number): Rescu
   if (p.seat === 'map') return input
   if (p.seat === 'galley') { if (s.meal.cooldown <= 0) input.buttons = RESCUE_BUTTON.fire; return input }
   const spec = stationSpec(p.seat)
+  const station = s.stations.find(v => v.id === p.seat)!
+  const muzzleAngle = spec.rail ? station.angle : spec.angle
+  const muzzleX = s.ship.x + Math.cos(muzzleAngle) * (HULL_RADIUS + .6), muzzleY = s.ship.y + Math.sin(muzzleAngle) * (HULL_RADIUS + .6)
+  const aim = (target: { x: number; y: number }) => {
+    const distance = Math.hypot(target.x - muzzleX, target.y - muzzleY)
+    const flight = !station.upgrade || station.upgrade === 'power' ? distance / 24 : 0
+    return { x: target.x - muzzleX - s.ship.vx * flight, y: target.y - muzzleY - s.ship.vy * flight }
+  }
   const candidates = [...s.enemies, ...s.world.cages.filter(c => !c.open)]
-    .filter(t => spec.rail || Math.abs(Math.atan2(Math.sin(Math.atan2(t.y - s.ship.y, t.x - s.ship.x) - spec.angle), Math.cos(Math.atan2(t.y - s.ship.y, t.x - s.ship.x) - spec.angle))) < Math.PI / 3)
+    .filter(t => { const a = aim(t); return spec.rail || Math.abs(Math.atan2(Math.sin(Math.atan2(a.y, a.x) - spec.angle), Math.cos(Math.atan2(a.y, a.x) - spec.angle))) < Math.PI / 3 })
     .filter(t => Math.hypot(t.x - s.ship.x, t.y - s.ship.y) < 30)
     .sort((a, b) => Math.hypot(a.x - s.ship.x, a.y - s.ship.y) - Math.hypot(b.x - s.ship.x, b.y - s.ship.y))
   const target = candidates[0]
   if (target) {
-    input.aimX = target.x - s.ship.x; input.aimY = target.y - s.ship.y
-    const station = s.stations.find(v => v.id === p.seat)!
+    const a = aim(target); input.aimX = a.x; input.aimY = a.y
     input.buttons = p.seat === 'starburst' && station.charge >= 1 ? 0 : RESCUE_BUTTON.fire
   }
   return input

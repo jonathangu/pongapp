@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { HULL_RADIUS, RESCUE_BIOMES, RESCUE_LADDERS, RESCUE_PLATFORMS, RESCUE_STATIONS, stationSpec,
+import { BEAST_PALETTES, HULL_RADIUS, RESCUE_BIOMES, RESCUE_LADDERS, RESCUE_PLATFORMS, RESCUE_STATIONS, rescueEnemyRecipe, stationSpec,
   type RescueCrew, type RescueEnemy, type RescueEvent, type RescueState } from '@pongapp/game-core'
 
 const ART = import.meta.env.BASE_URL + 'art/starling/'
@@ -8,7 +8,7 @@ const TAU = Math.PI * 2
 export const CREW_TINTS = { mint: '#9df6d9', coral: '#ff9c99', gold: '#ffe39a', violet: '#c2a2ff', sky: '#9bdfff', rose: '#ffa6db', lime: '#d0f4a0', pearl: '#edf4ff' }
 const GEM_COLORS = { power: '#ff82b8', beam: '#ffe6a2', metal: '#8ed4ff' }
 export interface RescueRenderSettings { reducedMotion: boolean; lowEffects: boolean }
-export function rescueView(width: number, height: number) { const scale = Math.min(width / 14.4, height / 15.8); return { scale, width: width / scale, height: height / scale } }
+export function rescueView(width: number, height: number, zoom = 1) { const scale = Math.min(width / 14.4, height / 15.8) / zoom; return { scale, width: width / scale, height: height / scale } }
 const basic = (color: THREE.ColorRepresentation, extra: THREE.MeshBasicMaterialParameters = {}) => new THREE.MeshBasicMaterial({ color, ...extra })
 const solid = (color: THREE.ColorRepresentation, metalness = .3) => new THREE.MeshStandardMaterial({ color, roughness: .4, metalness })
 function part(group: THREE.Group, geometry: THREE.BufferGeometry, material: THREE.Material, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(geometry, material); m.position.set(x, y, z); group.add(m); return m }
@@ -57,6 +57,24 @@ function consoleGroup(id: typeof RESCUE_STATIONS[number]['id']) {
   return g
 }
 interface Effect { event: RescueEvent; born: number; mesh: THREE.Mesh; duration: number }
+function lightningGeometry(seed: number) {
+  const vertices: number[] = []
+  const segment = (ax: number, ay: number, bx: number, by: number, width: number) => {
+    const length = Math.hypot(bx - ax, by - ay), dx = -(by - ay) / length * width, dy = (bx - ax) / length * width
+    vertices.push(ax + dx, ay + dy, 0, ax - dx, ay - dy, 0, bx + dx, by + dy, 0, bx + dx, by + dy, 0, ax - dx, ay - dy, 0, bx - dx, by - dy, 0)
+  }
+  let x = 0, y = 0
+  for (let i = 1; i <= 16; i++) {
+    const nx = Math.sin(seed * 1.37 + i * 7.91) * (i % 3 ? .7 : 1.7), ny = i * 1.5
+    segment(x, y, nx, ny, .065)
+    if (i === 5 || i === 10) {
+      const side = i === 5 ? 1 : -1
+      segment(nx, ny, nx + side * 1.5, ny - .8, .035); segment(nx + side * 1.5, ny - .8, nx + side * 2.6, ny - 3, .022)
+    }
+    x = nx; y = ny
+  }
+  const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); return geometry
+}
 
 /** Pure view: world curvature is decorative; all actionable actors share one orthographic plane. */
 export class RescueScene {
@@ -75,6 +93,7 @@ export class RescueScene {
   private actors = new Map<string, Actor>()
   private seats = new Map<string, THREE.Group>()
   private mounts = new Map<string, THREE.Group>()
+  private flails = new Map<string, THREE.Group>()
   private enemies = new Map<number, THREE.Group>()
   private objects = new THREE.Group()
   private worldKey = ''
@@ -98,6 +117,7 @@ export class RescueScene {
   private cameraX = 0
   private cameraY = -24
   private shake = 0
+  private zoom = 1
   private textures: THREE.Texture[] = []
   private enemyTextures: THREE.Texture[] = []
   private enemyArt = new Map<string, THREE.Texture>()
@@ -119,8 +139,8 @@ export class RescueScene {
         vec3 deep=biome<.5?vec3(.026,.18,.21):biome<1.5?vec3(.16,.09,.17):vec3(.10,.07,.25);vec3 light=biome<.5?vec3(.10,.38,.34):biome<1.5?vec3(.39,.26,.24):vec3(.24,.20,.47);
         vec3 color=mix(deep,light,clamp(broad*.7,0.,1.));color+=veins*vec3(.08,.15,.14)+ripples*.027;float sparkle=step(.993,hash(floor(q*1.7)))*pow(max(0.,1.-length(fract(q*1.7)-.5)*2.),4.);color+=sparkle*vec3(.6,.5,.27);
         if(region<.5){float crest=sin(q.y*.4+q.x*.18+time*1.8)+.35*sin(q.y*.85-q.x*.32-time*2.5);float foam=smoothstep(.9,1.3,crest)*(.2+.8*storm)*noise(q*1.4);color=mix(color,vec3(.58,.79,.72),foam*.55);color*=1.-storm*.24;}
-        else if(region<1.5){float rivers=1.-smoothstep(.08,.18,abs(sin(q.y*.017+sin(q.x*.014)*2.)));vec3 forest=mix(vec3(.035,.12,.075),vec3(.19,.32,.14),noise(q*.06)*noise(q*.29)*2.);color=mix(forest,vec3(.09,.30,.29)+ripples*.04,rivers);}
-        else{float craters=pow(noise(q*.1),3.);color=mix(vec3(.09,.065,.19),vec3(.27,.18,.32),broad*.55)+craters*.12+veins*vec3(.06,.035,.1);}
+        else if(region<1.5){float rivers=1.-smoothstep(.08,.18,abs(sin(q.y*.017+sin(q.x*.014)*2.)));vec3 forest=mix(vec3(.035,.12,.075),vec3(.19,.32,.14),noise(q*.36)*noise(q*.91)*2.);vec2 cell=floor(q*.28),uv=fract(q*.28)-.5;float canopy=1.-smoothstep(.22,.48,length(uv+vec2(hash(cell)-.5,hash(cell+7.)-.5)*.2));forest+=canopy*vec3(.025,.075,.02);color=mix(forest,vec3(.09,.30,.29)+ripples*.04,rivers);}
+        else{vec2 cell=floor(q*.19),uv=fract(q*.19)-.5;float size=.16+hash(cell)*.17;float d=length(uv+vec2(hash(cell)-.5,hash(cell+8.)-.5)*.25);float rim=exp(-pow((d-size)*30.,2.));float pit=1.-smoothstep(size*.55,size,d);color=mix(vec3(.07,.045,.16),vec3(.28,.18,.34),noise(q*.45))*(1.-pit*.24)+rim*vec3(.065,.045,.09)+veins*vec3(.06,.035,.1);color+=sparkle*vec3(.7,.6,.9);}
         float horizon=pow(1.-max(.0,n.y),2.);color=mix(color,vec3(.17,.37,.46),horizon*.55);gl_FragColor=vec4(color,1.);}` })
     const cylinder = new THREE.CylinderGeometry(48, 48, 1800, 128, 180, true); cylinder.rotateX(Math.PI / 2)
     this.surface = new THREE.Mesh(cylinder, surfaceMaterial); this.surface.position.y = -48; this.landscape.add(this.surface)
@@ -187,7 +207,7 @@ export class RescueScene {
   }
   resize(width: number, height: number) {
     this.width = Math.max(1, width); this.height = Math.max(1, height)
-    const view = rescueView(this.width, this.height)
+    const view = rescueView(this.width, this.height, this.zoom)
     this.camera.left = -view.width / 2; this.camera.right = view.width / 2; this.camera.top = view.height / 2; this.camera.bottom = -view.height / 2; this.camera.updateProjectionMatrix()
     const aspect = this.width / this.height, half = Math.atan(Math.tan(29 * Math.PI / 180) / Math.max(1, aspect / .78))
     // Solve the cylinder tangency at the upper 3% of each side: tiny corner horizons at any aspect.
@@ -199,11 +219,30 @@ export class RescueScene {
     this.renderer.setPixelRatio(this.settings.lowEffects ? 1 : Math.min(1.65, window.devicePixelRatio || 1)); this.renderer.setSize(this.width, this.height, false)
   }
   setSettings(settings: RescueRenderSettings) { if (this.settings.lowEffects !== settings.lowEffects) { this.settings = settings; this.resize(this.width, this.height) } else this.settings = settings }
-  worldPoint(clientX: number, clientY: number) { const bounds = this.canvas.getBoundingClientRect(), view = rescueView(this.width, this.height); return { x: this.cameraX + ((clientX - bounds.left) / this.width - .5) * view.width, y: this.cameraY - ((clientY - bounds.top) / this.height - .5) * view.height } }
+  worldPoint(clientX: number, clientY: number) { const bounds = this.canvas.getBoundingClientRect(), view = rescueView(this.width, this.height, this.zoom); return { x: this.cameraX + ((clientX - bounds.left) / this.width - .5) * view.width, y: this.cameraY - ((clientY - bounds.top) / this.height - .5) * view.height } }
   private buildWorld(state: RescueState) {
     for (const child of [...this.objects.children]) this.disposeObject(child)
     this.objects.clear(); this.cages.clear(); this.gifts.clear()
     const palette = RESCUE_BIOMES[state.biome]
+    if (state.region === 'jungle') {
+      const positions: Array<[number, number, number]> = []
+      for (let x = -50; x <= 50; x += 10) for (let y = -48; y <= 48; y += 10) {
+        const xx = x + Math.sin(x * 2.1 + y) * 2, yy = y + Math.cos(y * 1.7 + x) * 2
+        if (Math.hypot(xx, yy + 24) < 8 || state.docks.some(d => Math.hypot(xx - d.x, yy - d.y) < 9) || state.world.cages.some(c => Math.hypot(xx - c.x, yy - c.y) < 4)) continue
+        positions.push([xx, yy, .8 + (Math.sin(x * 3 + y) + 1) * .3])
+      }
+      const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.12, .2, 2.4, 5), solid('#7b6550'), positions.length)
+      const leaves = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), solid('#548662'), positions.length * 3)
+      const matrix = new THREE.Matrix4(), rotation = new THREE.Quaternion(), scale = new THREE.Vector3(), position = new THREE.Vector3()
+      for (const [i, [x, y, size]] of positions.entries()) {
+        matrix.compose(position.set(x, y, -4), rotation, scale.set(size, size, size)); trunks.setMatrixAt(i, matrix)
+        for (let j = 0; j < 3; j++) {
+          matrix.compose(position.set(x + (j - 1) * .8 * size, y + (j === 1 ? 1.8 : 1) * size, -3.5), rotation, scale.set(1.4 * size, 1.05 * size, .8 * size)); leaves.setMatrixAt(i * 3 + j, matrix)
+          leaves.setColorAt(i * 3 + j, new THREE.Color(j === 1 ? '#8baa68' : i % 2 ? '#67a17d' : '#507e65'))
+        }
+      }
+      this.objects.add(trunks, leaves)
+    }
     for (const o of state.world.obstacles) {
       const g = new THREE.Group(), rock = part(g, new THREE.IcosahedronGeometry(o.radius, 1), solid(state.biome === 0 ? '#376566' : state.biome === 1 ? '#7b5f62' : '#625988', .35))
       rock.rotation.set(o.style * .4, o.style * .7, o.id * .43); g.position.set(o.x, o.y, -2)
@@ -312,10 +351,14 @@ export class RescueScene {
       if (this.effects.length > (this.settings.lowEffects ? 60 : 160)) continue
       const line = event.kind === 'beam' || event.kind === 'starburst' && event.value >= 0 || event.kind === 'flail' || event.kind === 'lightning'
       const color = event.kind === 'shield' ? '#ffe7a2' : event.kind === 'rescue' ? '#9bffe4' : event.kind === 'boom' ? '#ffbbcb' : '#fff2ae'
-      const mesh = new THREE.Mesh(line ? new THREE.PlaneGeometry(1, 1) : new THREE.PlaneGeometry(2, 2), basic(color, { map: this.glow, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }))
+      const mesh = new THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>(line ? new THREE.PlaneGeometry(1, 1) : new THREE.PlaneGeometry(2, 2), basic(color, { map: this.glow, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }))
       mesh.position.set(event.x, event.y, 12); mesh.renderOrder = 30
       if (line) { mesh.scale.set(event.size, event.kind === 'starburst' ? 1.5 : event.kind === 'flail' ? .32 : .32, 1); mesh.rotation.z = event.angle; mesh.position.x += Math.cos(event.angle) * event.size / 2; mesh.position.y += Math.sin(event.angle) * event.size / 2 }
-      if (event.kind === 'lightning') { mesh.scale.set(24, .5, 1); mesh.rotation.z = Math.PI / 2; mesh.position.y = event.y + 12 }
+      if (event.kind === 'lightning') {
+        mesh.geometry.dispose(); mesh.geometry = lightningGeometry(event.id)
+        mesh.material.map = null; mesh.material.color.set('#d6f4ff'); mesh.material.side = THREE.DoubleSide
+        mesh.position.set(event.x, event.y, 12); mesh.scale.setScalar(1); mesh.rotation.z = 0
+      }
       this.scene.add(mesh); this.effects.push({ event, born: now, mesh, duration: event.kind === 'boom' ? .8 : event.kind === 'rescue' ? 1.2 : line ? .22 : .3 })
     }
   }
@@ -326,6 +369,11 @@ export class RescueScene {
     if (this.lastFrame) this.frameTimes.push(now - this.lastFrame); this.lastFrame = now
     if (this.frameTimes.length > 600) this.frameTimes.shift()
     const smoothing = this.settings.reducedMotion ? 1 : .10
+    const activeSeat = state.crew.find(c => c.id === playerId)?.seat
+    const targetZoom = state.enemies.some(e => e.kind === 'guardian') ? 1.45 : activeSeat && !['map', 'galley'].includes(activeSeat) ? 1.35 : state.enemies.length ? 1.18 : 1
+    this.zoom += (targetZoom - this.zoom) * (this.settings.reducedMotion ? 1 : .05)
+    const framing = rescueView(this.width, this.height, this.zoom)
+    this.camera.left = -framing.width / 2; this.camera.right = framing.width / 2; this.camera.top = framing.height / 2; this.camera.bottom = -framing.height / 2; this.camera.updateProjectionMatrix()
     this.cameraX += (state.ship.x + state.ship.vx * .18 - this.cameraX) * smoothing
     this.cameraY += (state.ship.y + state.ship.vy * .18 + 1 - this.cameraY) * smoothing
     this.shake *= .83
@@ -333,7 +381,7 @@ export class RescueScene {
     this.camera.lookAt(this.camera.position.x, this.camera.position.y, 0)
     this.surface.material.uniforms.time!.value = state.time; this.surface.material.uniforms.offset!.value.set(state.ship.x * .9, -state.ship.y * .9); this.surface.material.uniforms.biome!.value = state.biome
     this.surface.material.uniforms.storm!.value = this.settings.reducedMotion ? state.weather.intensity * .2 : state.weather.intensity; this.surface.material.uniforms.region!.value = state.region === 'sea' ? 0 : state.region === 'jungle' ? 1 : 2
-    const view = rescueView(this.width, this.height)
+    const view = rescueView(this.width, this.height, this.zoom)
     this.weatherMaterial.uniforms.time!.value = this.settings.reducedMotion ? 0 : state.time; this.weatherMaterial.uniforms.intensity!.value = state.weather.intensity
     this.weatherMaterial.uniforms.flash!.value = this.settings.reducedMotion ? 0 : state.weather.flash
     this.weatherMaterial.uniforms.view!.value.set(view.width, view.height); this.weatherMaterial.uniforms.ship!.value.set(state.ship.x - this.cameraX, state.ship.y - this.cameraY)
@@ -349,6 +397,23 @@ export class RescueScene {
       screen.material.color.set(station.upgrade ? GEM_COLORS[station.upgrade] : spec.color); screen.material.opacity = station.operated ? 1 : .52
       const mount = this.mounts.get(station.id)
       if (mount) { const angle = spec.rail ? station.angle : spec.angle; mount.position.set(Math.cos(angle) * HULL_RADIUS, Math.sin(angle) * HULL_RADIUS, 3); mount.rotation.z = station.angle; mount.scale.setScalar(station.upgrade ? 1.15 : 1) }
+      const hasFlail = station.upgrade === 'metal' && ['north', 'south', 'east', 'west'].includes(station.id)
+      let flail = this.flails.get(station.id)
+      if (hasFlail && !flail) {
+        flail = new THREE.Group()
+        const metal = solid('#95cee7', .8), brass = solid('#d6ac73', .7)
+        for (let i = 0; i < 11; i++) {
+          const link = part(flail, new THREE.TorusGeometry(.11, .035, 5, 8), i % 2 ? brass : metal, i * .28 + .15, 0, 0)
+          if (i % 2) link.rotation.x = Math.PI / 3
+        }
+        orb(flail, 3.3, 0, 0, .46, metal)
+        for (let i = 0; i < 8; i++) {
+          const a = i * TAU / 8, spike = part(flail, new THREE.ConeGeometry(.13, .42, 4), brass, 3.3 + Math.cos(a) * .53, Math.sin(a) * .53, .04)
+          spike.rotation.z = a - Math.PI / 2
+        }
+        flail.renderOrder = 12; this.hull.add(flail); this.flails.set(station.id, flail)
+      }
+      if (flail) { flail.visible = hasFlail; flail.position.set(Math.cos(spec.angle) * (HULL_RADIUS + .6), Math.sin(spec.angle) * (HULL_RADIUS + .6), 5); flail.rotation.z = station.flailAngle }
       if (station.id === 'shield') { this.shield.visible = station.operated || station.lingering > 0; this.shield.rotation.z = station.angle; this.shield.scale.setScalar(station.upgrade === 'power' ? 1.035 : 1) }
     }
     if (state.ship.thrust && !this.settings.lowEffects) {
@@ -371,6 +436,17 @@ export class RescueScene {
         for (const child of g.children) if (!['tell', 'health'].includes(child.name)) child.visible = false
         const geometry = new THREE.PlaneGeometry(enemy.radius * (enemy.kind === 'needle' ? 4 : 3.2), enemy.radius * 3.2, 16, 16)
         const material = new THREE.MeshBasicMaterial({ map: art, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+        const recipe = rescueEnemyRecipe(state, enemy.kind)
+        if (recipe) {
+          material.color.setHex(BEAST_PALETTES[recipe.palette]).lerp(new THREE.Color('#ffffff'), .7)
+          const accent = basic(BEAST_PALETTES[recipe.palette])
+          if (recipe.ornament === 'halo') { const halo = part(g, new THREE.TorusGeometry(enemy.radius * 1.15, .045, 6, 48), accent, 0, enemy.radius * .5, 3); halo.scale.y = .45 }
+          else for (let i = 0; i < recipe.segments; i++) {
+            const a = i / recipe.segments * Math.PI * 1.5 + Math.PI * .25
+            if (recipe.ornament === 'lanterns') orb(g, Math.cos(a) * enemy.radius * 1.2, Math.sin(a) * enemy.radius * 1.2, 3, .12, accent)
+            else { const spike = part(g, new THREE.ConeGeometry(.09, recipe.ornament === 'antlers' ? .65 : .35, 4), accent, Math.cos(a) * enemy.radius, Math.sin(a) * enemy.radius, 3); spike.rotation.z = a - Math.PI / 2 }
+          }
+        }
         material.onBeforeCompile = shader => { shader.uniforms.animTime = { value: 0 }; material.userData.shader = shader; shader.vertexShader = 'uniform float animTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.x += sin(animTime*3.0+position.y*2.0)*.08*(.3+abs(position.x)); transformed.y += sin(animTime*2.0+position.x*1.3)*.045;') }
         const sprite = part(g, geometry, material, 0, 0, 2); sprite.name = 'creature-art'
       }
@@ -391,14 +467,15 @@ export class RescueScene {
       const t = (seconds - effect.born) / effect.duration
       if (t > 1) { this.disposeObject(effect.mesh); return false }
       const m = effect.mesh.material as THREE.MeshBasicMaterial; m.opacity = (1 - t) * .9
-      if (!['beam', 'flail', 'starburst'].includes(effect.event.kind)) effect.mesh.scale.setScalar(effect.event.size * (.4 + t * 2))
+      if (!['beam', 'flail', 'starburst', 'lightning'].includes(effect.event.kind)) effect.mesh.scale.setScalar(effect.event.size * (.4 + t * 2))
       return true
     })
     this.renderer.info.reset(); this.renderer.clear(); this.renderer.render(this.sky, this.skyCamera); this.renderer.clearDepth(); this.renderer.render(this.landscape, this.landscapeCamera); this.renderer.clearDepth(); this.renderer.render(this.scene, this.camera); this.renderer.render(this.atmosphere, this.skyCamera)
     this.frames++; this.renderTimes.push(performance.now() - start); if (this.renderTimes.length > 600) this.renderTimes.shift()
   }
-  stats() { const percentile = (a: number[], p: number) => [...a].sort((x, y) => x - y)[Math.floor(a.length * p)] ?? 0; return { renderer: 'three-webgl2', hullAssetLoaded: this.loaded, frames: this.frames, renderP95Ms: percentile(this.renderTimes, .95), frameP95Ms: percentile(this.frameTimes, .95), drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles } }
+  stats() { const percentile = (a: number[], p: number) => [...a].sort((x, y) => x - y)[Math.floor(a.length * p)] ?? 0; return { renderer: 'three-webgl2', hullAssetLoaded: this.loaded, frames: this.frames, geometries: this.renderer.info.memory.geometries, textures: this.renderer.info.memory.textures, programs: this.renderer.info.programs?.length ?? 0, effects: this.effects.length, renderP95Ms: percentile(this.renderTimes, .95), frameP95Ms: percentile(this.frameTimes, .95), drawCalls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles } }
   private disposeObject(object: THREE.Object3D) {
+    object.traverse(node => { if (node instanceof THREE.InstancedMesh) node.dispose() })
     object.removeFromParent(); object.traverse(node => { if (node instanceof THREE.Mesh) { node.geometry.dispose(); for (const material of Array.isArray(node.material) ? node.material : [node.material]) { const map = (material as THREE.MeshBasicMaterial).map; if (map && map !== this.glow && !this.textures.includes(map) && !this.enemyTextures.includes(map)) map.dispose(); material.dispose() } } })
   }
   dispose() { if (this.disposed) return; this.disposed = true; this.disposeObject(this.scene); this.disposeObject(this.landscape); this.disposeObject(this.sky); this.disposeObject(this.atmosphere); for (const texture of this.textures) texture.dispose(); for (const texture of this.enemyTextures) texture.dispose(); this.glow.dispose(); this.renderer.dispose() }

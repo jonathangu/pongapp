@@ -1,3 +1,4 @@
+import type { VoyagePack } from '../bestiary'
 /** Starling Rescue: simulation data only. No browser, renderer, clock or network imports. */
 export const RESCUE_RULESET = 12 as const
 export const RESCUE_STEP = 1 / 60
@@ -39,6 +40,7 @@ export interface RescueCrew extends Vec {
 export interface RescueStation {
   id: StationId; angle: number; cooldown: number; charge: number; heat: number; upgrade: GemKind | null
   operated: boolean; firing: boolean; lingering: number
+  flailAngle: number; flailSpeed: number
 }
 export interface RescueShip extends Vec {
   vx: number; vy: number; angle: 0; angularVelocity: 0; hp: number; maxHp: number
@@ -80,6 +82,7 @@ export interface RescueState {
   nextId: number; nextWave: number; guardianSpawned: boolean; guardianDefeated: boolean; extraction: number
   stats: RescueStats; inspiration: string
   campaign: RescueCampaign; vessels: RescueVessel[]
+  voyage: VoyagePack | null
   region: RescueRegion; docks: RescueDock[]; docked: string | null
   meal: { remaining: number; progress: number; cooldown: number }
   weather: RescueWeather

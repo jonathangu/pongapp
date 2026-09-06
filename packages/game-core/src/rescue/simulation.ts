@@ -87,6 +87,11 @@ function operateRescueStation(s: RescueState, p: RescueCrew, input: RescueInput,
   }
   const fire = Boolean(input.buttons & RESCUE_BUTTON.fire)
   station.firing = fire
+  if (station.upgrade === 'metal' && !['engine', 'shield', 'map', 'galley', 'starburst'].includes(p.seat)) {
+    const goal = fire ? station.angle + Math.sin(s.time * 7) * .7 : -Math.PI / 2
+    station.flailSpeed = clampRescue(station.flailSpeed + (rescueAngle(goal - station.flailAngle) * 38 - station.flailSpeed * 4.5) * actionDt, -12, 12)
+    station.flailAngle = rescueAngle(station.flailAngle + station.flailSpeed * actionDt)
+  }
   if (p.seat === 'engine') {
     if (fire) {
       const thrust = (station.upgrade === 'power' ? 30 : station.upgrade === 'beam' ? 18 : 22) * speed * (1 + s.campaign.upgrades.drive * .12) * (p.ability === 'pilot' ? 1.25 : 1)
@@ -126,7 +131,7 @@ function operateRescueStation(s: RescueState, p: RescueCrew, input: RescueInput,
   if (station.upgrade === 'beam') {
     rescueBeam(s, x, y, station.angle, 45, 38, p.id); station.cooldown = .85; station.heat += .16
   } else if (station.upgrade === 'metal') {
-    const swing = station.angle + Math.sin(s.time * 5) * .75, tipX = x + Math.cos(swing) * 3.3, tipY = y + Math.sin(swing) * 3.3
+    const swing = station.flailAngle, tipX = x + Math.cos(swing) * 3.3, tipY = y + Math.sin(swing) * 3.3
     for (const e of s.enemies) if (Math.hypot(e.x - tipX, e.y - tipY) < e.radius + 1.15) damageRescueEnemy(s, e, 30, tipX, tipY)
     for (const v of s.vessels) if (v.role === 'raider' && !v.disabled && Math.hypot(v.ship.x - tipX, v.ship.y - tipY) < HULL_RADIUS + 1.15) damageRescueVessel(s, v.id, 30)
     for (const cage of s.world.cages) if (!cage.open && Math.hypot(cage.x - tipX, cage.y - tipY) < 2.3) {
@@ -146,12 +151,14 @@ function operateRescueStation(s: RescueState, p: RescueCrew, input: RescueInput,
 export function advanceRescueVessels(s: RescueState, dt: number) {
   for (const v of s.vessels) {
     if (v.disabled) continue
+    // The opening rescue teaches the ship before hostile crews enter the encounter budget.
+    if (v.role === 'raider' && (s.stats.rescues < 2 || s.time < 45)) continue
     const distance = Math.hypot(v.ship.x - s.ship.x, v.ship.y - s.ship.y)
     if (distance > 55) continue
     v.cooldown = Math.max(0, v.cooldown - dt); v.ship.invulnerable = Math.max(0, v.ship.invulnerable - dt)
     const target = v.role === 'raider' ? s.ship : v.role === 'ally' && distance < 30 ? { x: s.ship.x - 12, y: s.ship.y + 9 } : { x: v.targetX + Math.sin(s.time * .04) * 6, y: v.targetY + Math.cos(s.time * .04) * 5 }
     const npc: RescueState = { ...s, ship: v.ship, crew: v.crew, stations: v.stations, events: [],
-      campaign: { ...s.campaign, upgrades: { hull: 0, drive: 0, reactor: 0, tractor: 0 } }, stats: { ...s.stats }, vessels: s.vessels.filter(other => other.id !== v.id),
+      campaign: { ...s.campaign, upgrades: { hull: 0, drive: 0, reactor: 0, tractor: 0 } }, meal: { remaining: 0, progress: 0, cooldown: 0 }, stats: { ...s.stats }, vessels: s.vessels.filter(other => other.id !== v.id),
       world: { ...s.world, cages: [], gifts: [] }, enemies: v.role === 'raider' ? [] : s.enemies }
     for (const station of v.stations) { station.operated = false; station.firing = false; station.cooldown = Math.max(0, station.cooldown - dt); station.heat = Math.max(0, station.heat - dt * .19); station.lingering = Math.max(0, station.lingering - dt) }
     for (const p of v.crew) {
@@ -172,7 +179,7 @@ export function advanceRescueVessels(s: RescueState, dt: number) {
       interactCrew(npc, p, input); advanceRescueCrew(p, input, dt)
       const before = npc.bullets.length
       operateRescueStation(npc, p, input, dt)
-      if (v.role === 'raider') for (const bullet of npc.bullets.slice(before)) { bullet.enemy = true; bullet.owner = `vessel-${v.id}`; bullet.damage = 1; bullet.vx *= .35; bullet.vy *= .35; bullet.life = 5 }
+      if (v.role === 'raider') for (const bullet of npc.bullets.slice(before)) { bullet.enemy = true; bullet.owner = `vessel-${v.id}`; bullet.damage = 1; bullet.vx *= .35; bullet.vy *= .35; bullet.life = 5; const gun = npc.stations.find(st => st.id === p.seat); if (gun) gun.cooldown = Math.max(.95, gun.cooldown) }
       p.lastButtons = input.buttons; p.lastSeq = input.seq
     }
     advanceRescueShip(npc, dt)
@@ -196,15 +203,16 @@ export function advanceRescueShip(s: RescueState, dt: number) {
   const speed = Math.hypot(ship.vx, ship.vy), cap = (engine.upgrade === 'power' ? 15 : engine.upgrade === 'beam' ? 14 : 11) * (1 + s.campaign.upgrades.drive * .08)
   if (speed > cap) { ship.vx *= cap / speed; ship.vy *= cap / speed }
   let remaining = dt
+  const solids = [...s.world.obstacles, ...s.world.cages.filter(c => !c.open).map(c => ({ ...c, radius: 1.2, style: -1 }))]
   for (let iteration = 0; iteration < 4 && remaining > 1e-7; iteration++) {
     const nx = ship.x + ship.vx * remaining, ny = ship.y + ship.vy * remaining
     let first = 1, obstacle: typeof s.world.obstacles[number] | null = null
-    for (const o of s.world.obstacles) { const t = segmentCircle(ship.x, ship.y, nx, ny, o.x, o.y, HULL_RADIUS + o.radius); if (t !== null && t < first) { first = t; obstacle = o } }
+    for (const o of solids) { const t = segmentCircle(ship.x, ship.y, nx, ny, o.x, o.y, HULL_RADIUS + o.radius); if (t !== null && t < first) { first = t; obstacle = o } }
     if (!obstacle) { ship.x = nx; ship.y = ny; break }
     ship.x += ship.vx * remaining * first; ship.y += ship.vy * remaining * first
     const dx = ship.x - obstacle.x, dy = ship.y - obstacle.y, distance = Math.max(.001, Math.hypot(dx, dy)), ux = dx / distance, uy = dy / distance
     const impact = ship.vx * ux + ship.vy * uy
-    if (impact < -7) damageRescueShip(s, 1, obstacle.x, obstacle.y)
+    if (impact < -7 && obstacle.style >= 0) damageRescueShip(s, 1, obstacle.x, obstacle.y)
     ship.x = obstacle.x + ux * (HULL_RADIUS + obstacle.radius + .002); ship.y = obstacle.y + uy * (HULL_RADIUS + obstacle.radius + .002)
     if (impact < 0) { ship.vx -= impact * ux; ship.vy -= impact * uy }
     remaining *= 1 - first
