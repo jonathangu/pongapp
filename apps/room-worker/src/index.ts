@@ -22,7 +22,7 @@ import {
   type ServerMessage,
   type StoredRoomConfig,
 } from '@pongapp/protocol'
-import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, validRoomCode } from './helpers'
+import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, parseStoredRoomConfig, validRoomCode } from './helpers'
 import { VoyageService, type VoyageEnv } from './voyage-service'
 
 export { allowedOrigin, generateRoomCode, validRoomCode } from './helpers'
@@ -178,13 +178,9 @@ export class GameRoom extends DurableObject<Env> {
     const url = new URL(request.url)
     if (url.pathname === '/configure' && request.method === 'POST') {
       if (this.occupied) return new Response('exists', { status: 409 })
-      const value = await request.json() as Partial<StoredRoomConfig>
-      const parsed = createRoomRequestSchema.safeParse({ hostName: value.hostName, roomName: value.roomName, mode: value.mode })
-      if (!parsed.success || typeof value.roomCode !== 'string' || !validRoomCode(value.roomCode)
-        || typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt)) {
-        return new Response('invalid', { status: 400 })
-      }
-      this.config = { ...parsed.data, roomCode: value.roomCode, createdAt: value.createdAt }
+      const config=parseStoredRoomConfig(await request.json())
+      if(!config)return new Response('invalid',{status:400})
+      this.config=config
       this.occupied = true
       await this.persist()
       this.logLifecycle('room_created')
@@ -518,18 +514,20 @@ export class GameRoom extends DurableObject<Env> {
       .filter((participant) => participant.slot !== null && participant.connected)
       .sort((a, b) => (a.slot ?? 99) - (b.slot ?? 99))
     if (players.length < 2) return
-    this.matchSessionId = crypto.randomUUID()
     const roster = players.slice(0, 2).map((candidate) => ({ id: candidate.id, name: candidate.displayName }))
-    this.game = this.config?.mode === 'versus'
+    const game = this.config?.mode === 'versus'
       ? createVersusGame(roster, Date.now() >>> 0)
       : createCoopGame(roster, Date.now() >>> 0)
-    if(this.game.rulesetVersion===11&&this.config?.voyageKey){
+    if(game.rulesetVersion===11&&this.config?.voyageKey){
       try{
         const response=await this.env.VOYAGES.get(this.env.VOYAGES.idFromName('ark-v1-global-budget')).fetch('https://voyage.internal/api/voyages?key='+encodeURIComponent(this.config.voyageKey))
         const result=await response.json() as {pack?:unknown},pack=validateVoyage(result.pack)
-        if(pack)this.game.voyage=pack
+        if(pack)game.voyage=pack
       }catch{/* Read-only cache failure keeps the instantaneous built-in voyage. */}
     }
+    // Do not expose a temporary built-in snapshot while the cached pack is loading.
+    if(this.game)return
+    this.game=game;this.matchSessionId=crypto.randomUUID()
     await this.persist()
     this.logLifecycle('match_started', {
       msAfterRoomCreated: this.config ? Date.now() - this.config.createdAt : null,

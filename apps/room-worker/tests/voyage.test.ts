@@ -2,7 +2,7 @@ import { describe,it,expect } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_VOYAGE, BEAST_TRAITS, advanceCoopGame, createCoopGame, validateVoyage } from '@pongapp/game-core'
 import { VoyageLedger, VOYAGE_HARD_CAP, VOYAGE_RESERVATION, type SqlStore } from '../src/voyage-ledger'
-import { VoyageService, generationBody, providerCapped, VOYAGE_MODELS } from '../src/voyage-service'
+import { VoyageService, generationBody, generationFailure, providerCapped, VOYAGE_MODELS } from '../src/voyage-service'
 function store():SqlStore{
   const db=new DatabaseSync(':memory:')
   return {sql:{exec:(q,...args)=>{const rows=db.prepare(q).all(...args);return {toArray:()=>rows}}},transactionSync(fn){db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}}
@@ -95,7 +95,12 @@ describe('paid voyage safety and actual recipe consumption',()=>{
   })
   it('limits repeated public requests independently of provider budget',async()=>{
     const service=new VoyageService(store(),{...env,ENABLE_PAID:'false'},async()=>{throw Error('unused')},()=>now)
-    for(let i=0;i<3;i++)expect((await service.fetch(req('ark-v1:0:'+i))).status).toBe(200)
-    expect((await service.fetch(req('ark-v1:0:4'))).status).toBe(429)
+    for(let i=0;i<5;i++)expect((await service.fetch(req('ark-v1:0:'+i))).status).toBe(200)
+    expect((await service.fetch(req('ark-v1:0:5'))).status).toBe(429)
+  })
+  it('diagnoses failures without exposing provider bodies, prompts or credentials',()=>{
+    expect(generationFailure(Error('http_400'))).toBe('http_400')
+    expect(generationFailure(Error('Bearer test-secret'))).toBe('invalid_response')
+    expect(generationFailure(new SyntaxError('private contents'))).toBe('invalid_json')
   })
 })

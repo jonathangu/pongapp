@@ -3,6 +3,12 @@ import { VoyageLedger, VOYAGE_HARD_CAP, VOYAGE_RESERVATION, type SqlStore } from
 
 export interface VoyageEnv{ENABLE_PAID?:string;OPENROUTER_API_KEY?:string;OPENROUTER_LIMIT_CONFIRMED?:string;MONTHLY_BUDGET_USD?:string}
 export const VOYAGE_MODELS={fast:'qwen/qwen3.8-flash',curated:'anthropic/claude-haiku-4.5'} as const
+export function generationFailure(error:unknown){
+  if(!(error instanceof Error))return 'unknown'
+  if(error.name==='TimeoutError'||error.name==='AbortError')return 'timeout'
+  if(error.name==='SyntaxError')return 'invalid_json'
+  return /^(http_\d{3}|oversize|empty|incomplete|extra_fields|invalid_pack|prompt_bound)$/.test(error.message)?error.message:'invalid_response'
+}
 export function providerCapped(data:unknown,policy='100-monthly-exclusive'):boolean{
   const d=data as Record<string,unknown>|null
   if(policy==='shared-user-authorized')return !!d&&d.is_management_key!==true&&d.is_provisioning_key!==true&&(d.limit===null||typeof d.limit==='number'&&d.limit>0&&typeof d.limit_remaining==='number'&&d.limit_remaining>=VOYAGE_RESERVATION/1e6)
@@ -18,7 +24,8 @@ export function generationBody(key:string){
 }
 async function boundedJSON(fetcher:typeof fetch,url:string,init:RequestInit,ms:number,bytes=32768):Promise<Record<string,unknown>>{
   const response=await fetcher(url,{...init,signal:AbortSignal.timeout(ms)})
-  if(!response.ok||Number(response.headers.get('content-length'))>bytes)throw Error('provider_unavailable')
+  if(!response.ok)throw Error('http_'+response.status)
+  if(Number(response.headers.get('content-length'))>bytes)throw Error('oversize')
   const reader=response.body?.getReader();if(!reader)throw Error('empty')
   const chunks:Uint8Array[]=[];let size=0
   try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>bytes)throw Error('oversize');chunks.push(value)}}finally{await reader.cancel()}
@@ -40,7 +47,7 @@ export class VoyageService{
     const ip=request.headers.get('CF-Connecting-IP');if(!ip||ip.length>64)return fallback('unavailable')
     const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(new Date(now).toISOString().slice(0,10)+':'+ip))
     const tag=Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('')
-    if(!this.ledger.rate('ip:'+tag,3,now)||!this.ledger.rate('global:generation',20,now))return fallback('daily_limit',429)
+    if(!this.ledger.rate('ip:'+tag,5,now)||!this.ledger.rate('global:generation',20,now))return fallback('daily_limit',429)
     const cap=Number(this.env.MONTHLY_BUDGET_USD)*1e6
     if(this.env.ENABLE_PAID!=='true'||!this.env.OPENROUTER_API_KEY||!['100-monthly-exclusive','shared-user-authorized'].includes(this.env.OPENROUTER_LIMIT_CONFIRMED??'')||!Number.isSafeInteger(cap)||cap<=0||cap>VOYAGE_HARD_CAP)return fallback('not_enabled')
     const headers={Authorization:'Bearer '+this.env.OPENROUTER_API_KEY,'Content-Type':'application/json'}
@@ -62,7 +69,7 @@ export class VoyageService{
         const pack=validateVoyage({...raw,key,source:'generated',model:body.model,generatedAt:new Date(this.now()).toISOString(),latencyMs:this.now()-started})
         if(!pack||!this.ledger.finish(key,reservation.lease,pack,this.now()))throw Error('invalid_pack')
         return Response.json({source:'generated',pack})
-      }catch{this.ledger.fail(key,reservation.lease);return fallback('generation_unavailable')}
+      }catch(error){const failure=generationFailure(error);this.ledger.fail(key,reservation.lease);console.warn('pongapp.voyage.failure',JSON.stringify({key,failure}));return Response.json({source:'builtin',reason:'generation_unavailable',failure,pack:DEFAULT_VOYAGE})}
     }catch{return fallback('provider_unavailable')}
   }
 }
