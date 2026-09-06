@@ -16,7 +16,7 @@ async function verifyDeployment() {
   const pageResponse = await fetchCurrent(siteUrl.pathname)
   invariant(pageResponse.ok, `PongApp page returned ${pageResponse.status}`)
   const html = await pageResponse.text()
-  invariant(html.includes('Two Oars'), 'PongApp page did not contain the Two Oars release')
+  invariant(html.includes('Starling Rescue'), 'PongApp page did not contain the Starling Rescue release')
   const scriptPath = html.match(/src="(\/pongapp\/assets\/index-[^"]+\.js)"/)?.[1]
   invariant(scriptPath, 'PongApp page did not reference its production JavaScript bundle')
 
@@ -25,11 +25,15 @@ async function verifyDeployment() {
   const script = await scriptResponse.text()
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
   invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
-  for (const text of ['TWO CREW. FOUR ROOMS. ONE SHIP.', 'Running to', 'THE BESTIARY WORKSHOP', 'Shared recovery progress', 'RECOVERED +1 HEART']) {
-    invariant(script.includes(text), `PongApp bundle is missing four-room release marker: ${text}`)
+  for (const text of ['Starling Rescue', 'Open five cages.', 'Friends for the journey', 'Lantern Wake', 'starling-pack.json', 'galley.glb']) {
+    invariant(script.includes(text), `PongApp bundle is missing Starling release marker: ${text}`)
   }
-
-  const sceneChunk = script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
+  const legacyChunk = script.match(/App-[A-Za-z0-9_-]+\.js/)?.[0]
+  invariant(legacyChunk, 'Legacy game entry is missing')
+  const legacyResponse = await fetchCurrent('/pongapp/assets/' + legacyChunk)
+  const legacy = await legacyResponse.text()
+  invariant(legacyResponse.ok && legacy.includes('TWO CREW. FOUR ROOMS. ONE SHIP.'), 'Preserved classic modes are missing')
+  const sceneChunk = legacy.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0] ?? script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
   invariant(sceneChunk, 'PongApp bundle did not include the lazy 3D renderer')
   const sceneResponse = await fetchCurrent('/pongapp/assets/' + sceneChunk)
   const sceneScript=await sceneResponse.text()
@@ -44,14 +48,25 @@ async function verifyDeployment() {
   }
 
   const workerResponse = await fetchCurrent('/pongapp/sw.js')
-  invariant(workerResponse.ok, `Service-worker retirement script returned ${workerResponse.status}`)
+  invariant(workerResponse.ok, `Offline service worker returned ${workerResponse.status}`)
   const worker = await workerResponse.text()
-  invariant(worker.includes('registration.unregister()'), 'Stale-shell retirement worker was not deployed')
+  const expectedWorker = readFileSync(new URL('../apps/web/public/sw.js', import.meta.url), 'utf8')
+  invariant(worker === expectedWorker, 'Atomic offline worker does not match this release')
+  const packResponse = await fetchCurrent('/pongapp/starling-pack.json')
+  invariant(packResponse.ok, 'Offline pack manifest is missing')
+  const pack = await packResponse.json()
+  invariant(pack.format === 'starling-pack-v1' && pack.files.length >= 25, 'Offline pack is incomplete')
+  if (process.env.DEPLOYMENT_ID) invariant(pack.revision === deploymentId, `Served revision ${pack.revision} does not match ${deploymentId}`)
+  for (let offset = 0; offset < pack.files.length; offset += 5) await Promise.all(pack.files.slice(offset, offset + 5).map(async file => {
+    const response = await fetchCurrent(file.url), bytes = Buffer.from(await response.arrayBuffer())
+    invariant(response.ok && bytes.length === file.bytes && createHash('sha256').update(bytes).digest('hex') === file.sha256, `Offline asset hash mismatch: ${file.url}`)
+  }))
 
   const healthResponse = await fetch(new URL('/api/health', roomServerUrl), { cache: 'no-store' })
   invariant(healthResponse.ok, `Room health returned ${healthResponse.status}`)
   const health = await healthResponse.json()
   invariant(health.protocol === 10, `Room server protocol was ${health.protocol}, expected 10`)
+  invariant(health.rescueProtocol === 1, `Starling room protocol was ${health.rescueProtocol}, expected 1`)
   invariant(health.runtime === 'cloudflare-durable-objects', `Room server runtime was ${health.runtime}, expected Cloudflare Durable Objects`)
   console.log(`production-smoke ok: ${siteUrl.href} -> ${scriptPath} -> ${roomServerUrl}`)
 }

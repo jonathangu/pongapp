@@ -21,6 +21,10 @@
       {
         "name": "VOYAGES",
         "class_name": "VoyageDirector"
+      },
+      {
+        "name": "RESCUE_ROOMS",
+        "class_name": "RescueRoom"
       }
     ]
   },
@@ -32,6 +36,10 @@
     {
       "tag": "v2-voyage-director",
       "new_sqlite_classes": ["VoyageDirector"]
+    },
+    {
+      "tag": "v3-starling-rescue",
+      "new_sqlite_classes": ["RescueRoom"]
     }
   ],
   "vars": {

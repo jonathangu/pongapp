@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import App from './App'
+import App from './StarlingApp'
 import './styles/app.css'
 import './styles/expedition.css'
 import './styles/crew.css'

@@ -1,28 +1,28 @@
 {
-  "name": "Two Oars",
-  "short_name": "Two Oars",
-  "description": "Instant co-op adventures and friendly river races for two phones.",
+  "name": "Starling Rescue — Two Oars",
+  "short_name": "Starling",
+  "description": "Sail, rescue, cook and explore with a little crew. Solo offline or invited co-op.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",
   "background_color": "#071c22",
   "theme_color": "#071c22",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "starling-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512.png",
+      "src": "starling-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-maskable-512.png",
+      "src": "starling-icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

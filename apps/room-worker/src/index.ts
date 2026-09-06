@@ -21,15 +21,20 @@ import {
   type RoomParticipant,
   type ServerMessage,
   type StoredRoomConfig,
+  parseRescueRoomRequest,
+  RESCUE_PROTOCOL_VERSION,
 } from '@pongapp/protocol'
 import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, parseStoredRoomConfig, validRoomCode } from './helpers'
 import { VoyageService, type VoyageEnv } from './voyage-service'
+import { RescueRoom } from './rescue-room'
+export { RescueRoom } from './rescue-room'
 
 export { allowedOrigin, generateRoomCode, validRoomCode } from './helpers'
 
 interface Env extends VoyageEnv {
   ROOMS: DurableObjectNamespace<GameRoom>
   VOYAGES: DurableObjectNamespace<VoyageDirector>
+  RESCUE_ROOMS: DurableObjectNamespace<RescueRoom>
 }
 
 interface InternalParticipant extends RoomParticipant {
@@ -88,9 +93,10 @@ function json(request: Request, value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: corsHeaders(request) })
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request, maxBytes = MAX_BODY_BYTES): Promise<unknown> {
+  if (Number(request.headers.get('content-length')) > maxBytes) throw new Error('body_too_large')
   const raw = await request.text()
-  if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) throw new Error('body_too_large')
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) throw new Error('body_too_large')
   return JSON.parse(raw) as unknown
 }
 
@@ -103,9 +109,33 @@ export default {
         status: 'ok',
         service: 'pongapp-room',
         protocol: PROTOCOL_VERSION,
+        rescueProtocol: RESCUE_PROTOCOL_VERSION,
         runtime: 'cloudflare-durable-objects',
         region: request.cf?.colo ?? 'edge',
       })
+    }
+
+    if (url.pathname === '/api/rescue/rooms' && request.method === 'POST') {
+      const origin = request.headers.get('origin')
+      if (origin && !allowedOrigin(origin)) return json(request, { error: 'origin_not_allowed' }, 403)
+      let body: unknown
+      try { body = await readJson(request, 600_000) } catch { return json(request, { error: 'invalid_json' }, 400) }
+      const parsed = parseRescueRoomRequest(body)
+      if (!parsed) return json(request, { error: 'invalid_rescue_config' }, 400)
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const code = generateRoomCode(), stub = env.RESCUE_ROOMS.get(env.RESCUE_ROOMS.idFromName(code))
+        const response = await stub.fetch('https://rescue.internal/configure', { method: 'POST', body: JSON.stringify({ ...parsed, code }) })
+        if (response.status === 201) return json(request, { roomCode: code, protocol: RESCUE_PROTOCOL_VERSION }, 201)
+        if (response.status !== 409) return json(request, { error: 'room_create_failed' }, 500)
+      }
+      return json(request, { error: 'room_code_collision' }, 503)
+    }
+    const rescueMatch = /^\/api\/rescue\/rooms\/([A-Z2-9]{6})\/websocket$/.exec(url.pathname)
+    if (rescueMatch && request.method === 'GET') {
+      const origin = request.headers.get('origin')
+      if (origin && !allowedOrigin(origin)) return json(request, { error: 'origin_not_allowed' }, 403)
+      if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json(request, { error: 'websocket_required' }, 426)
+      return env.RESCUE_ROOMS.get(env.RESCUE_ROOMS.idFromName(rescueMatch[1]!)).fetch(request)
     }
 
     if(['/api/voyages','/api/voyages/status'].includes(url.pathname)){
