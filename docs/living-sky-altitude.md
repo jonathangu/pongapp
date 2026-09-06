@@ -23,4 +23,14 @@ Ambiguous dictated ending: “entire have” is interpreted as “entire game.�
 
 Scope: standalone PongApp only. Preserve preexisting AGENTS.md. No RackeTapp, Clearing, Supabase, new services, generated art, delegated agents or timers.
 
-Status: requirements recorded; implementation next. Evidence directory: `task-artifacts/living-sky-altitude/`.
+Status: implemented and locally verified; release pending. Evidence directory: `task-artifacts/living-sky-altitude/`.
+
+## Local acceptance
+
+- `pnpm check`: 103 tests plus lint/typecheck/build passed.
+- `sky-altitude-browser-smoke.mjs`: Chrome and WebKit at 320×568, 390×844, 844×390 and 1440×900 passed world-space sky orbit, updraft, elevated auto/manual aim, both boss warnings/entries, guardian lift/downward targeting, exact sea return, GPU-loss fallback and control bounds.
+- `orbital-controls-smoke.mjs`: same eight cases passed held/tap inputs, full orbit, continuous fire/recovery, multitouch, release/cancel, zoom and picking regressions.
+- `peer-browser-smoke.mjs`: direct+relay co-op/versus, invitations, rematch, reconnect, authoritative guest damage/recovery and shared height/guest 3D aiming passed. Test timeline resets now start a new epoch, respecting existing stale-frame rejection.
+- Local Durable Object co-op/versus and stale protocol rejection passed. Co-op ruleset10 / protocol9; versus remains6.
+- Five busy worlds at 4× CPU slowdown: p95 16.7ms, no 250ms freezes, max 80,490 triangles/27 draws; asset/GPU failures retain responsive fallback. Desktop engine emulation is not physical phone performance evidence.
+- Deterministic balance suite: 20/20 wins; this is a regression measure, not a subjective fun verdict.

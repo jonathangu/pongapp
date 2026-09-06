@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { COOP_TICK_RATE, CREW_UPGRADES, EXPEDITION_WORLDS, RECOVERY_TAPS, RECOVERY_WORK, expeditionWorld, coopProgress, coopSecondsRemaining, type CoopGameState, type CrewTap } from '@pongapp/game-core'
+import { COOP_TICK_RATE, CREW_UPGRADES, EXPEDITION_WORLDS, RECOVERY_TAPS, RECOVERY_WORK, bossWarning, expeditionWorld, coopProgress, coopSecondsRemaining, type CoopGameState, type CrewTap } from '@pongapp/game-core'
 import type { ConnectionQuality } from '../online/RoomClient'
 import type { CrewControl } from '../online/LocalSimulation'
 import { peerLabel, type PeerStatus } from '../online/PeerSession'
 import { ExpeditionCanvas } from './ExpeditionCanvas'
 import { useWakeLock } from './useWakeLock'
+import { DEFAULT_CAMERA_ZOOM, MAX_CAMERA_ZOOM } from './RollingWorld'
 
 interface Props {
   getState: () => CoopGameState
@@ -22,7 +23,7 @@ export function CoopRiver({ getState, subscribe, localPlayerId, roomCode, networ
   const [active, setActive] = useState<CrewTap[]>([])
   const [helpOpen, setHelpOpen] = useState(false)
   const helpDialog = useRef<HTMLDialogElement>(null)
-  const [zoom, setZoom] = useState(.9)
+  const [zoom, setZoom] = useState(DEFAULT_CAMERA_ZOOM)
   const [notice, setNotice] = useState('Hold to flow. Tap for extra power.')
   const noticeTimer = useRef(0), pulseTimers = useRef<Partial<Record<CrewTap, number>>>({})
   const fireRef = useRef<(action: CrewTap) => void>(() => {})
@@ -94,7 +95,10 @@ export function CoopRiver({ getState, subscribe, localPlayerId, roomCode, networ
   const partner = Object.values(state.players).find(p => p.id !== localPlayerId)
   const hearts = Math.max(0, Math.min(3, Math.round(state.hearts)))
   useEffect(()=>{if(hearts===3)for(const [source,action] of sources.current)if(action==='recover')endRef.current(source)},[hearts])
-  const boss = state.objects.find(o => o.enemy === 'boss')
+  const boss = state.objects.find(o => o.enemy === 'boss'&&o.bossKind==='guardian')??state.objects.find(o=>o.enemy==='boss')
+  const incoming=bossWarning(state),flight=state.boat.flight
+  const flightProgress=flight?flight.tick/flight.duration:0
+  const flightLabel=flightProgress>.66?'RETURNING TO SEA':flightProgress<.24?'RISING':'AIRBORNE'
   const repairPercent=Math.min(100,Math.round(c.repair/RECOVERY_WORK*100))
   const subtitle = (action: CrewTap) => action === 'left' || action === 'right' ? 'Hold orbit · tap dash'
     : action === 'shoot' ? 'Hold fire · tap blast'
@@ -108,10 +112,12 @@ export function CoopRiver({ getState, subscribe, localPlayerId, roomCode, networ
     </section>
     <section className="river-world expedition-world">
       <ExpeditionCanvas getState={getState} zoom={zoom} onZoom={setZoom} onTarget={!disabled ? id => { onCrew({ targetId: id }); flash(id === null ? 'Auto aim · nearest predator' : 'Target selected · tap Shoot') } : undefined}/>
-      <div className="crew-camera" role="group" aria-label="Camera zoom"><button aria-label="Zoom out" disabled={zoom <= .65} onClick={() => setZoom(Math.max(.65,zoom-.1))}>−</button><button aria-label="Reset camera zoom" onClick={() => setZoom(.9)}>{Math.round(zoom*100)}%</button><button aria-label="Zoom in" disabled={zoom >= 1.2} onClick={() => setZoom(Math.min(1.2,zoom+.1))}>＋</button></div>
+      <div className="crew-camera" role="group" aria-label="Camera zoom"><button aria-label="Zoom out" disabled={zoom <= .65} onClick={() => setZoom(Math.max(.65,zoom-.1))}>−</button><button aria-label="Reset camera zoom" onClick={() => setZoom(DEFAULT_CAMERA_ZOOM)}>{Math.round(zoom*100)}%</button><button aria-label="Zoom in" disabled={zoom >= MAX_CAMERA_ZOOM} onClick={() => setZoom(Math.min(MAX_CAMERA_ZOOM,zoom+.1))}>＋</button></div>
       <div className="expedition-title" key={world}><span>0{world + 1} / FIVE WORLDS · {theme.vehicle}</span><h1>{theme.name}</h1></div>
       <div className="crew-mission"><span className={state.rescued >= 3 ? 'done' : ''}>◒ Rescue {Math.min(3, state.rescued)}/3</span><span className={c.bossDefeated ? 'done' : ''}>{c.bossDefeated ? '✓ Guardian defeated' : '⌖ Defeat the guardian'}</span></div>
-      {boss && <div className="crew-boss"><span>STAR DEVOURER</span><b><i style={{ width: Math.max(0, (boss.hp ?? 0) / (boss.maxHp ?? 1)) * 100 + '%' }}/></b></div>}
+      {incoming&&<div className="crew-boss-warning" role="status"><span>↑ {incoming.name} APPROACHING</span><strong>{Math.ceil(incoming.ticks/COOP_TICK_RATE)}</strong><small>Look up · cannons auto-aim</small></div>}
+      {!incoming&&boss && <div className="crew-boss"><span>{boss.bossKind==='sentinel'?'SKY SENTINEL':'STAR DEVOURER'}{(boss.altitude??0)>1?' · AIRBORNE':''}</span><b><i style={{ width: Math.max(0, (boss.hp ?? 0) / (boss.maxHp ?? 1)) * 100 + '%' }}/></b></div>}
+      {flight&&<div className="crew-altitude" role="status" data-phase={flightLabel} data-altitude={state.boat.altitude.toFixed(2)}><span>↑ {flightLabel}<small>Temporary lift · auto return</small></span><b><i style={{width:(1-flightProgress)*100+'%'}}/></b></div>}
       {network.peer?.paused && !modeLabel && <div className="expedition-pause" role="status"><strong>Waiting for your teammate</strong><span>Keep both game tabs open. Your expedition will resume.</span></div>}
       {state.phase === 'countdown' && <div className="expedition-countdown"><span>HOLD TO FLOW. TAP FOR POWER.</span><strong>{Math.max(1, Math.ceil(state.countdownTicks / COOP_TICK_RATE))}</strong><p>Orbit freely. Unleash your cannons.<br/>Hold or tap any button.<br/>Recover whenever you need it.</p><small>Rescue 3 friends. Defeat the guardian.</small></div>}
       {state.phase === 'finished' && <div className="expedition-finish"><span>{c.victory ? 'YOU BROUGHT THEM HOME.' : 'YOUR CREW. YOUR NEXT ADVENTURE.'}</span><h1>{c.victory ? 'Wildly good together.' : hearts ? 'The rescue isn’t over.' : 'One more run?'}</h1><strong>{state.score.toLocaleString()} <small>TEAM POINTS</small></strong><div><p>◒ {state.rescued}/3 rescued</p><p>⌖ {c.kills} predators</p><p>{c.bossDefeated ? '✓ Guardian defeated' : 'Guardian still out there'}</p></div><button onClick={onRematch}>Another expedition ↗</button><button className="quiet" onClick={onExit}>Back to basecamp</button></div>}
@@ -128,6 +134,6 @@ export function CoopRiver({ getState, subscribe, localPlayerId, roomCode, networ
       </div>
       <p className="crew-tap-feedback" role="status">{notice}</p>
     </footer>
-    <dialog ref={helpDialog} className="crew-guide" aria-labelledby="crew-guide-title" onClose={() => setHelpOpen(false)}><button autoFocus onClick={() => helpDialog.current?.close()}>Back to game ×</button><h2 id="crew-guide-title">Hold to flow. Tap for power.</h2><p>Both players have the same four buttons. Hold several at once to steer, fire and recover together.</p><section><h3>← Left / Right →</h3><p>Hold to glide all the way around the cylinder. Each new tap adds a stronger dash. No side walls. Release to settle; opposite directions cancel.</p></section><section><h3>◉ Shoot</h3><p>Hold for a stream of homing cannonballs. Each tap launches a heavier, wider power blast. Tap a predator to focus your cannons; tap empty space for auto aim.</p></section><section><h3>♥+ Recover</h3><p>{RECOVERY_TAPS} repair taps or about 3 seconds of holding restore one shared heart. Both players contribute to the visible bar, and progress stays when you stop. Recovery is always available when damaged. Three salvage accelerate a held repair and are used when the heart is restored.</p></section><p><strong>Upgrades:</strong> new cannon powers equip automatically. No choices or menus interrupt the run.</p><p><strong>Keyboard:</strong> hold or tap A/D or arrows, Space/J to shoot, R/K to recover.</p><p><strong>Camera:</strong> pinch or use − to see more world. Tap the percentage to reset. Opening this guide releases your controls but does not pause your teammate.</p></dialog>
+    <dialog ref={helpDialog} className="crew-guide" aria-labelledby="crew-guide-title" onClose={() => setHelpOpen(false)}><button autoFocus onClick={() => helpDialog.current?.close()}>Back to game ×</button><h2 id="crew-guide-title">Hold to flow. Tap for power.</h2><p>Both players have the same four buttons. Hold several at once to steer, fire and recover together.</p><section><h3>← Left / Right →</h3><p>Hold to glide all the way around the cylinder. Each new tap adds a stronger dash. No side walls. Release to settle; opposite directions cancel.</p></section><section><h3>◉ Shoot</h3><p>Hold for a stream of homing cannonballs. Each tap launches a heavier, wider power blast. Cannons automatically track enemies above or below you. Tap a predator to focus your cannons; tap empty space for auto aim.</p></section><section><h3>♥+ Recover</h3><p>{RECOVERY_TAPS} repair taps or about 3 seconds of holding restore one shared heart. Both players contribute to the visible bar, and progress stays when you stop. Recovery is always available when damaged. Three salvage accelerate a held repair and are used when the heart is restored.</p></section><section><h3>↑ A little airtime</h3><p>Rare updrafts and jetstreams lift the craft temporarily. Keep steering and shooting normally; you return to sea level automatically. Flying enemies, falling hazards and your shells share real height. Ground shadows show where things will land. Boss arrival warnings give you time to prepare.</p></section><p><strong>Upgrades:</strong> new cannon powers equip automatically. No choices or menus interrupt the run.</p><p><strong>Keyboard:</strong> hold or tap A/D or arrows, Space/J to shoot, R/K to recover.</p><p><strong>Camera:</strong> pinch or use − to see more world. Tap the percentage to reset. Opening this guide releases your controls but does not pause your teammate.</p></dialog>
   </main>
 }

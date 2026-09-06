@@ -20,6 +20,30 @@ async function waitFor(session,expression,timeout=12000){const end=Date.now()+ti
 async function page(width=390,height=844){const {browserContextId}=await send('Target.createBrowserContext');const {targetId}=await send('Target.createTarget',{url:'about:blank',browserContextId});const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});await send('Page.enable',{},sessionId);await send('Runtime.enable',{},sessionId);await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<600},sessionId);await send('Emulation.setFocusEmulationEnabled',{enabled:true},sessionId);await send('Page.navigate',{url:ui},sessionId);await waitFor(sessionId,"document.querySelector('.preview-worlds')");return sessionId}
 async function screenshot(session,name){const r=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},session);await writeFile(join(artifacts,name+'.png'),Buffer.from(r.data,'base64'))}
 const results=[]
+async function verifyAltitude(a,b,path){
+  // A new epoch is required before rewinding the timeline: peers correctly reject
+  // same-epoch snapshots older than the last accepted frame (especially on relay).
+  const previous=await evaluate(a,'qa.peer.epoch')
+  await evaluate(a,"qa.peer.state.phase='finished';qa.rematch()")
+  await waitFor(b,`qa.peer.epoch!==${JSON.stringify(previous)}`)
+  await evaluate(a,"(()=>{const s=qa.peer.state;s.phase='playing';s.tick=1259;s.invulnerableTicks=10000;s.rescued=0;s.crew.bossDefeated=false;s.crew.altitudeEventIndex=0;s.crew.encounterIndex=0;s.boat.altitude=0;s.boat.flight=null;s.objects=[]})()")
+  await waitFor(a,'qa.peer.state.boat.altitude>3');await waitFor(b,'qa.peer.getState().boat.altitude>3')
+  const host=await evaluate(a,'({altitude:qa.peer.state.boat.altitude,kind:qa.peer.state.boat.flight?.kind})'),guest=await evaluate(b,'({altitude:qa.peer.getState().boat.altitude,kind:qa.peer.getState().boat.flight?.kind})')
+  if(host.kind!=='updraft'||guest.kind!==host.kind||Math.abs(host.altitude-guest.altitude)>.35)throw Error(path+' altitude disagreement '+JSON.stringify({host,guest}))
+  await evaluate(a,"(()=>{const s=qa.peer.state;s.objects=[{id:91001,type:'predator',enemy:'ambusher',x:s.boat.x,y:.38,radius:.04,phase:0,drift:0,age:0,hp:1000,maxHp:1000,altitude:6,flight:{kind:'rise',tick:200,duration:600,peak:6}}]})()")
+  await evaluate(b,'qa.setCrew({action:true,targetId:null})')
+  await waitFor(a,'qa.peer.state.crew.shots.some(s=>s.targetId===91001 && s.vAltitude>0)')
+  await waitFor(b,'qa.peer.getState().crew.shots.some(s=>s.targetId===91001 && s.altitude>3)')
+  await evaluate(b,'qa.setCrew({action:false})')
+  await waitFor(a,'qa.peer.state.boat.altitude===0 && qa.peer.state.boat.flight===null')
+  await waitFor(b,'qa.peer.getState().boat.altitude===0 && qa.peer.getState().boat.flight===null')
+  await evaluate(a,"(()=>{const s=qa.peer.state;s.tick=2519;s.crew.encounterIndex=0;s.crew.altitudeEventIndex=1;s.crew.bossesDefeated=0;s.objects=[]})()")
+  await waitFor(a,"qa.peer.state.objects.some(o=>o.bossKind==='sentinel' && o.altitude>5)")
+  await waitFor(b,"qa.peer.getState().objects.some(o=>o.bossKind==='sentinel' && o.altitude>5)")
+  await evaluate(a,"qa.peer.state.objects.find(o=>o.bossKind==='sentinel').hp=0")
+  await waitFor(b,'qa.peer.getState().crew.bossesDefeated===1 && !qa.peer.getState().crew.bossDefeated')
+  results.push({mode:'coop',path,altitude:'shared updraft, guest 3D auto-aim, exact sea return and descending sentinel/nonfinal reward passed',host,guest})
+}
 async function verifyHeldControls(a,b,path){
   await evaluate(a,"qa.peer.state.hearts=1;qa.peer.state.crew.scrap=0;qa.peer.state.crew.repair=0;qa.peer.state.invulnerableTicks=10000;globalThis.qaQuiet=setInterval(()=>qa.peer.state.objects=[],50)")
   await waitFor(b,'qa.peer.getState().hearts===1 && qa.peer.getState().crew.scrap===0')
@@ -73,7 +97,7 @@ try{
     if(response.localResponseMs>100)throw Error(mode+' did not predict input promptly: '+JSON.stringify(response))
     await sleep(250)
     const direct=await evaluate(a,'qav.peer')
-    if(mode==='coop'){await verifyTapBurst(a,b,'direct');await verifyHeldControls(a,b,'direct')}
+    if(mode==='coop'){await verifyTapBurst(a,b,'direct');await verifyHeldControls(a,b,'direct');await verifyAltitude(a,b,'direct')}
     await evaluate(b,"Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'))")
     await waitFor(a,'qav.peer.paused');await waitFor(b,'qav.peer.paused')
     await evaluate(b,"Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'))")
@@ -92,7 +116,7 @@ try{
     await sleep(400)
     const after=await evaluate(b,'({epoch:qa.peer.epoch,tick:qa.peer.getState().tick,peer:qav.peer})')
     if(after.epoch!==epoch||after.peer.paused)throw Error('Fallback restarted or stalled the match')
-    if(mode==='coop'){await verifyTapBurst(a,b,'relay');await verifyHeldControls(a,b,'relay')}
+    if(mode==='coop'){await verifyTapBurst(a,b,'relay');await verifyHeldControls(a,b,'relay');await verifyAltitude(a,b,'relay')}
     // Guest rematch adopts exactly the host's new epoch.
     await evaluate(a,"qa.peer.state.phase='finished'")
     try{await waitFor(b,"qa.peer.getState().phase==='finished'")}catch(error){console.log('Terminal relay diagnostic',mode,await evaluate(a,'({host:qa.peer.host,phase:qa.peer.getState().phase,tick:qa.peer.getState().tick,epoch:qa.peer.epoch,status:qav.peer})'),await evaluate(b,'({host:qa.peer.host,phase:qa.peer.getState().phase,tick:qa.peer.getState().tick,epoch:qa.peer.epoch,status:qav.peer})'));throw error}
@@ -102,6 +126,7 @@ try{
     await waitFor(b,`qa.peer.epoch===${JSON.stringify(expectedEpoch)}`)
     const rematchA=await evaluate(a,'qa.peer.epoch'),rematchB=await evaluate(b,'qa.peer.epoch')
     if(rematchA===epoch||rematchA!==rematchB)throw Error('Rematch epoch mismatch')
+    if(mode==='coop')for(const session of [a,b])if(await evaluate(session,'qa.peer.getState().boat.altitude!==0 || qa.peer.getState().boat.flight!==null'))throw Error('Rematch retained altitude')
     await evaluate(b,'qa.peer.receiveRelay('+JSON.stringify(JSON.stringify(oldFrame))+')')
     if(await evaluate(b,'qa.peer.epoch')!==rematchA)throw Error('An old packet undid the rematch')
     if(mode==='coop') {

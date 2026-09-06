@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { EXPEDITION_WORLDS, RIVER_WIDTH, ORBIT_LAP, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
-import { CYLINDER_RADIUS, cylinderPoint, orbitVisible, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
+import { EXPEDITION_WORLDS, RIVER_WIDTH, ORBIT_LAP, bossWarning, combatDistance, objectAltitude, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { CYLINDER_RADIUS, MAX_CAMERA_ZOOM, cylinderPoint, orbitVisible, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
+import { livingSky } from './LivingSky'
 
 const ART = import.meta.env.BASE_URL + 'art/'
 const TAU = Math.PI * 2
@@ -39,10 +40,10 @@ function loadMaterialImage(): Promise<HTMLImageElement> {
   return materialImagePromise
 }
 
-export function tinyWorldCamera(width: number, height: number) {
-  const c = rollingCamera(width, height)
+export function tinyWorldCamera(width: number, height: number,altitude=0) {
+  const c = rollingCamera(width, height,altitude)
   const camera = new THREE.PerspectiveCamera(c.halfFov * 360 / Math.PI, c.aspect, .1, 1200)
-  camera.position.set(0,c.y,c.z); camera.lookAt(0,0,c.targetZ); camera.updateMatrixWorld()
+  camera.position.set(0,c.y,c.z); camera.lookAt(0,c.targetY,c.targetZ); camera.updateMatrixWorld()
   return { camera, depth: c.depth }
 }
 
@@ -108,6 +109,7 @@ export class TinyWorldScene {
   private beamCount = 0
   private renderFrame = 0
   private roll = 0
+  private cameraAltitude = 0
   private rollRotation = new THREE.Quaternion()
   private rollAxis = new THREE.Vector3(0,0,1)
 
@@ -160,6 +162,8 @@ export class TinyWorldScene {
     const orb=new THREE.SphereGeometry(1,24,16);this.geometries.set('_orb',orb)
     const planetMaterial=new THREE.MeshStandardMaterial({roughness:.85});this.materials.push(planetMaterial)
     this.batches.set('_orb',new Batch(this.scene,orb,planetMaterial,12))
+    const sunMaterial=new THREE.MeshBasicMaterial({color:0xffffff,toneMapped:false});this.materials.push(sunMaterial)
+    this.batches.set('_sun',new Batch(this.scene,orb,sunMaterial,2))
     this.canvas.dataset.renderer='loading-3d'
   }
 
@@ -169,6 +173,9 @@ export class TinyWorldScene {
     const texture=new THREE.Texture(image);texture.colorSpace=THREE.SRGBColorSpace;texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.needsUpdate=true;this.textures.push(texture)
     this.surface.map=texture;this.surface.needsUpdate=true
     for(const [name,geometry] of source){const owned=geometry.clone();this.geometries.set(name,owned);const batch=new Batch(this.scene,owned,this.surface);batch.mesh.receiveShadow=true;batch.mesh.castShadow=['boat','truck','ship','airship','turret','predator','temple','palm','fir','cactus','garden_tree'].includes(name);this.batches.set(name,batch)}
+    // Sky clouds use a clean diffuse material, not terrain's green vertex paint/texture.
+    const cloudMaterial=new THREE.MeshStandardMaterial({color:0xffffff,roughness:1});this.materials.push(cloudMaterial)
+    this.batches.set('_skyCloud',new Batch(this.scene,this.geometries.get('cloud')!,cloudMaterial,32))
     for(let world=1;world<5;world++){
       const geometry=source.get('predator')!.clone(),colors=geometry.getAttribute('color'),base=new THREE.Color(ENEMIES[world]!)
       for(let i=0;i<colors.count;i++){const r=colors.getX(i),g=colors.getY(i),b=colors.getZ(i);if(g>r*1.05&&g>b*1.1){const light=Math.min(1.7,.6+g*1.3);colors.setXYZ(i,base.r*light,base.g*light,base.b*light)}}
@@ -183,7 +190,7 @@ export class TinyWorldScene {
     if(this.lastWorld>=0){const world=this.lastWorld;this.lastWorld=-1;this.setWorld(world)}
   }
   setZoom(zoom: number) {
-    const value=Math.max(.65,Math.min(1.2,zoom))
+    const value=Math.max(.65,Math.min(MAX_CAMERA_ZOOM,zoom))
     if(this.camera.zoom!==value){this.camera.zoom=value;this.camera.updateProjectionMatrix()}
   }
   private add(name: string,x: number,y: number,z: number,sx=1,sy=sx,sz=sx,rotation=0,color=0xffffff,rx=0,rz=0) {
@@ -211,24 +218,8 @@ export class TinyWorldScene {
     const ctx=this.skyCanvas.getContext('2d')!;const gradient=ctx.createLinearGradient(0,0,0,512)
     gradient.addColorStop(0,['#4caaa9','#f0a18e','#83bcd7','#dc9aac','#111132'][world]!);gradient.addColorStop(.52,['#cce0b5','#ffe1a9','#deedf0','#ffe3c4','#353664'][world]!);gradient.addColorStop(1,['#539e96','#d8a5a4','#92b5ce','#bbb8d6','#152348'][world]!)
     ctx.fillStyle=gradient;ctx.fillRect(0,0,1024,512)
-    // A permanent panorama wraps the playable cylinder, rather than covering it with another view.
-    const sunX=world===1?770:world===2?245:780,sunY=world===4?105:140
-    const sunRadius=world===1?48:30,aspect=this.width/Math.max(1,this.height)/2
-    ctx.fillStyle=world===4?'#cdbaff0b':'#fff0cd12'
-    for(const r of [150,110,75]){ctx.beginPath();ctx.ellipse(sunX,sunY,r,r*aspect,0,0,TAU);ctx.fill()}
-    ctx.fillStyle=world===4?'#d6c4ef':'#fff0c7';ctx.beginPath();ctx.ellipse(sunX,sunY,sunRadius,sunRadius*aspect,0,0,TAU);ctx.fill()
-    if(world===4){ctx.fillStyle='#242249';ctx.beginPath();ctx.ellipse(sunX+13,sunY-8*aspect,29,29*aspect,0,0,TAU);ctx.fill()}
-    if(world<3)for(let layer=0;layer<3;layer++){
-      ctx.fillStyle=[['#91bdaf','#6b9f9b','#467f83'],['#dba296','#b77e83','#906576'],['#accbdb','#8faebf','#698da7']][world]![layer]!
-      ctx.beginPath();ctx.moveTo(0,512)
-      for(let i=-1;i<=26;i++){const x=i*43,y=260+layer*61-noise(i+layer*31+world*12)*(world===2?110:85);ctx.lineTo(x,y)}
-      ctx.lineTo(1024,512);ctx.closePath();ctx.fill()
-      if(world===2)for(let i=0;i<24;i++){const x=i*43,y=260+layer*61-noise(i+layer*31+world*12)*110;ctx.fillStyle='#eaf4ed99';ctx.beginPath();ctx.moveTo(x-13,y+24);ctx.lineTo(x,y);ctx.lineTo(x+15,y+22);ctx.lineTo(x+3,y+16);ctx.closePath();ctx.fill()}
-    }
-    if(world===3)for(let i=0;i<6;i++){ctx.strokeStyle=['#efa9ba','#f5c29b','#f5e5ae','#afe0c7','#adc9f0','#c2b8e9'][i]!;ctx.lineWidth=9;ctx.beginPath();ctx.ellipse(515,360,400-i*10,230-i*10,0,Math.PI,TAU);ctx.stroke()}
-    if(world===4)for(let i=0;i<250;i++){ctx.fillStyle=i%3?'#d1defd':'#fff6d4';ctx.globalAlpha=.2+noise(i+20)*.7;ctx.beginPath();ctx.arc(noise(i)*1024,noise(i+5)*512,.5+noise(i+11)*1.4,0,TAU);ctx.fill()}
-    if(world!==4)for(let i=0;i<16;i++){ctx.globalAlpha=.15+noise(i)*.18;ctx.fillStyle='#fff7e6';ctx.beginPath();ctx.ellipse(noise(i+31)*1024,40+noise(i+20)*390,45+noise(i+6)*75,5+noise(i+4)*12,-.05,0,TAU);ctx.fill()}
-    ctx.globalAlpha=1;this.skyTexture.needsUpdate=true
+    // Clear-color atmosphere only. All identifiable sky content is actual world-space geometry.
+    this.skyTexture.needsUpdate=true
   }
   project(x: number,y: number,elevation=.35): [number,number] {
     const p=cylinderPoint((x-.5)*RIVER_WIDTH,elevation,(y-.5)*this.depth,this.roll)
@@ -237,19 +228,43 @@ export class TinyWorldScene {
   }
   pick(state: CoopGameState,x: number,y: number): number|null {
     let best=70,selected:number|null=null
-    for(const object of state.objects){if(object.type!=='predator'||!orbitVisible(this.width,this.height,object.x,this.roll,.45))continue;const p=this.project(object.x,object.y,.45);const d=Math.hypot(p[0]-x,p[1]-y);if(d<best){best=d;selected=object.id}}
+    for(const object of state.objects){const altitude=objectAltitude(object)+.45;if(object.type!=='predator'||!orbitVisible(this.width,this.height,object.x,this.roll,altitude,this.cameraAltitude))continue;const p=this.project(object.x,object.y,altitude);const d=Math.hypot(p[0]-x,p[1]-y);if(d<best){best=d;selected=object.id}}
     return selected
   }
 
-  draw(state: CoopGameState,now: number,roll=worldRoll(state.boat.x)): boolean {
+  draw(state: CoopGameState,now: number,roll=worldRoll(state.boat.x),cameraAltitude=state.boat.altitude): boolean {
     if(!this.ready||this.disposed||!this.width||!this.height)return false
     const world=expeditionWorld(state),t=now/1000
     this.setWorld(world);this.beamCount=0;this.roll=roll
+    this.cameraAltitude=cameraAltitude
+    const view=rollingCamera(this.width,this.height,cameraAltitude)
+    this.camera.position.set(0,view.y,view.z);this.camera.lookAt(0,view.targetY,view.targetZ);this.camera.updateMatrixWorld()
     this.ground.rotation.z=this.roll/CYLINDER_RADIUS
     this.canvas.dataset.worldRoll=this.roll.toFixed(3);this.canvas.dataset.worldShape='rolling-cylinder'
     const scroll=state.distance*.67
     this.floorTexture.offset.y=-scroll*.16
     const theme=EXPEDITION_WORLDS[world]!
+    const sky=livingSky(world,state.distance,state.tick)
+    for(const o of sky){
+      const x=(o.x-.5)*RIVER_WIDTH,z=(o.y-.5)*this.depth
+      if(o.kind==='cloud')this.add('_skyCloud',x,o.altitude,z,o.scale,o.scale*.6,o.scale,o.rotation,o.color)
+      else if(o.kind==='island'){
+        this.add('island_'+BIOMES[world],x,o.altitude,z,o.scale,o.scale,o.scale,o.rotation,o.color)
+        this.add(TREES[world]!,x,o.altitude+.15,z,o.scale*.75,o.scale*.75,o.scale*.75,o.rotation,o.color)
+      }else if(o.kind==='star')this.add('_particle',x,o.altitude,z,o.scale,o.scale,o.scale,0,o.color)
+      else{
+        this.add(o.kind==='sun'&&world!==4?'_sun':'_orb',x,o.altitude,z,o.scale,o.scale,o.scale,0,o.color)
+        if(o.kind==='planet')this.add('_ring',x,o.altitude,z,o.scale*1.8,o.scale*.65,o.scale*1.8,0,0xe5c9ff,.3)
+      }
+    }
+    if(world===3){
+      const colors=[0xffa5b2,0xffc890,0xffe9ac,0xa9ddbb,0xa6c7ed,0xc9b4f0]
+      for(let i=0;i<6;i++)this.add('_arch',0,-.5,-30,8-i*.35,8-i*.35,8-i*.35,0,colors[i]!)
+      this.add('airship',-4,7,-28,.85,.85,.85,-.4)
+    }
+    this.canvas.dataset.skyMode='world-volume';this.canvas.dataset.skyObjectCount=String(sky.length)
+    this.canvas.dataset.skyAnchor=JSON.stringify(this.project(1.4,-2.1,17))
+    this.canvas.dataset.altitude=state.boat.altitude.toFixed(3);this.canvas.dataset.cameraAltitude=cameraAltitude.toFixed(3)
     // No border walls: a handful of distant landmarks are distributed around the whole barrel.
     let scenery=0
     for(let i=0;i<8;i++){
@@ -266,13 +281,8 @@ export class TinyWorldScene {
       const x=(i/36*ORBIT_LAP-.5)*RIVER_WIDTH,z=((noise(i+80)*38+scroll)%38)-19
       this.add('_particle',x,-.2,z,.6,.12,4,0,world===1?0xffd5a0:world===4?0x909eea:0xb5eee2)
     }
-    if(world===3){
-      this.add('airship',this.roll-6,3+Math.sin(t*.4)*.25,-30,.8,.8,.8,-.5)
-    }
-    if(world===4){
-      this.add('_orb',this.roll+7,4,-32,2.1,2.1,2.1,t*.015,0x8b72ba)
-      this.add('_ring',this.roll+7,4,-32,3.7,1.6,3.7,-.3,0xd3abef,.25,.3)
-    }
+    const incoming=bossWarning(state)
+    if(incoming){const x=(state.boat.x-.5)*RIVER_WIDTH,pulse=1+Math.sin(t*7)*.08;this.add('_ring',x,7,-7,2.5*pulse,2.5*pulse,2.5*pulse,t,0xffab77);this.line(x,1,-7,x,8,-7,0xffd59d)}
 
     for(const object of state.objects){
       const x=(object.x-.5)*RIVER_WIDTH,z=(object.y-.5)*this.depth
@@ -281,19 +291,21 @@ export class TinyWorldScene {
       const drop=skyDropHeight(object)
       if(drop>.1){this.add('_ring',x,.02,z,.55,.55,.55,t,object.type==='rock'||object.type==='log'?0xffb887:0xa8f2e5);this.line(x,drop+.35,z,x,drop+1.8,z,object.type==='rock'||object.type==='log'?0xffcd93:0xd6fff0)}
       if(object.type==='predator'){
-        const boss=object.enemy==='boss',scale=boss?1.85:.85
+        const boss=object.enemy==='boss',scale=boss?object.bossKind==='sentinel'?1.9:2.5:.85
         const tx=x+orbitDelta(object.targetX??state.boat.x,object.x)*RIVER_WIDTH,tz=((object.targetY??.76)-.5)*this.depth
         const angle=Math.atan2(-(tx-x),-(tz-z))
-        const warning=(object.age??0)<55||boss&&(object.age??0)%200<80
-        this.shadow(x,z,scale*2.8,1.5)
-        this.add(world?'predator'+world:'predator',x,.03+bob*.4,z,scale,scale,scale,angle,object.slowTicks?0x9ae5ff:0xffffff,0,Math.sin(t*8+object.id)*.035)
+        const warning=(object.age??0)<55||boss&&((object.age??0)%300<80||(object.age??0)%300>180)
+        this.shadow(x,z,scale*2.8+drop*.15,1.5)
+        this.add(world?'predator'+world:'predator',x,drop+.03+bob*.4,z,scale,scale,scale,angle,object.slowTicks?0x9ae5ff:object.bossKind==='sentinel'?0xffd6a0:0xffffff,0,Math.sin(t*8+object.id)*.035)
+        if(boss||drop>.8){for(const side of [-1,1])this.add('crystal',x+side*scale*.75,drop+.55*scale,z,scale*.22,scale*.8,scale*.38,angle,object.bossKind==='sentinel'?0xffce86:0xcad9ff,0,side*(.8+Math.sin(t*5)*.12))}
+        if(boss)this.add('_ring',x,drop+.6,z,scale*1.4,scale*.8,scale*1.4,t*.3,object.bossKind==='sentinel'?0xffd896:0xc3abff,.45)
         if(warning){
-          for(let i=0;i<8;i++){const a=i/8,b=a+.05;this.line(x+(tx-x)*a,.14,z+(tz-z)*a,x+(tx-x)*b,.14,z+(tz-z)*b,0xff775c)}
+          for(let i=0;i<8;i++){const a=i/8,b=a+.05;this.line(x+(tx-x)*a,drop+(state.boat.altitude-drop)*a+.14,z+(tz-z)*a,x+(tx-x)*b,drop+(state.boat.altitude-drop)*b+.14,z+(tz-z)*b,0xff775c)}
           this.add('_ring',tx,.05,tz,.55,.55,.55,0,0xff9d75)
-          this.add('crystal',x,1.5*scale,z,.23,.5,.23,0,0xff9a5d)
+          this.add('crystal',x,drop+1.5*scale,z,.23,.5,.23,0,0xff9a5d)
         }
-        if(object.hp!==undefined&&object.maxHp){const r=.56*scale;this.line(x-r,1*scale,z,x+r,1*scale,z,0x4b3c51);this.line(x-r,1.02*scale,z,x-r+r*2*object.hp/object.maxHp,1.02*scale,z,object.slowTicks?0xb6edff:0xff997e)}
-        if(state.crew.targetId===object.id)this.add('_ring',x,.08,z,scale*1.2,.7,scale*1.2,t,0xffe9a8)
+        if(object.hp!==undefined&&object.maxHp){const r=.56*scale;this.line(x-r,drop+1*scale,z,x+r,drop+1*scale,z,0x4b3c51);this.line(x-r,drop+1.02*scale,z,x-r+r*2*object.hp/object.maxHp,drop+1.02*scale,z,object.slowTicks?0xb6edff:0xff997e)}
+        if(state.crew.targetId===object.id)this.add('_ring',x,drop+.08,z,scale*1.2,.7,scale*1.2,t,0xffe9a8)
       }else if(object.type==='rock'||object.type==='log'){
         this.shadow(x,z,1.4)
         this.add(object.type,x,drop,z,1,1,1,object.phase+(object.type==='rock'?t*.1:.6),world===4?0xc8b1ef:world===1?0xf0bc8c:0xffffff)
@@ -311,44 +323,46 @@ export class TinyWorldScene {
     }
     const bx=(state.boat.x-.5)*RIVER_WIDTH,bz=.26*this.depth
     const heading=-Math.atan2(state.boat.heading*RIVER_WIDTH,Math.max(.002,state.boat.speed)*this.depth)
-    const lift=world===3?.28:world===4?.25:.02
+    const lift=state.boat.altitude+(world===3?.28:world===4?.25:.02)
     const bob=(world===1||world===2?Math.sin(t*22)*.025:Math.sin(t*3)*.055)
-    this.shadow(bx,bz,2.4,1.3)
+    this.shadow(bx,bz,2.4+state.boat.altitude*.2,1.3)
     this.add(theme.vehicle,bx,lift+bob,bz,1.08,1.08,1.08,heading,0xffffff,0,-heading*.07)
-    const target=state.objects.find(o=>o.id===state.crew.targetId)??state.objects.filter(o=>o.type==='predator').sort((a,b)=>Math.abs(a.y-.76)-Math.abs(b.y-.76))[0]
+    const target=state.objects.filter(o=>o.type==='predator'&&Math.abs(orbitDelta(o.x,state.boat.x))<1.3).sort((a,b)=>(a.id===state.crew.targetId?-10:combatDistance(a.x,a.y,objectAltitude(a),state.boat.x,.76,state.boat.altitude))-(b.id===state.crew.targetId?-10:combatDistance(b.x,b.y,objectAltitude(b),state.boat.x,.76,state.boat.altitude)))[0]
     for(const side of [-1,1]){
       const x=bx+Math.cos(heading)*side*.7,z=bz-Math.sin(heading)*side*.7-.05
       const aim=target?Math.atan2(-orbitDelta(target.x,x/RIVER_WIDTH+.5)*RIVER_WIDTH,-((target.y-.5)*this.depth-z)):heading
-      this.add('turret',x,.76+lift+bob,z,.85,.85,.85,aim,0xffffff)
+      const pitch=target?Math.atan2(objectAltitude(target)+.45-(lift+.76),Math.hypot(orbitDelta(target.x,x/RIVER_WIDTH+.5)*RIVER_WIDTH,(target.y-.5)*this.depth-z)):0
+      this.add('turret',x,.76+lift+bob,z,.85,.85,.85,aim,0xffffff,pitch)
     }
     if(state.crew.shieldTicks||state.crew.bubble){
-      this.add('_ring',bx,.45,bz,1.5,1.5,1.5,t,0x9affeb)
-      this.add('_ring',bx,.6,bz,1.45,1.45,1.45,-t,0xa7dcff,.8)
+      this.add('_ring',bx,lift+.45,bz,1.5,1.5,1.5,t,0x9affeb)
+      this.add('_ring',bx,lift+.6,bz,1.45,1.45,1.45,-t,0xa7dcff,.8)
     }
     for(let i=0;i<12;i++){
       const age=((t*(state.rushTicks?2.4:1.2)+i/12)%1),side=i%2?1:-1
-      this.add('_particle',bx+side*(.5+age*.3),.04,bz+1+age*2,.8+age*1.4,.25,.8+age*1.4,0,world===1?0xffd3a1:0xb5fff0)
+      this.add('_particle',bx+side*(.5+age*.3),lift+.04,bz+1+age*2,.8+age*1.4,.25,.8+age*1.4,0,world===1?0xffd3a1:0xb5fff0)
       if(state.rushTicks)this.line(bx+side*.7,.18,bz+1,bx+side*.7,.18,bz+2.6,0xc6ffea)
     }
+    if(state.boat.flight){for(let i=0;i<5;i++){const p=((t*.6+i/5)%1);this.add('_ring',bx,p*Math.max(.5,state.boat.altitude),bz,.9+p*.5,.4,.9+p*.5,0,0x9ff5ec)}this.line(bx,.05,bz,bx,state.boat.altitude,bz,0xbaf9ef)}
     for(const shot of state.crew.shots){
       const x=(shot.x-.5)*RIVER_WIDTH,z=(shot.y-.5)*this.depth,age=shot.life-shot.ticks
-      const lift=.65+Math.sin(Math.min(1,age/65)*Math.PI)*.6
+      const lift=shot.altitude
       const size=shot.kind==='manual'?1.6:1.05
       this.add('_shell',x,lift,z,size,size,size,t*2)
       this.add('_ring',x,lift,z,.42,.42,.42,t*3,0xffef9d,.7)
-      for(let i=1;i<=5;i++)this.add('_spark',x-shot.vx*RIVER_WIDTH*i*.75,lift-i*.025,z-shot.vy*this.depth*i*.75,(6-i)*.65,(6-i)*.65,(6-i)*.65,0,i<3?0xffe4a0:0xff7846)
-      if(age<6){const muzzle=1-age/6;this.add('_shell',(shot.fromX-.5)*RIVER_WIDTH,.8,(shot.fromY-.5)*this.depth,muzzle*2,muzzle*2,muzzle*2,0)}
+      for(let i=1;i<=5;i++)this.add('_spark',x-shot.vx*RIVER_WIDTH*i*.75,lift-shot.vAltitude*i*.75,z-shot.vy*this.depth*i*.75,(6-i)*.65,(6-i)*.65,(6-i)*.65,0,i<3?0xffe4a0:0xff7846)
+      if(age<6){const muzzle=1-age/6;this.add('_shell',(shot.fromX-.5)*RIVER_WIDTH,shot.fromAltitude,(shot.fromY-.5)*this.depth,muzzle*2,muzzle*2,muzzle*2,0)}
     }
     for(const blast of state.crew.explosions){
       const age=1-blast.ticks/blast.life,x=(blast.x-.5)*RIVER_WIDTH,z=(blast.y-.5)*this.depth
       const radius=blast.radius*RIVER_WIDTH*(.25+age*.85),color=blast.kind==='chain'?0xc4b1ff:0xffbd63
-      this.add('_blast',x,.13,z,radius,Math.max(.15,1-age),radius,0,color)
-      this.add('_blast',x,.2,z,radius*.65,Math.max(.1,.6-age),radius*.65,t,0xffefbd,.15)
-      if(age<.45)this.add('_shell',x,.45,z,(1-age/.45)*2.6,(1-age/.45)*2.6,(1-age/.45)*2.6,0)
-      for(let i=0;i<10;i++){const a=i/10*TAU+blast.id;this.add('_spark',x+Math.cos(a)*radius,.3+Math.sin(age*Math.PI)*1.4,z+Math.sin(a)*radius,3*(1-age),3*(1-age),3*(1-age),0,i%2?color:0xffeabe)}
+      this.add('_blast',x,blast.altitude+.13,z,radius,Math.max(.15,1-age),radius,0,color)
+      this.add('_blast',x,blast.altitude+.2,z,radius*.65,Math.max(.1,.6-age),radius*.65,t,0xffefbd,.15)
+      if(age<.45)this.add('_shell',x,blast.altitude+.45,z,(1-age/.45)*2.6,(1-age/.45)*2.6,(1-age/.45)*2.6,0)
+      for(let i=0;i<10;i++){const a=i/10*TAU+blast.id;this.add('_spark',x+Math.cos(a)*radius,blast.altitude+.3+Math.sin(age*Math.PI)*1.4,z+Math.sin(a)*radius,3*(1-age),3*(1-age),3*(1-age),0,i%2?color:0xffeabe)}
     }
     for(let i=0;i<28;i++){
-      const z=((noise(i+401)*40+t*.25)%40)-20,x=this.roll+(noise(i+51)-.5)*17
+      const z=((noise(i+401)*40+state.distance*.3)%40)-20,x=(noise(i+51)*ORBIT_LAP-.5)*RIVER_WIDTH
       this.add('_particle',x,1+Math.sin(t*.3+i)*.8,z,.35,.35,.35,0,world===2?0xffffff:world===4?0xb5daff:0xffecb9)
     }
     for(const batch of this.batches.values())batch.finish()

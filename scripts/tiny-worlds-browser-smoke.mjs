@@ -30,6 +30,8 @@ try {
   // Own disposable solo game only: establish reproducible busy scenes, not network rooms.
   await evaluate("(()=>{let n=document.querySelector('.crew-game');let f=n[Object.keys(n).find(k=>k.startsWith('__reactFiber$'))];while(f&&!f.memoizedProps?.getState)f=f.return;globalThis.qaProps=f.memoizedProps})()")
   for(let world=0;world<5;world++){
+    // This fixture isolates busy chapter rendering; the altitude/boss journey has its own verifier.
+    await evaluate("(()=>{const s=qaProps.getState();s.crew.encounterIndex=2;s.crew.altitudeEventIndex=3;s.crew.bossDefeated=false;s.crew.victory=false;s.boat.altitude=0;s.boat.flight=null;s.rescued=0})()")
     await evaluate(`(()=>{const s=qaProps.getState();s.tick=180+${world}*1440+260;s.crew.finishedTick=null;s.phase='playing';s.hearts=3;s.invulnerableTicks=900;s.boat.x=.5;s.boat.heading=0;s.distance=12;s.crew.choiceTicks=0;s.crew.shotCooldown=0;s.crew.bossSpawned=true;s.objects=[{id:8000,type:'predator',enemy:'ambusher',x:.7,y:.42,age:10,hp:18,maxHp:18,targetX:.5,targetY:.76},{id:8001,type:'predator',enemy:'chaser',x:.24,y:.61,age:10,hp:12,maxHp:12,targetX:.5,targetY:.76},{id:8002,type:'rescue',x:.66,y:.6},{id:8003,type:'gate',x:.35,y:.24},{id:8004,type:'relic',x:.54,y:.44},{id:8005,type:'firefly',x:.5,y:.56},{id:8006,type:'firefly',x:.4,y:.34},{id:8007,type:'rock',x:.21,y:.48}].map(o=>({radius:.04,phase:0,drift:0,...o}));s.nextObjectId=9000})()`)
     await evaluate("qaProps.onCrew({action:true});globalThis.qaFire=setInterval(()=>qaProps.onCrew({tap:'shoot'}),170)")
     await sleep(700);await screenshot('world-'+world+'-mobile')
