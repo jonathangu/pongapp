@@ -1,3 +1,12 @@
+import { createRoomRequestSchema, type StoredRoomConfig } from '@pongapp/protocol'
+
+export function parseStoredRoomConfig(value:unknown):StoredRoomConfig|null{
+  if(!value||typeof value!=='object')return null
+  const {roomCode,createdAt,...request}=value as Record<string,unknown>,parsed=createRoomRequestSchema.safeParse(request)
+  if(!parsed.success||typeof roomCode!=='string'||!validRoomCode(roomCode)||typeof createdAt!=='number'||!Number.isFinite(createdAt))return null
+  return {...parsed.data,roomCode,createdAt}
+}
+
 const CREATE_ORIGINS = new Set([
   'https://www.jonathangu.com',
   'https://jonathangu.com',

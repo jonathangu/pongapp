@@ -35,8 +35,8 @@
     }
   ],
   "vars": {
-    "ENABLE_PAID": "false",
+    "ENABLE_PAID": "true",
     "MONTHLY_BUDGET_USD": "100",
-    "OPENROUTER_LIMIT_CONFIRMED": "unverified"
+    "OPENROUTER_LIMIT_CONFIRMED": "shared-user-authorized"
   }
 }

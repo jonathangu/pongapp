@@ -2,7 +2,7 @@ import { describe,it,expect } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_VOYAGE, BEAST_TRAITS, advanceCoopGame, createCoopGame, validateVoyage } from '@pongapp/game-core'
 import { VoyageLedger, VOYAGE_HARD_CAP, VOYAGE_RESERVATION, type SqlStore } from '../src/voyage-ledger'
-import { VoyageService, generationBody, providerCapped, VOYAGE_MODELS } from '../src/voyage-service'
+import { VoyageService, generationBody, generationFailure, providerCapped, VOYAGE_MODELS } from '../src/voyage-service'
 function store():SqlStore{
   const db=new DatabaseSync(':memory:')
   return {sql:{exec:(q,...args)=>{const rows=db.prepare(q).all(...args);return {toArray:()=>rows}}},transactionSync(fn){db.exec('BEGIN IMMEDIATE');try{const r=fn();db.exec('COMMIT');return r}catch(e){db.exec('ROLLBACK');throw e}}}
@@ -35,11 +35,26 @@ describe('paid voyage safety and actual recipe consumption',()=>{
     expect(providerCapped(valid)).toBe(true)
     for(const d of [{...valid,limit:null},{...valid,limit:101},{...valid,limit_reset:null},{...valid,is_management_key:true},{...valid,limit_remaining:.001}])expect(providerCapped(d)).toBe(false)
   })
-  it('uses cheap fast model normally and stronger model for special packs, with bounded price/tokens',()=>{
-    expect(generationBody('ark-v1:0:1').model).toBe(VOYAGE_MODELS.fast);expect(generationBody('ark-v1:4:7').model).toBe(VOYAGE_MODELS.curated)
+  it('uses the live-verified fast model for every theme, with bounded price/tokens',()=>{
+    expect(generationBody('ark-v1:0:1').model).toBe(VOYAGE_MODELS.fast);expect(generationBody('ark-v1:4:7').model).toBe(VOYAGE_MODELS.fast)
     const body=generationBody('ark-v1:4:7');expect(body.reasoning.enabled).toBe(false);expect(body.provider.sort).toBe('latency')
     const worstUSD=6000*body.provider.max_price.prompt/1e6+body.max_tokens*body.provider.max_price.completion/1e6+body.provider.max_price.request
     expect(worstUSD).toBeLessThan(VOYAGE_RESERVATION/1e6)
+  })
+  it('allows an explicitly authorized shared key without weakening the isolated app budget',async()=>{
+    const uncapped={limit:null,limit_reset:null,is_management_key:false}
+    expect(providerCapped(uncapped)).toBe(false)
+    expect(providerCapped(uncapped,'shared-user-authorized')).toBe(true)
+    expect(providerCapped({...uncapped,is_management_key:true},'shared-user-authorized')).toBe(false)
+    expect(providerCapped({limit:10,limit_remaining:0},'shared-user-authorized')).toBe(false)
+    let generations=0
+    const service=new VoyageService(store(),{...env,OPENROUTER_LIMIT_CONFIRMED:'shared-user-authorized',MONTHLY_BUDGET_USD:'.03'},async input=>{
+      if(String(input).endsWith('/key'))return Response.json({data:uncapped})
+      generations++;return Response.json(validReply)
+    },()=>now)
+    expect((await (await service.fetch(req())).json() as {source:string}).source).toBe('generated')
+    expect((await (await service.fetch(req('ark-v1:0:2'))).json() as {reason:string}).reason).toBe('budget')
+    expect(generations).toBe(1);expect(service.ledger.spent(now)).toBe(VOYAGE_RESERVATION)
   })
   it('makes zero provider calls for visits, invalid keys, disabled service or absent trusted IP',async()=>{
     let calls=0;const fetcher=async()=>{calls++;throw Error('should not call')}
@@ -80,7 +95,19 @@ describe('paid voyage safety and actual recipe consumption',()=>{
   })
   it('limits repeated public requests independently of provider budget',async()=>{
     const service=new VoyageService(store(),{...env,ENABLE_PAID:'false'},async()=>{throw Error('unused')},()=>now)
-    for(let i=0;i<3;i++)expect((await service.fetch(req('ark-v1:0:'+i))).status).toBe(200)
-    expect((await service.fetch(req('ark-v1:0:4'))).status).toBe(429)
+    for(let i=0;i<5;i++)expect((await service.fetch(req('ark-v1:0:'+i))).status).toBe(200)
+    expect((await service.fetch(req('ark-v1:0:5'))).status).toBe(429)
+  })
+  it('diagnoses failures without exposing provider bodies, prompts or credentials',()=>{
+    expect(generationFailure(Error('http_400'))).toBe('http_400')
+    expect(generationFailure(Error('Bearer test-secret'))).toBe('invalid_response')
+    expect(generationFailure(new SyntaxError('private contents'))).toBe('invalid_json')
+  })
+  it('accepts bounded poetic punctuation and inscriptions, but rejects markup, links and executable fields',()=>{
+    const pack=structuredClone(DEFAULT_VOYAGE);pack.title='The Clockmaker’s Menagerie (Dusk)'
+    pack.monsters[0]!.caption='Shell inscriptions glow; brass claws chime — a tiny cathedral on legs.'
+    expect(validateVoyage(pack)).not.toBeNull()
+    for(const caption of ['<script>alert(1)</script>','https://example.test','a'.repeat(121)])expect(validateVoyage({...pack,monsters:pack.monsters.map(m=>({...m,caption}))})).toBeNull()
+    expect(validateVoyage({...pack,monsters:pack.monsters.map(m=>({...m,execute:'evil()'}))})).toBeNull()
   })
 })

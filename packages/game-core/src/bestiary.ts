@@ -12,7 +12,10 @@ export interface MonsterRecipe{
   trait:keyof typeof BEAST_TRAITS;ornament:typeof BEAST_ORNAMENTS[number];scale:.9|1|1.15|1.3;segments:number;caption:string
 }
 export interface VoyagePack{key:string;title:string;monsters:MonsterRecipe[];source:'builtin'|'generated';model?:string;generatedAt?:string;latencyMs?:number}
-const safeText=(v:unknown,max:number):v is string=>typeof v==='string'&&v.length>=3&&v.length<=max&&/^[\p{L}\p{N} ,.:'!?–—-]+$/u.test(v)&&!/(?:https?|www|script|subscribe|password|api key)/i.test(v)
+// Names/captions are rendered as escaped text, never HTML or executable data.
+// Keep bounded prose and reject links/markup; normal punctuation and words such
+// as "inscriptions" are not code and should not discard an otherwise valid pack.
+const safeText=(v:unknown,max:number):v is string=>typeof v==='string'&&v.trim().length>=3&&v.length<=max&&!/[\u0000-\u001f<>\u0060{}]/u.test(v)&&!/(?:https?:\/\/|www\.|subscribe|password|api key)/i.test(v)
 export const validVoyageKey=(v:unknown):v is string=>typeof v==='string'&&/^ark-v1:[0-4]:[0-7]$/.test(v)
 export function validateMonster(value:unknown):MonsterRecipe|null{
   if(!value||typeof value!=='object')return null

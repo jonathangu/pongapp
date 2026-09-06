@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, validRoomCode } from '../src/helpers'
+import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, parseStoredRoomConfig, validRoomCode } from '../src/helpers'
 
 describe('room worker helpers', () => {
+  it('preserves the generated voyage key through internal room configuration',()=>{
+    const config={hostName:'Crew',roomName:'Voyage',mode:'coop',voyageKey:'ark-v1:1:1',roomCode:'ABCDEF',createdAt:10}
+    expect(parseStoredRoomConfig(config)).toEqual(config)
+    expect(parseStoredRoomConfig({...config,voyageKey:'untrusted'})).toBeNull()
+    expect(parseStoredRoomConfig({...config,extra:'ignored?'})).toBeNull()
+  })
   it('generates readable six-character room codes', () => {
     const code = generateRoomCode()
     expect(code).toMatch(/^[A-Z2-9]{6}$/)
