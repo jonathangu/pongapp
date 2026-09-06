@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { createCoopGame, restartCoopGame, type CoopGameState, type CoopInput } from '@pongapp/game-core'
+import { createCoopGame, restartCoopGame, type CoopGameState, type CoopInput, type VoyagePack } from '@pongapp/game-core'
 import { applyCrewControl, neutralControl, stepLocal, type Controls, type CrewControl } from '../online/LocalSimulation'
 import { CoopRiver } from './CoopRiver'
 
 const HUMAN_ID = 'solo-human', SCOUT_ID = 'solo-scout'
-/** Scout uses deliberate, slower combat taps and never steals the player's steering. */
+/** Scout occupies one physical room and respects the same travel time as a human. */
 export function scoutInput(state: CoopGameState): CoopInput {
-  return { paddle: 0,
-    shootTap: state.tick % 75 === 0 && state.objects.some(o => o.type === 'predator'),
-    recoverTap: state.tick % 70 === 0 && state.hearts <= 1 && state.crew.scrap >= 3 }
+  const scout=state.players[SCOUT_ID],human=state.players[HUMAN_ID]
+  if(scout?.deck.moving)return {paddle:0}
+  const station=state.hearts<3&&human?.station==='shoot'||state.hearts<=1&&human?.station!=='recover'?'recover':'shoot'
+  return {paddle:0,station:scout?.station===station?undefined:station}
 }
 const freshControls = (): Controls => ({ [HUMAN_ID]: neutralControl(), [SCOUT_ID]: neutralControl() })
-export function SoloRiver({ playerName, onExit }: { playerName: string; onExit: () => void }) {
-  const gameRef = useRef(createCoopGame([{ id: HUMAN_ID, name: playerName }, { id: SCOUT_ID, name: 'Scout' }]))
+export function SoloRiver({ playerName, onExit,voyage }: { playerName: string; onExit: () => void;voyage?:VoyagePack }) {
+  const gameRef = useRef(createCoopGame([{ id: HUMAN_ID, name: playerName }, { id: SCOUT_ID, name: 'Scout' }],undefined,voyage))
   const controls = useRef(freshControls()), consumed = useRef<Controls>({})
   const listeners = useRef(new Set<(state: CoopGameState) => void>())
   useEffect(() => {
@@ -20,8 +21,7 @@ export function SoloRiver({ playerName, onExit }: { playerName: string; onExit: 
       if (document.visibilityState === 'hidden') return
       const state = gameRef.current, scout = scoutInput(state)
       if (state.phase === 'playing') {
-        if (scout.shootTap) applyCrewControl(controls.current[SCOUT_ID]!, { tap: 'shoot' })
-        if (scout.recoverTap) applyCrewControl(controls.current[SCOUT_ID]!, { tap: 'recover' })
+        if (scout.station) applyCrewControl(controls.current[SCOUT_ID]!, { station:scout.station })
       }
       stepLocal(state, controls.current, consumed.current)
       if (state.tick % 2 === 0 || state.events.length || state.phase === 'finished') for (const listener of listeners.current) listener(state)

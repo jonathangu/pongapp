@@ -1,12 +1,13 @@
 import type { CoopGameState, VersusGameState } from '@pongapp/game-core'
 import { z } from 'zod'
 
-export const PROTOCOL_VERSION = 9 as const
+export const PROTOCOL_VERSION = 10 as const
 
 export const createRoomRequestSchema = z.object({
   hostName: z.string().trim().min(2).max(16),
   roomName: z.string().trim().min(2).max(32).optional(),
   mode: z.enum(['coop', 'versus']).default('coop'),
+  voyageKey:z.string().regex(/^ark-v1:[0-4]:[0-7]$/).optional(),
 }).strict()
 
 export type CreateRoomRequest = z.infer<typeof createRoomRequestSchema>

@@ -21,4 +21,14 @@ Reference: https://www.asteroidbase.com/dangerous-spacetime/ (station-switching 
 
 Scope: standalone PongApp. Animal-farm/Clearing code is read-only reference. Preserve preexisting AGENTS.md modification. No subagents, recurring automation, new account economy or unrelated deployment.
 
-Status: intake/requirements. Evidence: `task-artifacts/four-room-expedition/PROGRESS.md`.
+Status: implemented candidate; local unit/integration/build checks and first Chrome phone journey pass. No release yet. Evidence: `task-artifacts/four-room-expedition/PROGRESS.md`.
+
+## Paid-generation authorization
+
+Principal explicitly authorized paid generation capped at$100 in response to the monthly-cap question. Interpret as a dedicated PongApp $100/month ceiling. Use fast low-cost models for routine recipes and a stronger fast model for occasional high-value designs; no model call on the simulation path. Enforce independent provider-key and atomic server-side monthly caps, price/output/time limits, finite semantic cache, validated recipes and seeded local fallback. Verify an actual paid-generation -> cache-hit -> gameplay consumption journey before claiming paid AI enabled. No sharing of a homepage-only key or account allowance.
+
+Implemented architecture: Qwen3.8 Flash for routine packs, Claude Haiku4.5 for one in eight special variants, latency-prioritized provider routing with reasoning disabled. Current availability/prices checked against the OpenRouter model catalog on2026-09-06. Exactly40 semantic keys (5 inspirations×8 variants), four different families per pack. Names, palette, ornaments, geometry scale/segments and combat traits are validated finite data. No arbitrary user prompts or model-generated code. Game starts from a built-in catalog, optionally replaced with a selected generated pack before launch; both online peers receive the host's authoritative pack.
+
+Public paid requests require an explicit discovery click; GET/page visits and cache hits never generate. Trusted edge IP limits3/day, global generation attempts20/day, global uncached request cap5000/day and one paid attempt per semantic key perUTCday bound abuse. There is no claim of human-proof authentication. Durable SQLite reservations of$0.03 are atomic, persist across restarts, never refunded on failure, and stop at a hard$100 monthly ceiling. Input≤6000UTF-8bytes, output≤1200tokens and provider price ceilings bound worst-case request cost below reservation. Each miss independently checks the dedicated provider key's≤$100 monthly limit. Timeouts8s routine/12s special, no automatic retries, cached packs persist. Unknown cap/credentials, malformed output, price mismatch, timeout or quota returns existing gameplay safely.
+
+Activation remains OFF until dedicated key provision/limit check and actual live generation/cache/play tests. The precise local key path was requested securely; browser is signed out. Never commit the key.

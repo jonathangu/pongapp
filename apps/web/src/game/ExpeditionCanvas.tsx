@@ -3,6 +3,7 @@ import { EXPEDITION_WORLDS, ORBIT_LAP, RIVER_WIDTH, objectAltitude, expeditionWo
 import type { TinyWorldScene } from './TinyWorldScene'
 import { DEFAULT_CAMERA_ZOOM, MAX_CAMERA_ZOOM, followRoll, orbitVisible, projectRolling, skyDropHeight, worldRoll } from './RollingWorld'
 import { livingSky } from './LivingSky'
+import { drawFallbackArk, drawFallbackBeast } from './ArkFallback'
 
 type Point = [number, number]
 const TAU = Math.PI * 2
@@ -137,16 +138,10 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
       } else if(object.type==='log') {
         line([x-s,y-s*.4],[x+s,y+s*.4],world===4?'#b895d7':'#87684d',s*.65);ellipse(x+s,y+s*.4,s*.25,s*.31,'#d8b584');ellipse(x+s,y+s*.4,s*.11,s*.14,'#967451')
       } else if(object.type==='predator') {
-        const warn=(object.age??0)<55 || object.enemy==='boss' && (object.age??0)%200<80
+        const warn=object.attackPhase==='telegraph'
         const target=elevated(object.targetX??state.boat.x,object.targetY??.76,state.boat.altitude)
         if(warn){ctx.save();ctx.setLineDash([5,7]);line([x,y],target,'#ffb795aa',2);ctx.setLineDash([]);ellipse(target[0],target[1],13,7,'#ff70552b');ctx.restore()}
-        ctx.save();ctx.translate(x,y);ctx.rotate(Math.atan2(target[1]-y,target[0]-x))
-        if(object.enemy==='boss') {poly([[-s,0],[-s*.3,-s*1.4],[s,-s*.7],[s*.4,0],[s,s*.7],[-s*.3,s*1.4]],'#ba8ddd');glow(0,0,s*1.5,'#dc92f666')}
-        ellipse(0,0,s*1.6,s*.55,world===4?'#9685d1':world===3?'#da9ebb':world===0?'#5b9b58':'#625d77')
-        poly([[-s,0],[-s*2.3,-s*.5],[-s*1.7,s*.2]],world===0?'#76b168':'#aa98ca')
-        poly([[s*.5,-s*.4],[s*2,-s*.25],[s*2,s*.23],[s*.5,s*.5]],world===0?'#84b56d':'#bca4d2')
-        for(let j=0;j<4;j++) poly([[s*.4+j*s*.36,s*.29],[s*.58+j*s*.36,s*.29],[s*.5+j*s*.36,s*.55]],'#fff1c4')
-        ellipse(s*.7,-s*.38,3,3,warn?'#ffdc77':'#ff8c87');ellipse(s*.7,-s*.38,1,2,'#26274b');ctx.restore()
+        drawFallbackBeast(ctx,object,x,y,unit*.035,t)
         if(warn) {ctx.fillStyle='#ffe0a1';ctx.font=`bold ${Math.max(13,s)}px sans-serif`;ctx.textAlign='center';ctx.fillText('!',x,y-s*1.3)}
         if(object.hp!==undefined&&object.maxHp){line([x-s,y+s],[x+s,y+s],'#121d35',4);line([x-s,y+s],[x-s+s*2*Math.max(0,object.hp/object.maxHp),y+s],object.slowTicks?'#9fe9ff':'#ff9d93',3)}
         if(state.crew.targetId===object.id){ctx.strokeStyle='#fce6a4';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,s*1.7,0,TAU);ctx.stroke()}
@@ -167,38 +162,9 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
 
   const [bx,by]=elevated(state.boat.x,.76,state.boat.altitude)
   entities.push({depth:by,draw:()=>{
-    const s=unit*.055
     const shadow=elevated(state.boat.x,.76,0)
-    ellipse(shadow[0],shadow[1]+7,s*(1.25+state.boat.altitude*.07),s*.43,'#10294455')
-    if(state.boat.altitude>.1){line(shadow,[bx,by],'#b1f5df66',2);for(let i=0;i<4;i++){const p=elevated(state.boat.x,.76,state.boat.altitude*i/4);ellipse(p[0],p[1],s*.7,s*.13,'#a6f2e72b')}}
-    for(let i=0;i<5;i++) {const p=project(state.boat.x,.77+(i+1)*.035);ellipse(p[0],p[1],s*(.5+i*.12),s*(world===1?.28:.15),world===4?'#abc4f52b':world===1?'#e9bd8a40':'#d7f4db35')}
-    if(state.flareTicks>0) {const radius=(1-state.flareTicks/60)*unit*.75;ctx.beginPath();ctx.ellipse(bx,by,Math.max(1,radius),Math.max(1,radius*.5),0,0,TAU);ctx.strokeStyle='#fff0b8';ctx.lineWidth=3;ctx.stroke();glow(bx,by,unit*.3,'#ffe5a033')}
-    if(state.rushTicks>0) glow(bx,by,s*2.5,theme.glow+'55')
-    if(state.crew.shieldTicks||state.crew.bubble){glow(bx,by,s*2.4,'#96f3ec44');ctx.strokeStyle='#a8ffee';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(bx,by,s*1.8,s*2,0,0,TAU);ctx.stroke()}
-    ctx.save();ctx.translate(bx,by);ctx.rotate(vehicleAngle(w,h,state.boat.x,state.boat.heading,state.boat.speed,roll))
-    if(state.invulnerableTicks>0 && Math.floor(t*10)%2===0) ctx.globalAlpha=.6
-    if(theme.vehicle==='truck') {
-      ctx.save();ctx.rotate(-Math.PI/2)
-      for(const px of [-s*.7,s*.7]) for(const py of [-s*.45,s*.45]) {ellipse(px,py,s*.4,s*.42,'#202c43');ellipse(px,py,s*.19,s*.2,'#8495a0');ellipse(px,py,s*.07,s*.08,'#e2d8ad')}
-      poly([[-s,-s*.5],[s,-s*.5],[s,s*.4],[-s,s*.4]],'#deaa66');poly([[-s,-s*.5],[s,-s*.5],[s*.6,-s],[-s*.7,-s]],'#ffdf92');poly([[-s*.55,-s*.9],[s*.4,-s*.9],[s*.6,-s*.5],[-s*.6,-s*.5]],'#80c4cd');line([-s,s*.42],[s,s*.42],'#91513d',4)
-      ellipse(s,-s*.25,3,3,'#fff4be');ellipse(s,s*.15,3,3,'#fff4be')
-      ctx.restore()
-    } else if(theme.vehicle==='ship') {
-      poly([[-s*1.3,s*.6],[0,-s*1.5],[s*1.3,s*.6],[s*.4,s*.45],[0,s],[-s*.4,s*.45]],'#c9dbe3');poly([[0,-s*1.5],[s*.4,s*.45],[0,s]],'#8ba7c2');ellipse(0,-s*.2,s*.32,s*.5,'#5fd2d0');glow(0,s,s,'#92f5ec77');poly([[-s*.3,s*.7],[0,s*(1.8+Math.sin(t*15)*.3)],[s*.3,s*.7]],'#b3fff0')
-    } else {
-      poly([[0,-s*1.55],[s*.67,-s*.55],[s*.64,s],[0,s*1.5],[-s*.64,s],[-s*.67,-s*.55]],'#d98d57');poly([[0,-s*1.55],[s*.67,-s*.55],[s*.64,s],[0,s*1.5],[s*.35,s*.65],[s*.38,-s*.5]],'#975a49');poly([[0,-s*1.15],[s*.44,-s*.4],[s*.39,s*.7],[0,s*.98],[-s*.39,s*.7],[-s*.44,-s*.4]],'#ffe0a1')
-    }
-    for(const side of [-1,1]) {
-      const recoil=state.crew.shotCooldown>8?Math.sin(t*30)*2:0
-      ellipse(side*s*.7,-s*.2,s*.28,s*.32,'#294b60');line([side*s*.7,-s*.2],[side*s*.7,-s*.95+recoil],'#e6c997',s*.16)
-      ellipse(side*s*.7,-s*.2,s*.14,s*.14,state.crew.overheated?'#ff806b':'#a1f5e1')
-      ellipse(0,side*s*.4-4,s*.22,s*.26,side===-1?'#96efe0':'#ffc486');ellipse(0,side*s*.4-8,s*.25,s*.12,side===-1?'#398e8a':'#cc8264')
-    }
-    if(theme.vehicle==='airship') {
-      line([-s*.5,0],[-s*.65,-s*1.4],'#e9d8ba',1);line([s*.5,0],[s*.65,-s*1.4],'#e9d8ba',1)
-      ellipse(0,-s*1.9,s*1.2,s*1.05,'#e8bf91');ellipse(-s*.25,-s*2,s*.8,s*.92,'#fff0bc');line([0,-s*2.93],[0,-s*.95],'#cc9c7b',3)
-    }
-    ctx.restore()
+    ellipse(shadow[0],shadow[1]+7,unit*.12,unit*.045,'#10294455')
+    drawFallbackArk(ctx,state,bx,by,unit*.04,vehicleAngle(w,h,state.boat.x,state.boat.heading,state.boat.speed,roll))
   }})
   entities.sort((a,b)=>a.depth-b.depth).forEach((entity)=>entity.draw())
   for(const shot of state.crew.shots){

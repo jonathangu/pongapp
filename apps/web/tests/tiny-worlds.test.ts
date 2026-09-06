@@ -50,7 +50,7 @@ describe('tiny-world art contract', () => {
   it('zooms substantially closer while preserving the prior camera pitch',()=>{
     const c=rollingCamera(390,532),oldDistance=30/Math.cos(c.pitch-10*Math.PI/180+c.halfFov*.4)
     const distance=Math.hypot(c.y,c.z-.26*c.depth)
-    expect(distance/oldDistance).toBeCloseTo(22/30)
+    expect(distance/oldDistance).toBeCloseTo(16/30)
     expect(oldDistance/distance).toBeGreaterThan(1.3)
   })
   it('anchors clouds, floating islands and celestial bodies to the world with wrap and height parallax',()=>{
@@ -82,10 +82,11 @@ describe('tiny-world art contract', () => {
   it('ships a valid local GLB with original one-primitive, vertex-painted assets', () => {
     const bytes=readFileSync(new URL('../public/art/tiny-worlds.glb',import.meta.url))
     expect(bytes.readUInt32LE(0)).toBe(0x46546c67);expect(bytes.readUInt32LE(4)).toBe(2)
-    expect(bytes.readUInt32LE(8)).toBe(bytes.length);expect(bytes.length).toBeLessThan(3_000_000)
+    expect(bytes.readUInt32LE(8)).toBe(bytes.length);expect(bytes.length).toBeLessThan(4_000_000)
     const length=bytes.readUInt32LE(12),gltf=JSON.parse(bytes.subarray(20,20+length).toString())
     const names=new Set(gltf.nodes.map((n:{name:string})=>n.name))
     for(const name of ['boat','truck','airship','ship','predator','turret','rescue','temple','palm','fir','cactus','garden_tree','crystal_cluster','star','heart','gate'])expect(names.has(name)).toBe(true)
+    for(const name of ['ark_hull','ark_controls','ark_cannon','ark_engine','crew_body','crew_head','crew_arm','crew_boot','beast_crab','crab_leg','crab_claw','beast_manta','manta_wing','beast_jelly','jelly_tentacle','beast_wyrm','wyrm_segment','wyrm_fin'])expect(names.has(name)).toBe(true)
     for(const mesh of gltf.meshes){expect(mesh.primitives).toHaveLength(1);expect(mesh.primitives[0].attributes.COLOR_0).toBeTypeOf('number');expect(mesh.primitives[0].attributes.TEXCOORD_0).toBeTypeOf('number')}
     expect(gltf.images??[]).toHaveLength(0)
   })

@@ -3,6 +3,7 @@ import {
   advanceCoopGame,
   advanceVersusGame,
   createCoopGame,
+  validateVoyage,
   createVersusGame,
   restartCoopGame,
   restartVersusGame,
@@ -22,11 +23,13 @@ import {
   type StoredRoomConfig,
 } from '@pongapp/protocol'
 import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateRoomCode, validRoomCode } from './helpers'
+import { VoyageService, type VoyageEnv } from './voyage-service'
 
 export { allowedOrigin, generateRoomCode, validRoomCode } from './helpers'
 
-interface Env {
+interface Env extends VoyageEnv {
   ROOMS: DurableObjectNamespace<GameRoom>
+  VOYAGES: DurableObjectNamespace<VoyageDirector>
 }
 
 interface InternalParticipant extends RoomParticipant {
@@ -105,6 +108,17 @@ export default {
       })
     }
 
+    if(['/api/voyages','/api/voyages/status'].includes(url.pathname)){
+      const origin=request.headers.get('origin')
+      if(request.method==='POST'&&(!origin||!allowedOrigin(origin)))return json(request,{error:'origin_not_allowed'},403)
+      if(!['GET','POST'].includes(request.method))return json(request,{error:'method'},405)
+      if(request.method==='POST'&&(Number(request.headers.get('content-length'))>1024||!(request.headers.get('content-type')??'').startsWith('application/json')))return json(request,{error:'invalid_body'},400)
+      const response=await env.VOYAGES.get(env.VOYAGES.idFromName('ark-v1-global-budget')).fetch(request)
+      const headers=new Headers(response.headers);for(const [k,v] of Object.entries(corsHeaders(request)))headers.set(k,v)
+      headers.set('Cache-Control','no-store');headers.set('X-Content-Type-Options','nosniff')
+      return new Response(response.body,{status:response.status,headers})
+    }
+
     if (url.pathname === '/api/rooms' && request.method === 'POST') {
       const origin = request.headers.get('origin')
       if (origin && !allowedOrigin(origin)) return json(request, { error: 'origin_not_allowed' }, 403)
@@ -140,6 +154,12 @@ export default {
     return json(request, { error: 'not_found' }, 404)
   },
 } satisfies ExportedHandler<Env>
+
+export class VoyageDirector extends DurableObject<Env>{
+  private service:VoyageService
+  constructor(ctx:DurableObjectState,env:Env){super(ctx,env);this.service=new VoyageService(ctx.storage,env)}
+  override fetch(request:Request){return this.service.fetch(request)}
+}
 
 export class GameRoom extends DurableObject<Env> {
   private loaded = false
@@ -252,12 +272,12 @@ export class GameRoom extends DurableObject<Env> {
     const stored = await this.ctx.storage.get<StoredRoomRecord>(ROOM_STORAGE_KEY)
     const legacy = stored ? undefined : await this.ctx.storage.get(LEGACY_ROOM_STORAGE_KEY)
     this.occupied = Boolean(stored || legacy)
-    if ((stored?.version === PROTOCOL_VERSION || stored?.version === 8 || stored?.version === 7 || stored?.version === 6 || stored?.version === 5) && stored.config) {
+    if ((stored?.version === PROTOCOL_VERSION || stored?.version === 9 || stored?.version === 8 || stored?.version === 7 || stored?.version === 6 || stored?.version === 5) && stored.config) {
       this.config = stored.config
       this.telemetryRoomId = stored.telemetryRoomId ?? crypto.randomUUID()
       this.matchSessionId = stored.matchSessionId ?? null
       this.participants = new Map(stored.participants.map((participant) => [participant.id, participant]))
-      this.game = stored.game && (stored.game.rulesetVersion === 10 || stored.game.rulesetVersion === 6) ? stored.game : null
+      this.game = stored.game && (stored.game.rulesetVersion === 11 || stored.game.rulesetVersion === 6) ? stored.game : null
       const connectedIds = new Set(this.ctx.getWebSockets().map((socket) =>
         (socket.deserializeAttachment() as SocketAttachment | null)?.participantId,
       ).filter((id): id is string => Boolean(id)))
@@ -503,6 +523,13 @@ export class GameRoom extends DurableObject<Env> {
     this.game = this.config?.mode === 'versus'
       ? createVersusGame(roster, Date.now() >>> 0)
       : createCoopGame(roster, Date.now() >>> 0)
+    if(this.game.rulesetVersion===11&&this.config?.voyageKey){
+      try{
+        const response=await this.env.VOYAGES.get(this.env.VOYAGES.idFromName('ark-v1-global-budget')).fetch('https://voyage.internal/api/voyages?key='+encodeURIComponent(this.config.voyageKey))
+        const result=await response.json() as {pack?:unknown},pack=validateVoyage(result.pack)
+        if(pack)this.game.voyage=pack
+      }catch{/* Read-only cache failure keeps the instantaneous built-in voyage. */}
+    }
     await this.persist()
     this.logLifecycle('match_started', {
       msAfterRoomCreated: this.config ? Date.now() - this.config.createdAt : null,

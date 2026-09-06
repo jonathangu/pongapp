@@ -1,4 +1,6 @@
-import { CREW_UPGRADES, RECOVERY_SCRAP, RECOVERY_TAPS, RECOVERY_WORK, expeditionWorld, type CoopGameState, type CoopInputs, type CrewShot, type CrewUpgrade, type RiverObject, type RiverObjectType } from './coop'
+import { CREW_UPGRADES, RECOVERY_SCRAP, RECOVERY_WORK, expeditionWorld, type CoopGameState, type CoopInputs, type CrewShot, type CrewUpgrade, type RiverObject, type RiverObjectType } from './coop'
+import { assignStation, advanceCrewMember, operatingStation } from './stations'
+import { BEAST_TRAITS } from './bestiary'
 import { orbitDelta, wrapOrbit } from './orbit'
 import { ALTITUDE_EVENTS, ALTITUDE_SCALE, BOSS_ENCOUNTERS, advanceAltitude, bossWarning, combatDistance, objectAltitude } from './altitude'
 
@@ -16,11 +18,16 @@ function spawn(s: CoopGameState, type: RiverObjectType, x = s.boat.x + (random(s
   return o
 }
 function enemy(s: CoopGameState, kind: 'chaser' | 'ambusher' | 'boss', offset = 0) {
-  if (kind !== 'boss' && s.objects.filter(o => o.type === 'predator').length >= 22) return
+  if (kind !== 'boss' && s.objects.filter(o => o.type === 'predator').length >= 4) return
   if (kind === 'boss' && s.objects.length >= MAX_OBJECTS) s.objects.pop()
   const o = spawn(s, 'predator', s.boat.x + (kind === 'boss' ? 0 : kind === 'chaser' ? offset : offset < 0 ? -.52 : .52), kind === 'boss' ? .19 : kind === 'chaser' ? 1.02 : .22 + random(s) * .16)
-  o.enemy = kind; o.age = 0; o.radius = kind === 'boss' ? .09 : .039
-  o.hp = o.maxHp = kind === 'boss' ? 180 : kind === 'chaser' ? 5 : 4
+  o.enemy = kind; o.age = 0; o.radius = kind === 'boss' ? .16 : .09
+  o.hp = o.maxHp = kind === 'boss' ? 420 : kind === 'chaser' ? 72 : 90
+  o.recipe=Math.floor(random(s)*s.voyage.monsters.length)
+  const recipe=s.voyage.monsters[o.recipe]!
+  o.family=recipe.family
+  if(kind!=='boss'){o.hp=o.maxHp=BEAST_TRAITS[recipe.trait].hp;o.radius=.09*recipe.scale}
+  o.attackPhase='stalk';o.attackTick=0
   o.targetX = s.boat.x; o.targetY = .76
   if(kind!=='boss'&&(o.id%3===0||s.boat.altitude>1)){
     const drop=o.id%2===0;o.flight={kind:drop?'drop':'rise',tick:0,duration:kind==='chaser'?105:115,peak:Math.max(4,s.boat.altitude)};o.altitude=drop?o.flight.peak:0
@@ -40,7 +47,7 @@ function launch(s: CoopGameState, ownerId: string, target: RiverObject | undefin
   const toX = target?.x ?? wrapOrbit(x + (secondary ? .09 : 0)), toY = target?.y ?? -.12
   const altitude=s.boat.altitude+.75,toAltitude=target?objectAltitude(target)+.45:altitude
   const dx=orbitDelta(toX,x),dz=(toAltitude-altitude)/ALTITUDE_SCALE,length = Math.max(.001, Math.hypot(dx, toY-y,dz)), speed = .016
-  c.shots.push({ id: s.nextObjectId++, ownerId, targetId: target?.id ?? null, x, y, fromX: x, fromY: y, toX, toY, altitude,fromAltitude:altitude,toAltitude,vAltitude:dz/length*speed*ALTITUDE_SCALE,vx: dx / length * speed, vy: (toY - y) / length * speed, ticks: 100, life: 100, damage: (power?14:7)*(secondary?.7:1), radius: power?.2:.145, kind: power?'manual':'auto' })
+  c.shots.push({ id: s.nextObjectId++, ownerId, targetId: target?.id ?? null, x, y, fromX: x, fromY: y, toX, toY, altitude,fromAltitude:altitude,toAltitude,vAltitude:dz/length*speed*ALTITUDE_SCALE,vx: dx / length * speed, vy: (toY - y) / length * speed, ticks: 100, life: 100, damage: 18*(secondary?.6:1), radius: .13, kind: power?'manual':'auto' })
   c.shotsFired++
 }
 function explode(s: CoopGameState, shot: CrewShot) {
@@ -60,7 +67,7 @@ function explode(s: CoopGameState, shot: CrewShot) {
   c.explosions = c.explosions.slice(-MAX_EXPLOSIONS)
 }
 
-/** Ruleset10: authoritative temporary radial altitude throughout a living cylinder world. */
+/** Ruleset11: two physical crew, four persistent stations, deliberate pursuing monsters. */
 export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
   if (s.phase === 'finished') { s.events = []; s.tick++; return }
   s.tick++; s.events = []
@@ -84,21 +91,23 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
   s.rushTicks = Math.max(0, s.rushTicks - 1); s.flareTicks = Math.max(0, s.flareTicks - 1)
   c.explosions = c.explosions.filter(e => --e.ticks > 0)
   c.heat = 0; c.overheated = false; c.choiceTicks = 0; c.swap = null
-  let steer = 0,heldSteer=0
+  let steer = 0
   const gunners:string[]=[]
   // Stable player order makes simultaneous repairs and taps identical on both peers.
   for (const p of Object.values(s.players).sort((a, b) => a.side.localeCompare(b.side))) {
     const input = inputs[p.id]
     const counts = c.actions[p.id] ??= { left: 0, right: 0, shoot: 0, recover: 0 }
-    if (input?.leftTap) { steer--; counts.left++ }
-    if (input?.rightTap) { steer++; counts.right++ }
-    heldSteer += clamp(input?.steer??0,-1,1)
-    if(input?.action)gunners.push(p.id)
+    // Legacy taps are destination requests, never instant work or multi-tasking.
+    const destination=input?.station??(input?.recoverTap?'recover':input?.shootTap?'shoot':input?.rightTap?'right':input?.leftTap?'left':undefined)
+    if(destination&&assignStation(p,destination))counts[destination]++
+    advanceCrewMember(p)
+    const station=operatingStation(p)
+    if(station==='left')steer--
+    if(station==='right')steer++
+    if(station==='shoot')gunners.push(p.id)
     if (input?.targetId !== undefined) c.targetId = input.targetId
-    if (input?.shootTap && c.pendingShots.length < 6) { c.pendingShots.push(p.id); counts.shoot++ }
-    if ((input?.recoverTap || input?.recoverHeld) && s.hearts < 3) {
-      if(input.recoverTap){counts.recover++;c.repair+=RECOVERY_WORK/RECOVERY_TAPS}
-      else if(input.recoverHeld)c.repair+=c.scrap>=RECOVERY_SCRAP?1.5:1
+    if (station==='recover' && s.hearts < 3) {
+      c.repair+=c.scrap>=RECOVERY_SCRAP?1.5:1
       if (c.repair >= RECOVERY_WORK) {
         c.scrap = Math.max(0,c.scrap-RECOVERY_SCRAP); s.hearts++; c.repair = 0
         s.events.push({ type: 'healed', x: s.boat.x, y: .76 }); say(s, 'RECOVERED +1 HEART')
@@ -106,12 +115,13 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     }
   }
   if (s.hearts >= 3) c.repair = 0
-  s.boat.heading = clamp(s.boat.heading*.76 + clamp(heldSteer,-1,1)*.00624 + steer*.06,-.09,.09)
+  c.pendingShots=[]
+  s.boat.heading = clamp(s.boat.heading*.9 + clamp(steer,-1,1)*.0008,-.008,.008)
   s.boat.x = wrapOrbit(s.boat.x + s.boat.heading)
   if (Math.abs(s.boat.heading) < .00001) s.boat.heading = 0
-  s.paddles.left = steer+heldSteer < 0 ? 1 : s.paddles.left * .8
-  s.paddles.right = steer+heldSteer > 0 ? 1 : s.paddles.right * .8
-  s.boat.speed += (.009 - s.boat.speed) * .2
+  s.paddles.left = steer < 0 ? 1 : s.paddles.left * .8
+  s.paddles.right = steer > 0 ? 1 : s.paddles.right * .8
+  s.boat.speed += (.0028 - s.boat.speed) * .1
   s.boat.wake = .6 + Math.min(.4, Math.abs(s.boat.heading) * 25); s.distance += s.boat.speed * 8
   s.harmony = 0
 
@@ -123,11 +133,10 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     say(s, `${CREW_UPGRADES.find(u => u.id === upgrade)!.name.toUpperCase()} AUTO-EQUIPPED`)
   }
   if (elapsed % 60 === 0) spawn(s, 'firefly')
-  if (elapsed % 155 === 0) spawn(s, world === 2 ? 'log' : 'rock')
-  if (elapsed >= 120 && elapsed % (world >= 3 ? 66 : 84) === 0) {
-    const wave = Math.floor(elapsed / 84)
-    enemy(s, wave % 3 ? 'ambusher' : 'chaser', -.15)
-    enemy(s, wave % 2 ? 'chaser' : 'ambusher', .15)
+  if (elapsed % 420 === 0) spawn(s, world === 2 ? 'log' : 'rock')
+  if (elapsed >= 300 && elapsed % (world >= 3 ? 420 : 480) === 0) {
+    const wave = Math.floor(elapsed / 420)
+    enemy(s, wave % 2 ? 'ambusher' : 'chaser', wave%2?-.38:.38)
   }
   if (elapsed % 360 === 0) spawn(s, 'rescue', s.boat.x+(random(s)-.5)*.65)
   if (elapsed % 260 === 0) spawn(s, 'relic')
@@ -135,7 +144,7 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
   const encounter=BOSS_ENCOUNTERS[c.encounterIndex]
   if(encounter&&elapsed>=encounter.at){
     const boss=enemy(s,'boss')!
-    boss.bossKind=encounter.kind;boss.hp=boss.maxHp=encounter.hp
+    boss.bossKind=encounter.kind;boss.family=encounter.kind==='sentinel'?'jelly':'wyrm';boss.recipe=s.voyage.monsters.findIndex(r=>r.family===boss.family);boss.hp=boss.maxHp=encounter.hp
     boss.flight={kind:'drop',tick:0,duration:150,peak:encounter.kind==='guardian'?9:7};boss.altitude=boss.flight.peak
     c.encounterIndex++;if(encounter.kind==='guardian')c.bossSpawned=true
     say(s,encounter.name+' · UNLEASH YOUR CANNONS!')
@@ -148,21 +157,28 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     o.age = (o.age ?? 0) + 1; o.hp ??= 4; o.maxHp ??= o.hp; o.enemy ??= 'ambusher'
     o.slowTicks = Math.max(0, (o.slowTicks ?? 0) - 1)
     const slow = o.slowTicks ? .5 : 1, age = o.age
-    if (o.enemy === 'boss') {
-      o.x = wrapOrbit(o.x+clamp(orbitDelta(s.boat.x,o.x),-.022,.022)); o.y = .19 + Math.sin(age / 70) * .035
-      // Telegraph a temporary rise, then rain down actual high-altitude hazards.
-      const cycle = age % 300
-      if(cycle===180&&!o.flight)o.flight={kind:'rise',tick:0,duration:150,peak:o.bossKind==='guardian'?5.5:4}
-      if (cycle === 1) o.targetX = s.boat.x
-      if (cycle === 70||cycle===245) { const rock = spawn(s, 'rock', o.targetX, .28); rock.radius = .045;rock.flight={kind:'drop',tick:0,duration:42,peak:Math.max(5,objectAltitude(o))};rock.altitude=rock.flight.peak }
-    } else if (o.enemy === 'chaser') {
-      if (age < 50) { o.y = .97; o.x = wrapOrbit(o.x+orbitDelta(s.boat.x,o.x)*.045) }
-      if (age === 50) { o.targetX = s.boat.x; o.targetY = .46 }
-      if (age >= 50) { o.y -= .0058 * slow; o.x = wrapOrbit(o.x+clamp(orbitDelta(o.targetX??o.x,o.x),-.008,.008)*slow) }
-    } else {
-      if (age <= 55) { o.targetX = s.boat.x; o.targetY = .79 }
-      else { if(age===56)o.drift=orbitDelta(o.targetX??o.x,o.x)/65; o.x=wrapOrbit(o.x+o.drift*slow); o.y += .006 * slow }
+    o.attackPhase??='stalk';o.attackTick=(o.attackTick??0)+1
+    const recipe=s.voyage.monsters[o.recipe??-1],profile=BEAST_TRAITS[recipe?.trait??'ambush']
+    const dx=orbitDelta(s.boat.x,o.x),dy=.76-o.y,d=Math.max(.001,Math.hypot(dx,dy))
+    if(o.attackPhase==='stalk'){
+      // Pursuit is persistent across the cylinder seam; monsters never scroll away.
+      const speed=profile.speed*slow
+      o.x=wrapOrbit(o.x+dx/d*speed);o.y+=dy/d*speed
+      if(d<.46&&o.attackTick>120){o.attackPhase='telegraph';o.attackTick=0;o.targetX=s.boat.x;o.targetY=.76}
+    }else if(o.attackPhase==='telegraph'){
+      // A locked landing marker leaves time to run to a helm and evade.
+      if(o.attackTick>=profile.windup){o.attackPhase='strike';o.attackTick=0
+        if(recipe?.trait==='tempest'){const rock=spawn(s,'rock',o.targetX,o.targetY);rock.radius=.055;rock.altitude=6;rock.flight={kind:'drop',tick:0,duration:130,peak:6}}
+      }
+    }else if(o.attackPhase==='strike'){
+      const tx=orbitDelta(o.targetX??s.boat.x,o.x),ty=(o.targetY??.76)-o.y,td=Math.max(.001,Math.hypot(tx,ty)),step=Math.min(td,profile.strike*slow)
+      o.x=wrapOrbit(o.x+tx/td*step);o.y+=ty/td*step
+      if(o.attackTick>=42||td<.025){o.attackPhase='recover';o.attackTick=0}
+    }else{
+      o.y+=Math.sin(o.phase)*.0005
+      if(o.attackTick>=profile.recovery){o.attackPhase='stalk';o.attackTick=0}
     }
+    if(o.enemy==='boss'&&age%480===240){const rock=spawn(s,'rock',s.boat.x,.76);rock.radius=.07;rock.flight={kind:'drop',tick:0,duration:150,peak:8};rock.altitude=8}
   }
 
   const flying: CrewShot[] = []
@@ -181,11 +197,11 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     else flying.push(shot)
   }
   c.shots = flying
-  if (!c.shotCooldown && (c.pendingShots.length||gunners.length) && c.shots.length < MAX_SHOTS - 1) {
-    const power=c.pendingShots.length>0,owner = c.pendingShots.shift() ?? gunners[Math.floor(elapsed/8)%gunners.length]!, enemies = targets(s)
-    launch(s, owner, enemies[0],power)
-    if (c.upgrades.includes('twin')) launch(s, owner, enemies[1] ?? enemies[0],power,true)
-    c.shotCooldown = power?4:8
+  if (!c.shotCooldown && gunners.length && c.shots.length < MAX_SHOTS - 1) {
+    const owner = gunners[Math.floor(elapsed/42)%gunners.length]!, enemies = targets(s)
+    launch(s, owner, enemies[0],false)
+    if (c.upgrades.includes('twin')) launch(s, owner, enemies[1] ?? enemies[0],false,true)
+    c.shotCooldown = gunners.length>1?30:42
   }
 
   const survivors: RiverObject[] = []
@@ -198,8 +214,8 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     }
     const hazard = o.type === 'rock' || o.type === 'log' || o.type === 'predator'
     if (!hazard && c.upgrades.includes('magnet') && Math.abs(o.y - .76) < .28 && Math.abs(orbitDelta(o.x,s.boat.x))<.6) o.x = wrapOrbit(o.x+orbitDelta(s.boat.x,o.x)*.12)
-    const collided = combatDistance(o.x,o.y,objectAltitude(o),s.boat.x,.76,s.boat.altitude) < o.radius + .04
-    if (collided && o.enemy !== 'boss') {
+    const collided = combatDistance(o.x,o.y,objectAltitude(o),s.boat.x,.76,s.boat.altitude) < o.radius + .105
+    if (collided && (o.type!=='predator'||o.attackPhase==='strike')) {
       if (hazard) {
         if (c.shieldTicks || c.bubble) { if (!c.shieldTicks) c.bubble--; say(s, 'BUBBLE BLOCKED THE HIT'); s.score += 25 }
         else if (!s.invulnerableTicks) { s.hearts--; s.streak = 0; s.invulnerableTicks = 90; s.events.push({ type: 'crash', x: o.x, y: o.y }) }
@@ -208,9 +224,10 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
       else if (o.type === 'heart') { s.hearts = Math.min(3, s.hearts + 1); s.events.push({ type: 'healed', x: o.x, y: o.y }) }
       else if (o.type === 'gate') { s.gates++; s.score += 100; say(s, 'GATE CLEARED +100') }
       else { s.streak++; s.bestStreak = Math.max(s.bestStreak, s.streak); s.score += 10 + Math.min(s.streak, 30) }
+      if(o.type==='predator'){o.attackPhase='recover';o.attackTick=0;survivors.push(o)}
       continue
     }
-    if (o.y > -.3 && o.y < 1.3 && (o.enemy !== 'chaser' || (o.age ?? 0) < 230)) survivors.push(o)
+    if (o.type==='predator'||o.y > -.3 && o.y < 1.3) survivors.push(o)
   }
   s.objects = survivors.slice(-MAX_OBJECTS); c.scrap = Math.min(30, c.scrap)
   c.victory = c.bossDefeated && s.rescued >= 3 && s.hearts > 0

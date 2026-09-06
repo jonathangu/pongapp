@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest'
-import { ALTITUDE_EVENTS,BOSS_ENCOUNTERS,advanceAltitude,advanceCoopGame,bossWarning,combatDistance,createCoopGame,flightAltitude,ORBIT_LAP,restartCoopGame,type CoopGameState,type RiverObject } from '../src'
+import { ALTITUDE_EVENTS,BOSS_ENCOUNTERS,advanceAltitude,advanceCoopGame,assignStation,advanceCrewMember,bossWarning,combatDistance,createCoopGame,flightAltitude,ORBIT_LAP,restartCoopGame,type CoopGameState,type RiverObject } from '../src'
 const start=()=>{const s=createCoopGame([{id:'a',name:'A'},{id:'b',name:'B'}],73);s.phase='playing';s.tick=180;s.countdownTicks=0;s.objects=[];s.invulnerableTicks=10000;return s}
 const hold=(peak:number)=>({kind:'rise' as const,tick:200,duration:600,peak})
 const predator=(id:number,altitude=0):RiverObject=>({id,type:'predator',enemy:'ambusher',x:.5,y:.4,radius:.04,phase:0,drift:0,age:0,hp:4,maxHp:4,altitude,flight:altitude?hold(altitude):null})
@@ -18,7 +18,8 @@ describe('temporary radial altitude and sky encounters',()=>{
   it('keeps ordinary play at sea level and limits special airtime to three short events',()=>{
     expect(ALTITUDE_EVENTS.reduce((sum,e)=>sum+e.duration,0)).toBeLessThan(7200*.25)
     const s=start(),seen=new Set<string>()
-    for(let i=0;i<7200;i++){
+    for(let i=0;i<s.durationTicks;i++){
+      s.invulnerableTicks=10000
       s.objects=[];advanceCoopGame(s,{})
       if(i<ALTITUDE_EVENTS[0]!.at-1)expect(s.boat.altitude).toBe(0)
       if(s.boat.flight)seen.add(s.boat.flight.kind)
@@ -42,6 +43,7 @@ describe('temporary radial altitude and sky encounters',()=>{
     for(const airborne of [false,true]){
       const s=start();if(airborne){s.boat.altitude=6;s.boat.flight=hold(6)}
       s.objects=[predator(900,airborne?0:6)]
+      assignStation(s.players.a!,'shoot');for(let i=0;i<60;i++)advanceCrewMember(s.players.a!)
       advanceCoopGame(s,{a:{paddle:0,shootTap:true}})
       expect(s.crew.shots[0]!.targetId).toBe(900)
       expect(s.crew.shots[0]!.vAltitude*(airborne?-1:1)).toBeGreaterThan(0)

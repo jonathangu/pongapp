@@ -1,7 +1,8 @@
 import { advanceCrew } from './crew'
+import { DEFAULT_VOYAGE, validateVoyage, type VoyagePack } from './bestiary'
 
 export const COOP_TICK_RATE = 60
-export const COOP_MATCH_SECONDS = 120
+export const COOP_MATCH_SECONDS = 180
 
 export type OarSide = 'left' | 'right'
 export type RiverObjectType = 'firefly' | 'rock' | 'log' | 'heart' | 'lantern' | 'predator' | 'relic' | 'rescue' | 'gate'
@@ -14,14 +15,14 @@ export const EXPEDITION_WORLDS = [
 ] as const
 export function expeditionWorld(state: CoopGameState): number { return Math.min(4, Math.floor(coopProgress(state) * 5)) }
 
-export type CrewStation = 'pilot' | 'gunner' | 'engineer'
 export type CrewTap = 'left' | 'right' | 'shoot' | 'recover'
+export type CrewStation = CrewTap
 export const RIVER_WIDTH = 14
 export const RIVER_MIN_X = .06
 export const RIVER_MAX_X = .94
 export const RECOVERY_TAPS = 5
 export const RECOVERY_SCRAP = 3
-export const RECOVERY_WORK = 180
+export const RECOVERY_WORK = 360
 export interface AltitudeFlight { kind:'drop'|'rise'|'updraft'|'jetstream'|'boss-wave'; tick:number; duration:number; peak:number }
 export interface CrewShot {
   id: number; ownerId: string; targetId: number | null
@@ -39,7 +40,10 @@ export const CREW_UPGRADES = [
   { id: 'bubble', name: 'Bubble battery', description: 'Absorb one hit in the final stretch', icon: '◉' },
   { id: 'magnet', name: 'Salvage magnet', description: 'Pull in scrap and rescue friends', icon: '⊕' },
 ] as const
-export interface CoopPlayer { id: string; name: string; side: OarSide; station: CrewStation }
+export interface CoopPlayer {
+  id:string;name:string;side:OarSide;station:CrewStation|null
+  deck:{x:number;z:number;heading:number;moving:boolean;viaCenter:boolean;step:number;workTicks:number}
+}
 export interface RiverObject {
   id: number
   type: RiverObjectType
@@ -58,6 +62,10 @@ export interface RiverObject {
   altitude?:number
   flight?:AltitudeFlight|null
   bossKind?:'sentinel'|'guardian'
+  family?:'crab'|'manta'|'jelly'|'wyrm'
+  attackPhase?:'stalk'|'telegraph'|'strike'|'recover'
+  attackTick?:number
+  recipe?:number
 }
 export interface CrewState {
   heat: number; overheated: boolean; shotCooldown: number
@@ -92,7 +100,8 @@ export type CoopEvent =
   | { type: 'tripFinished'; score: number; distance: number }
 
 export interface CoopGameState {
-  rulesetVersion: 10
+  rulesetVersion: 11
+  voyage:VoyagePack
   phase: 'countdown' | 'playing' | 'finished'
   tick: number
   countdownTicks: number
@@ -145,11 +154,11 @@ function spawnObject(state: CoopGameState, y = -0.12, forcedType?: RiverObjectTy
   })
 }
 
-export function createCoopGame(humans: Array<{ id: string; name: string }>, seed = Date.now() >>> 0): CoopGameState {
+export function createCoopGame(humans: Array<{ id: string; name: string }>, seed = Date.now() >>> 0, voyage:VoyagePack=DEFAULT_VOYAGE): CoopGameState {
   const players: Record<string, CoopPlayer> = {}
-  humans.slice(0, 2).forEach((human, index) => { players[human.id] = { ...human, side: index === 0 ? 'left' : 'right', station: index === 0 ? 'pilot' : 'gunner' } })
+  humans.slice(0, 2).forEach((human, index) => { players[human.id] = { ...human, side: index === 0 ? 'left' : 'right', station:null,deck:{x:index===0?-.24:.24,z:0,heading:0,moving:false,viaCenter:false,step:0,workTicks:0} } })
   const state: CoopGameState = {
-    rulesetVersion: 10, phase: 'countdown', tick: 0, countdownTicks: COOP_TICK_RATE * 3,
+    rulesetVersion: 11, voyage:validateVoyage(voyage)??structuredClone(DEFAULT_VOYAGE), phase: 'countdown', tick: 0, countdownTicks: COOP_TICK_RATE * 3,
     durationTicks: COOP_TICK_RATE * COOP_MATCH_SECONDS, seed: seed || 1, nextObjectId: 1, players,
     boat: { x: 0.5, heading: 0, speed: 0, wake: 0, altitude:0, flight:null }, paddles: { left: 0, right: 0 }, objects: [],
     score: 0, hearts: 3, streak: 0, bestStreak: 0, distance: 0, harmony: 0, rushTicks: 0,
@@ -163,7 +172,7 @@ export function createCoopGame(humans: Array<{ id: string; name: string }>, seed
 }
 
 export function restartCoopGame(previous: CoopGameState, seed = Date.now() >>> 0): CoopGameState {
-  return createCoopGame(Object.values(previous.players).sort((a, b) => a.side.localeCompare(b.side)), seed)
+  return createCoopGame(Object.values(previous.players).sort((a, b) => a.side.localeCompare(b.side)), seed,previous.voyage)
 }
 
 export function advanceCoopGame(state: CoopGameState, inputs: CoopInputs): void {

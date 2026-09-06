@@ -16,8 +16,8 @@ export function rollingCamera(width: number, height: number,altitude=0) {
   const halfFov = Math.atan(Math.tan(35 * Math.PI / 180) / Math.max(1, aspect / .85))
   const basePitch = Math.max(10, Math.min(26, halfFov * 180 / Math.PI - 8)) * Math.PI / 180
   const pitch=basePitch+10*Math.PI/180
-  // 27% closer, with the same downward tilt. Gentle vertical tracking preserves scale during rare lifts.
-  const distance = 22 * Math.max(1,aspect/2.35)/Math.cos(basePitch+halfFov*.4)
+  // The Ark's physical deck must stay readable on phones. Zoom-out remains available.
+  const distance = 16 * Math.max(1,aspect/2.35)/Math.cos(basePitch+halfFov*.4)
   const targetY=Math.max(0,altitude)*.7
   const z = .26 * ROLLING_DEPTH + distance*Math.cos(pitch+halfFov*.4), y = distance*Math.sin(pitch+halfFov*.4)+targetY
   return { aspect, halfFov, pitch, y, z, targetY,targetZ: z - (y-targetY) / Math.tan(pitch), depth: ROLLING_DEPTH }
