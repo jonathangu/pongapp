@@ -1,5 +1,8 @@
 import type { CoopPlayer, CrewStation } from './coop'
 
+export const ARK_WORLD_DEPTH=22
+export const arkHeading=(heading:number,speed:number)=>-Math.atan2(heading*14,Math.max(.002,speed)*ARK_WORLD_DEPTH)*.38
+
 /** Local deck coordinates are shared by simulation, Blender layout and UI picking. */
 export const CREW_ROOMS = [
   { id:'left', name:'Port helm', verb:'Turn left', x:-1.7, z:0, color:'#73d4d0', icon:'←' },

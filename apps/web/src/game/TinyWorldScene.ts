@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { RIVER_WIDTH, ORBIT_LAP, bossWarning, combatDistance, objectAltitude, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { RIVER_WIDTH, ORBIT_LAP, arkHeading, bossWarning, combatDistance, objectAltitude, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
 import { CYLINDER_RADIUS, MAX_CAMERA_ZOOM, cylinderPoint, orbitVisible, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
 import { livingSky } from './LivingSky'
 import { drawArk, drawBeast } from './ArkAnimation'
@@ -333,7 +333,7 @@ export class TinyWorldScene {
       }
     }
     const bx=(state.boat.x-.5)*RIVER_WIDTH,bz=.26*this.depth
-    const heading=-Math.atan2(state.boat.heading*RIVER_WIDTH,Math.max(.002,state.boat.speed)*this.depth)*.38
+    const heading=arkHeading(state.boat.heading,state.boat.speed)
     const lift=state.boat.altitude+(world===3?.28:world===4?.25:.02)
     const bob=(world===1||world===2?Math.sin(t*22)*.025:Math.sin(t*3)*.055)
     this.shadow(bx,bz,6+state.boat.altitude*.2,1.1)

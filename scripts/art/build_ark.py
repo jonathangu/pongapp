@@ -9,7 +9,8 @@ VIOLET='#76679d'
 GLOW='#a5eee1'
 
 # Four rounded lobes connected by an unobstructed crossing. Low gunwales only.
-orb((0,0,-.04),(2.65,3.1,.55),TEAL,24,10)
+orb((0,0,-.23),(2.65,3.1,.42),TEAL,24,10)
+rim=torus((0,0,.16),2.58,.035,GOLD);rim.scale.y=1.16
 box((0,0,.27),(2.1,5.5,.25),IVORY,.22)
 box((0,0,.28),(5.35,2.1,.25),IVORY,.22)
 for x,y,c in [(-1.7,0,TEAL),(1.7,0,BLUE),(0,1.85,GOLD),(0,-1.85,CORAL)]:
@@ -19,6 +20,7 @@ for x,y,c in [(-1.7,0,TEAL),(1.7,0,BLUE),(0,1.85,GOLD),(0,-1.85,CORAL)]:
     if x:
         box((x+(1 if x>0 else -1)*.68,y,.66),(.16,1.6,.45),IVORY,.055)
         box((x+(1 if x>0 else -1)*.73,y,.91),(.11,1.6,.06),GOLD,.025)
+        for side in [-1,1]:box((x,side*.75,.58),(1.45,.1,.25),IVORY,.035)
     else:
         for side in [-1,1]:box((side*.77,y,.64),(.11,1.5,.4),IVORY,.035)
         box((0,y+(1 if y>0 else -1)*.7,.6),(1.5,.15,.34),IVORY,.05)

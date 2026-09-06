@@ -1,6 +1,6 @@
 import { describe,it,expect } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
-import { DEFAULT_VOYAGE, createCoopGame, validateVoyage } from '@pongapp/game-core'
+import { DEFAULT_VOYAGE, BEAST_TRAITS, advanceCoopGame, createCoopGame, validateVoyage } from '@pongapp/game-core'
 import { VoyageLedger, VOYAGE_HARD_CAP, VOYAGE_RESERVATION, type SqlStore } from '../src/voyage-ledger'
 import { VoyageService, generationBody, providerCapped, VOYAGE_MODELS } from '../src/voyage-service'
 function store():SqlStore{
@@ -57,6 +57,13 @@ describe('paid voyage safety and actual recipe consumption',()=>{
     expect(generated.source).toBe('generated');expect(calls).toHaveLength(2)
     const pack=validateVoyage(generated.pack)!;expect(pack.title).toBe('The Opaline Procession');expect(pack.model).toBe(VOYAGE_MODELS.fast)
     const game=createCoopGame([{id:'a',name:'A'}],7,pack);expect(game.voyage).toEqual(pack);expect(game.voyage).not.toBe(pack)
+    game.phase='playing';game.tick=659;game.invulnerableTicks=10000
+    advanceCoopGame(game,{})
+    const spawned=game.objects.find(o=>o.type==='predator')!
+    expect(spawned).toBeTruthy()
+    const recipe=pack.monsters[spawned.recipe!]!
+    expect(spawned.family).toBe(recipe.family);expect(spawned.maxHp).toBe(BEAST_TRAITS[recipe.trait].hp)
+    expect(spawned.radius).toBeCloseTo(.09*recipe.scale)
     const cached=await (await new VoyageService(storage,env,fetcher,()=>now).fetch(req())).json() as {source:string}
     expect(cached.source).toBe('cache');expect(calls).toHaveLength(2);expect(service.ledger.spent(now)).toBe(VOYAGE_RESERVATION)
   })

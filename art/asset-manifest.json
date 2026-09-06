@@ -144,8 +144,8 @@
     },
     {
       "name": "ark_hull",
-      "triangles": 4700,
-      "vertices": 2454
+      "triangles": 5372,
+      "vertices": 2798
     },
     {
       "name": "ark_controls",
@@ -233,5 +233,5 @@
       "vertices": 16
     }
   ],
-  "bytes": 3433988
+  "bytes": 3483872
 }

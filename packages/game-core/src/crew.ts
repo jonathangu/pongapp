@@ -1,5 +1,5 @@
 import { CREW_UPGRADES, RECOVERY_SCRAP, RECOVERY_WORK, expeditionWorld, type CoopGameState, type CoopInputs, type CrewShot, type CrewUpgrade, type RiverObject, type RiverObjectType } from './coop'
-import { assignStation, advanceCrewMember, operatingStation } from './stations'
+import { assignStation, advanceCrewMember, operatingStation, arkHeading, ARK_WORLD_DEPTH } from './stations'
 import { BEAST_TRAITS } from './bestiary'
 import { orbitDelta, wrapOrbit } from './orbit'
 import { ALTITUDE_EVENTS, ALTITUDE_SCALE, BOSS_ENCOUNTERS, advanceAltitude, bossWarning, combatDistance, objectAltitude } from './altitude'
@@ -42,10 +42,13 @@ function targets(s: CoopGameState) {
 function launch(s: CoopGameState, ownerId: string, target: RiverObject | undefined, power: boolean, secondary = false) {
   const c = s.crew
   if (c.shots.length >= MAX_SHOTS) return
-  const side = s.players[ownerId]?.side === 'left' ? -1 : 1
-  const x = wrapOrbit(s.boat.x + side * (secondary ? -.024 : .024)), y = .725
+  const heading=arkHeading(s.boat.heading,s.boat.speed)
+  const baseX=wrapOrbit(s.boat.x-Math.sin(heading)*2.32/14),baseY=.76-Math.cos(heading)*2.32/ARK_WORLD_DEPTH
+  const wx=target?orbitDelta(target.x,baseX)*14:-Math.sin(heading),wz=target?(target.y-baseY)*ARK_WORLD_DEPTH:-Math.cos(heading),wy=target?objectAltitude(target)+.45-(s.boat.altitude+1.06):0
+  const wl=Math.max(.001,Math.hypot(wx,wz,wy))
+  const x=wrapOrbit(baseX+wx/wl*1.14/14),y=baseY+wz/wl*1.14/ARK_WORLD_DEPTH
   const toX = target?.x ?? wrapOrbit(x + (secondary ? .09 : 0)), toY = target?.y ?? -.12
-  const altitude=s.boat.altitude+.75,toAltitude=target?objectAltitude(target)+.45:altitude
+  const altitude=s.boat.altitude+1.06+wy/wl*1.14,toAltitude=target?objectAltitude(target)+.45:altitude
   const dx=orbitDelta(toX,x),dz=(toAltitude-altitude)/ALTITUDE_SCALE,length = Math.max(.001, Math.hypot(dx, toY-y,dz)), speed = .016
   c.shots.push({ id: s.nextObjectId++, ownerId, targetId: target?.id ?? null, x, y, fromX: x, fromY: y, toX, toY, altitude,fromAltitude:altitude,toAltitude,vAltitude:dz/length*speed*ALTITUDE_SCALE,vx: dx / length * speed, vy: (toY - y) / length * speed, ticks: 100, life: 100, damage: 18*(secondary?.6:1), radius: .13, kind: power?'manual':'auto' })
   c.shotsFired++

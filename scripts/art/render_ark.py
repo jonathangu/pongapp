@@ -38,9 +38,9 @@ def scene(name):
     else:
         part('beast_wyrm')
         for j in range(7):
-            x=math.sin(j*.6)*.24;scale=1-j*.085;part('wyrm_segment',(x,0,.65+j*.55),(scale,scale,scale))
+            x=math.sin(j*.6)*.24;scale=1-j*.085;z=.5+j*.45-j*j*.018;part('wyrm_segment',(x,0,z),(scale,scale,scale))
             if j%2==0:
-                for side in [-1,1]:part('wyrm_fin',(x+side*.25,.52,.65+j*.55),(side*scale,scale,scale))
+                for side in [-1,1]:part('wyrm_fin',(x+side*.25*scale,.48*scale,z),(side*scale,scale,scale))
     parent=bpy.data.objects.new('Assembly',None);bpy.context.collection.objects.link(parent)
     for o in copies:o.parent=parent
     # GLTF importer already converts mesh basis; assembly coordinate conversion is below.

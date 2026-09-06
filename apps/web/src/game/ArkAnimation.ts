@@ -50,9 +50,9 @@ export function drawBeast(part:Part,o:RiverObject,t:number,recipe?:MonsterRecipe
     for(let j=0;j<count;j++){const a=j/count*Math.PI*2;part('jelly_tentacle',Math.cos(a)*.56,.61,Math.sin(a)*.56,1,1,1,a,color,Math.sin(motion+j)*.24,Math.cos(motion+j)*.14)}
   }else{
     for(let j=0;j<(recipe?.segments??7);j++){
-      const x=Math.sin(motion-j*.55)*.24,z=.65+j*.55,size=1-j*.085
+      const x=Math.sin(motion-j*.55)*.24,z=.5+j*.45-j*j*.018,size=1-j*.085
       part('wyrm_segment',x,Math.sin(motion-j*.4)*.07,z,size,size,size,Math.cos(motion-j*.55)*.16,color)
-      if(j%2===0)for(const side of [-1,1])part('wyrm_fin',x+side*.25,.52,z,side*size,size,size,0,color,0,side*Math.sin(motion+j)*.22)
+      if(j%2===0)for(const side of [-1,1])part('wyrm_fin',x+side*.25*size,.48*size,z,side*size,size,size,0,color,0,side*Math.sin(motion+j)*.22)
     }
   }
   if(recipe?.ornament==='halo')part('_ring',0,1.65,0,1.05,1.05,1.05,t*.3,0xffe8aa,.12)
