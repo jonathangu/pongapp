@@ -10,11 +10,11 @@ const rock = (s: CoopGameState): RiverObject => ({ id: 999, type: 'rock', x: s.b
 const enemy = (id = 90, x = .5, y = .4): RiverObject => ({ id, type: 'predator', enemy: 'ambusher', x, y, radius: .04, phase: 0, drift: 0, hp: 4, maxHp: 4, age: 0 })
 const step = (s: CoopGameState, n: number) => { for (let t = 0; t < n; t++) advanceCoopGame(s, {}) }
 
-describe('orbital hybrid expedition ruleset 9', () => {
+describe('orbital hybrid expedition ruleset10', () => {
   it('nudges immediately for either player, repeated taps move farther, and coasting settles', () => {
     const one = start(), many = start()
     advanceCoopGame(one, { b: { paddle: 0, rightTap: true } })
-    expect(one.rulesetVersion).toBe(9); expect(one.boat.x).toBeGreaterThan(.5)
+    expect(one.rulesetVersion).toBe(10); expect(one.boat.x).toBeGreaterThan(.5)
     for (let t = 0; t < 60; t++) advanceCoopGame(many, { a: { paddle: 0, rightTap: t < 3 } })
     step(one, 60); expect(many.boat.x).toBeGreaterThan(one.boat.x); expect(one.boat.heading).toBe(0)
     const x = one.boat.x; step(one, 20); expect(one.boat.x).toBe(x)

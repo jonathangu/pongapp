@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { tinyWorldCamera } from '../src/game/TinyWorldScene'
 import { CYLINDER_RADIUS, cylinderPoint, followRoll, orbitVisible, projectRolling, rollingCamera, skyDropHeight, worldRoll } from '../src/game/RollingWorld'
 import { ORBIT_LAP, RIVER_WIDTH, type RiverObject } from '@pongapp/game-core'
+import { livingSky } from '../src/game/LivingSky'
 
 describe('tiny-world art contract', () => {
   it('keeps forward up-screen and the playable width visible on phone and desktop', () => {
@@ -26,30 +27,43 @@ describe('tiny-world art contract', () => {
     expect(cylinderPoint(0,0,0,worldRoll(.9)).x).toBeLessThan(0)
     expect(cylinderPoint(0,0,0,worldRoll(.1)).x).toBeGreaterThan(0)
   })
-  it('matches fallback projection to WebGL, with boat and landing lanes in every viewport', () => {
-    for(const [w,h] of [[320,320],[390,532],[1440,712],[844,150]])for(const boatX of [.06,.5,.94]){
-      const {camera,depth}=tinyWorldCamera(w!,h!),roll=worldRoll(boatX)
+  it('matches fallback to WebGL at every altitude and keeps the closer craft in frame', () => {
+    for(const [w,h] of [[320,320],[390,532],[1440,712],[844,150]])for(const boatX of [.06,.5,.94])for(const cameraAltitude of [0,3.5,5]){
+      const {camera,depth}=tinyWorldCamera(w!,h!,cameraAltitude),roll=worldRoll(boatX)
       for(const x of [.06,.5,.94])for(const y of [.24,.5,.76])for(const elevation of [0,.45,4]){
         const p=cylinderPoint((x-.5)*RIVER_WIDTH,elevation,(y-.5)*depth,roll)
-        const v=new Vector3(p.x,p.y,p.z).project(camera),fallback=projectRolling(w!,h!,x,y,elevation,roll)
+        const v=new Vector3(p.x,p.y,p.z).project(camera),fallback=projectRolling(w!,h!,x,y,elevation,roll,cameraAltitude)
         expect(fallback[0]).toBeCloseTo((v.x+1)*w!/2,8)
         expect(fallback[1]).toBeCloseTo((1-v.y)*h!/2,8)
-        if(elevation===0){expect(fallback[0]).toBeGreaterThan(0);expect(fallback[0]).toBeLessThan(w!);expect(fallback[1]).toBeGreaterThan(0);expect(fallback[1]).toBeLessThan(h!)}
       }
-      const boat=projectRolling(w!,h!,boatX,.76,0,roll)
-      expect(boat[1]/h!).toBeGreaterThan(.6);expect(boat[1]/h!).toBeLessThan(.85)
+      const boat=projectRolling(w!,h!,boatX,.76,cameraAltitude,roll,cameraAltitude)
+      expect(boat[1]/h!).toBeGreaterThan(.4);expect(boat[1]/h!).toBeLessThan(.85)
+      expect(boat[0]/w!).toBeCloseTo(.5)
     }
   })
-  it('lands sky drops before the collision row without moving predators or gates', () => {
-    const object=(type:RiverObject['type'],y:number)=>({type,y} as RiverObject)
-    expect(skyDropHeight(object('rock',-.08))).toBe(9)
-    expect(skyDropHeight(object('relic',.08))).toBeCloseTo(2.25)
-    for(const type of ['rock','log','heart','relic','firefly','rescue'] as const){
-      expect(skyDropHeight(object(type,.24))).toBe(0)
-      expect(skyDropHeight(object(type,.76))).toBe(0)
+  it('renders authoritative height for all entity types, including airborne predators', () => {
+    for(const type of ['rock','log','heart','relic','firefly','rescue','predator','gate'] as const){
+      for(const y of [-.08,.24,.76])expect(skyDropHeight({type,y,altitude:4.2} as RiverObject)).toBe(4.2)
+      expect(skyDropHeight({type,y:-.08} as RiverObject)).toBe(0)
     }
-    expect(skyDropHeight(object('predator',-.08))).toBe(0)
-    expect(skyDropHeight(object('gate',-.08))).toBe(0)
+  })
+  it('zooms substantially closer while preserving the prior camera pitch',()=>{
+    const c=rollingCamera(390,532),oldDistance=30/Math.cos(c.pitch-10*Math.PI/180+c.halfFov*.4)
+    const distance=Math.hypot(c.y,c.z-.26*c.depth)
+    expect(distance/oldDistance).toBeCloseTo(22/30)
+    expect(oldDistance/distance).toBeGreaterThan(1.3)
+  })
+  it('anchors clouds, floating islands and celestial bodies to the world with wrap and height parallax',()=>{
+    const sky=livingSky(0,40,1000),same=livingSky(0,40,1000)
+    expect(sky).toEqual(same);expect(sky.length).toBeLessThan(120)
+    for(let world=0;world<5;world++)expect(livingSky(world,40,1000).length).toBeLessThan(120)
+    const sun=sky.find(o=>o.kind==='sun')!,a=projectRolling(390,532,sun.x,sun.y,sun.altitude,worldRoll(.5)),b=projectRolling(390,532,sun.x,sun.y,sun.altitude,worldRoll(.8)),lap=projectRolling(390,532,sun.x,sun.y,sun.altitude,worldRoll(.5+ORBIT_LAP))
+    expect(Math.abs(a[0]-b[0])).toBeGreaterThan(20);expect(a[0]).toBeCloseTo(lap[0],8)
+    expect(projectRolling(390,532,sun.x,sun.y,sun.altitude,0,5)[1]).not.toBeCloseTo(a[1],1)
+    const shifted=livingSky(0,80,1000)
+    expect(shifted.filter(o=>o.kind==='cloud').map(o=>o.y)).not.toEqual(sky.filter(o=>o.kind==='cloud').map(o=>o.y))
+    expect(orbitVisible(390,532,2.1,0,0)).toBe(false)
+    expect(orbitVisible(390,532,2.1,0,12)).toBe(true)
   })
   it('tilts exactly ten degrees farther downward and follows a wrap without rotating the long way',()=>{
     for(const [w,h] of [[390,500],[844,180],[1440,700]]){

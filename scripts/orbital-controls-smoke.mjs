@@ -18,7 +18,7 @@ for(const engine of (process.env.QA_ENGINES??'chromium,webkit').split(',')){
         const canvas=document.querySelector('.expedition-canvas');let cf=canvas[Object.keys(canvas).find(k=>k.startsWith('__reactFiber$'))]
         while(cf&&!window.qaScene){for(let h=cf.memoizedState;h;h=h.next){const c=h.memoizedState?.current;if(c&&typeof c.pick==='function'&&typeof c.project==='function'){window.qaScene=c;break}}cf=cf.return}
         // Isolate human input in this disposable solo fixture. Real two-player behavior has its own room test.
-        const s=qaProps.getState();delete s.players['solo-scout'];s.invulnerableTicks=100000;s.objects=[]
+        const s=qaProps.getState();delete s.players['solo-scout'];s.invulnerableTicks=100000;s.objects=[];s.crew.altitudeEventIndex=3;s.crew.encounterIndex=2
         window.qaQuiet=setInterval(()=>{qaProps.getState().objects=[]},80)
       })
       const down=async action=>{const b=await page.locator('[data-action='+action+']').boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down()}
@@ -102,7 +102,7 @@ for(const engine of (process.env.QA_ENGINES??'chromium,webkit').split(',')){
         await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{id:4,x:cx-65,y:cy},{id:5,x:cx+65,y:cy}]})
         await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{id:4,x:cx-35,y:cy},{id:5,x:cx+35,y:cy}]})
         await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
-        await page.waitForFunction(()=>Number(document.querySelector('.expedition-canvas').dataset.zoom)<.9)
+        await page.waitForFunction(()=>Number(document.querySelector('.expedition-canvas').dataset.zoom)<1)
         await page.locator('[aria-label="Reset camera zoom"]').click()
         multitouch='three real held touch pointers, native touchCancel, pinch/reset: passed';await cdp.detach()
       }

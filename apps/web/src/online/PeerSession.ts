@@ -36,7 +36,7 @@ export class PeerSession {
     initial: OnlineGameState, private readonly relay: (data: string) => void,
     private readonly publish: (state: OnlineGameState) => void, private readonly report: (status: PeerStatus) => void) {
     this.state = structuredClone(initial)
-    if (initial.rulesetVersion === 9) this.confirmedHearts = initial.hearts
+    if (initial.rulesetVersion === 10) this.confirmedHearts = initial.hearts
     this.confirmedPhase = initial.phase
     this.controls[id] = neutralControl(); this.controls[remoteId] = neutralControl()
     if (host) this.epoch = crypto.randomUUID()
@@ -48,7 +48,7 @@ export class PeerSession {
   getState(): OnlineGameState { return this.state }
   /** Confirmed team health is never replaced by speculative guest collisions. */
   private publishState(): void {
-    this.publish(!this.host && this.state.rulesetVersion === 9 ? { ...this.state, hearts: this.confirmedHearts, phase: this.confirmedPhase } : this.state)
+    this.publish(!this.host && this.state.rulesetVersion === 10 ? { ...this.state, hearts: this.confirmedHearts, phase: this.confirmedPhase } : this.state)
   }
   setCrew(patch: Partial<CrewControl>): void {
     const control = this.controls[this.id]!
@@ -133,7 +133,7 @@ export class PeerSession {
       const own = this.controls[this.id]!
       this.epoch = f.epoch; this.lastFrame = f.state.tick
       this.state = structuredClone(f.state); this.consumed = structuredClone(f.consumed)
-      if (f.state.rulesetVersion === 9) this.confirmedHearts = f.state.hearts
+      if (f.state.rulesetVersion === 10) this.confirmedHearts = f.state.hearts
       this.confirmedPhase = f.state.phase
       this.controls = structuredClone(f.controls)
       // Reapply locally issued controls not yet represented by the host snapshot.

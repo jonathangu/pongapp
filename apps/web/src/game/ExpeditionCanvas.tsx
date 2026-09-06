@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react'
-import { EXPEDITION_WORLDS, ORBIT_LAP, RIVER_WIDTH, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { EXPEDITION_WORLDS, ORBIT_LAP, RIVER_WIDTH, objectAltitude, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
 import type { TinyWorldScene } from './TinyWorldScene'
-import { followRoll, orbitVisible, projectRolling, skyDropHeight, worldRoll } from './RollingWorld'
+import { DEFAULT_CAMERA_ZOOM, MAX_CAMERA_ZOOM, followRoll, orbitVisible, projectRolling, skyDropHeight, worldRoll } from './RollingWorld'
+import { livingSky } from './LivingSky'
 
 type Point = [number, number]
 const TAU = Math.PI * 2
 const noise = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v) }
 
 /** Canvas artwork uses pixel-sized accents on the shared curved world projection. */
-export function projectExpedition(w: number, h: number, x: number, y: number, z = 0, roll = 0): Point {
-  const p = projectRolling(w,h,x,y,0,roll)
+export function projectExpedition(w: number, h: number, x: number, y: number, z = 0, roll = 0,cameraAltitude=0): Point {
+  const p = projectRolling(w,h,x,y,0,roll,cameraAltitude)
   return [p[0],p[1]-z]
 }
 export function vehicleAngle(w: number, h: number, x: number, heading: number, speed: number, roll = 0): number {
@@ -18,12 +19,13 @@ export function vehicleAngle(w: number, h: number, x: number, heading: number, s
 }
 
 /** A small, depth-sorted isometric renderer. No textures, downloads or per-frame React tree. */
-export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: number, state: CoopGameState, time: number, roll=worldRoll(state.boat.x)): void {
+export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: number, state: CoopGameState, time: number, roll=worldRoll(state.boat.x),cameraAltitude=state.boat.altitude): void {
   const world = expeditionWorld(state)
   const theme = EXPEDITION_WORLDS[world]!
-  const unit = Math.min(w * .95, h * .85)
+  const unit = Math.min(w * .95, h * .85)*1.25
   const t = time / 1000
-  const project = (x: number, y: number, z = 0): Point => projectExpedition(w, h, x, y, z, roll)
+  const project = (x: number, y: number, z = 0): Point => projectExpedition(w, h, x, y, z, roll,cameraAltitude)
+  const elevated=(x:number,y:number,altitude:number)=>projectRolling(w,h,x,y,altitude,roll,cameraAltitude)
   const poly = (points: Point[], fill: string, stroke?: string) => {
     ctx.beginPath(); points.forEach(([x,y], i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y)); ctx.closePath()
     ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke() }
@@ -56,33 +58,7 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   ctx.clearRect(0,0,w,h)
   const sky=ctx.createLinearGradient(0,0,0,h); sky.addColorStop(0,theme.sky); sky.addColorStop(.7,world===4?'#37285b':world===1?'#e7a379':world===3?'#c5c6dc':'#82a4a0'); sky.addColorStop(1,theme.sky)
   ctx.fillStyle=sky; ctx.fillRect(-w,-h,w*3,h*3)
-  // Sky panorama: distant layers, a setting sun, and orbiting constellations.
-  const sunX=w*.83, sunY=h*.105
-  glow(sunX,sunY,w*.25,world===4?'#9482ed44':'#ffe0a54a')
-  ellipse(sunX,sunY,w*.087,w*.087,world===4?'#e2def5':'#ffe5b1')
-  if(world===4) {
-    ellipse(sunX+w*.035,sunY-w*.015,w*.079,w*.079,'#302344')
-    for(let i=0;i<65;i++) { const x=noise(i)*w, y=noise(i+83)*h; ellipse(x,y,.6+noise(i+42)*1.4,.6+noise(i+42)*1.4,`rgba(219,245,255,${.25+(Math.sin(t+ i)+1)*.28})`) }
-    ctx.save();ctx.translate(w*.2,h*.2);ctx.rotate(-.3);ctx.strokeStyle='#b1c5fb50';ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(0,0,w*.17,w*.035,0,0,TAU);ctx.stroke();ellipse(0,0,w*.064,w*.064,'#897bb0');ctx.restore()
-  } else if(world!==3) {
-    for(let layer=0;layer<3;layer++) {
-      const base=h*(.29+layer*.07); const points:Point[]=[[0,h]]
-      for(let i=-1;i<9;i++) points.push([i*w/7,base-noise(i+layer*11)*h*(.16-layer*.025)])
-      points.push([w,h]);poly(points,[world===1?'#9c6672':'#506f80',world===1?'#a56864':'#527e80',world===1?'#a77465':'#598889'][layer]!)
-      if(world===2) for(let i=0;i<7;i++) { const px=i*w/7, py=base-noise(i+layer*11)*h*(.16-layer*.025);poly([[px-13,py+18],[px,py],[px+17,py+22],[px+3,py+15],[px-3,py+20]],'#e8f4eeaa') }
-    }
-  }
-  if(world===3) {
-    const colors=['#f79daf','#ffc190','#f4e7a1','#9eddc4','#9ecafa','#b9b1f5']
-    colors.forEach((c,i)=> {ctx.beginPath();ctx.arc(w*.56,h*.38,w*.43-i*7,Math.PI*1.08,Math.PI*1.93);ctx.lineWidth=7;ctx.strokeStyle=c;ctx.globalAlpha=.7;ctx.stroke();ctx.globalAlpha=1})
-    // A little fleet sails behind the action, giving the open sky a sense of scale.
-    for(let i=0;i<3;i++){const ax=w*(.15+i*.34)+Math.sin(t*.08+i)*12,ay=h*(.12+i*.065),r=unit*(.028+i*.006);ellipse(ax,ay,r*1.8,r*.7,'#f7d7a899');ellipse(ax-r*.3,ay-r*.12,r*1.3,r*.5,'#fff0ccaa');line([ax-r*.5,ay+r*.4],[ax-r*.3,ay+r*.95],'#f9e4bb99',1);line([ax+r*.5,ay+r*.4],[ax+r*.3,ay+r*.95],'#f9e4bb99',1);poly([[ax-r*.6,ay+r*.9],[ax+r*.6,ay+r*.9],[ax+r*.3,ay+r*1.2],[ax-r*.3,ay+r*1.2]],'#8f678baa')}
-  }
-  for(let i=0;i<(world===3?14:5);i++) {
-    const cx=((noise(i+10)*w+t*(3+noise(i)*3))%(w+140))-70, cy=noise(i+100)*h*.38
-    const r=18+noise(i+1)*30
-    ellipse(cx,cy,r*1.5,r*.28,world===4?'#8f80b011':'#eff2df22');ellipse(cx+10,cy-r*.17,r*.7,r*.4,world===4?'#8f80b011':'#eff2df22')
-  }
+  // The clear color has no painted scenery. Sky objects use the same radial projection as gameplay.
   // Sample across the barrel as well as along it: the curved silhouette reveals sky at both sides.
   const center=roll/RIVER_WIDTH+.5
   for(let row=0;row<30;row++)for(let col=0;col<44;col++){
@@ -117,6 +93,16 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   if(world===4){glow(w*.06,h*.5,w*.5,'#805beb30');glow(w*.95,h*.8,w*.6,'#2776ac25')}
 
   const entities:Array<{depth:number;draw:()=>void}>=[]
+  for(const o of livingSky(world,state.distance,state.tick)){
+    if(!orbitVisible(w,h,o.x,roll,o.altitude,cameraAltitude))continue
+    const [x,y]=elevated(o.x,o.y,o.altitude),q=elevated(o.x,o.y,o.altitude+1),r=Math.min(w*.3,Math.max(1,Math.hypot(x-q[0],y-q[1])*o.scale)),color='#'+o.color.toString(16).padStart(6,'0')
+    entities.push({depth:y,draw:()=>{
+      if(o.kind==='cloud'){ellipse(x,y,r*2.2,r*.6,color+'aa');ellipse(x-r*.5,y-r*.25,r*1.2,r*.8,color+'dd')}
+      else if(o.kind==='island'){poly([[x-r,y],[x+r,y],[x+r*.4,y+r*.8],[x-r*.5,y+r*.5]],theme.bank);ellipse(x,y,r,r*.3,theme.glow);line([x,y],[x,y-r],color,3)}
+      else if(o.kind==='star')ellipse(x,y,Math.max(.6,r*.06),Math.max(.6,r*.06),color)
+      else{glow(x,y,r*2,color+'33');ellipse(x,y,r,r,color);if(o.kind==='planet'){ctx.beginPath();ctx.ellipse(x,y,r*1.8,r*.35,-.3,0,TAU);ctx.strokeStyle='#e0c8f0';ctx.lineWidth=2;ctx.stroke()}}
+    }})
+  }
   // Raised terrain and island silhouettes, ordered with the vehicle and creatures.
   for(let i=0;i<5;i++) {
     const y=-1+noise(i+8)*.6,x=i/5*ORBIT_LAP
@@ -136,8 +122,8 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   }
 
   for(const object of state.objects) {
-    if(!orbitVisible(w,h,object.x,roll))continue
-    const [x,y]=projectRolling(w,h,object.x,object.y,skyDropHeight(object),roll)
+    if(!orbitVisible(w,h,object.x,roll,objectAltitude(object),cameraAltitude))continue
+    const [x,y]=elevated(object.x,object.y,objectAltitude(object))
     const s=unit*(object.enemy==='boss'?.14:.054)
     entities.push({depth:y,draw:()=> {
       const landing=project(object.x,object.y)
@@ -152,7 +138,7 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
         line([x-s,y-s*.4],[x+s,y+s*.4],world===4?'#b895d7':'#87684d',s*.65);ellipse(x+s,y+s*.4,s*.25,s*.31,'#d8b584');ellipse(x+s,y+s*.4,s*.11,s*.14,'#967451')
       } else if(object.type==='predator') {
         const warn=(object.age??0)<55 || object.enemy==='boss' && (object.age??0)%200<80
-        const target=project(object.targetX??state.boat.x,object.targetY??.76)
+        const target=elevated(object.targetX??state.boat.x,object.targetY??.76,state.boat.altitude)
         if(warn){ctx.save();ctx.setLineDash([5,7]);line([x,y],target,'#ffb795aa',2);ctx.setLineDash([]);ellipse(target[0],target[1],13,7,'#ff70552b');ctx.restore()}
         ctx.save();ctx.translate(x,y);ctx.rotate(Math.atan2(target[1]-y,target[0]-x))
         if(object.enemy==='boss') {poly([[-s,0],[-s*.3,-s*1.4],[s,-s*.7],[s*.4,0],[s,s*.7],[-s*.3,s*1.4]],'#ba8ddd');glow(0,0,s*1.5,'#dc92f666')}
@@ -179,10 +165,12 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
     }})
   }
 
-  const [bx,by]=project(state.boat.x,.76)
+  const [bx,by]=elevated(state.boat.x,.76,state.boat.altitude)
   entities.push({depth:by,draw:()=>{
     const s=unit*.055
-    ellipse(bx,by+7,s*1.25,s*.43,'#10294455')
+    const shadow=elevated(state.boat.x,.76,0)
+    ellipse(shadow[0],shadow[1]+7,s*(1.25+state.boat.altitude*.07),s*.43,'#10294455')
+    if(state.boat.altitude>.1){line(shadow,[bx,by],'#b1f5df66',2);for(let i=0;i<4;i++){const p=elevated(state.boat.x,.76,state.boat.altitude*i/4);ellipse(p[0],p[1],s*.7,s*.13,'#a6f2e72b')}}
     for(let i=0;i<5;i++) {const p=project(state.boat.x,.77+(i+1)*.035);ellipse(p[0],p[1],s*(.5+i*.12),s*(world===1?.28:.15),world===4?'#abc4f52b':world===1?'#e9bd8a40':'#d7f4db35')}
     if(state.flareTicks>0) {const radius=(1-state.flareTicks/60)*unit*.75;ctx.beginPath();ctx.ellipse(bx,by,Math.max(1,radius),Math.max(1,radius*.5),0,0,TAU);ctx.strokeStyle='#fff0b8';ctx.lineWidth=3;ctx.stroke();glow(bx,by,unit*.3,'#ffe5a033')}
     if(state.rushTicks>0) glow(bx,by,s*2.5,theme.glow+'55')
@@ -214,31 +202,31 @@ export function drawExpedition(ctx: CanvasRenderingContext2D, w: number, h: numb
   }})
   entities.sort((a,b)=>a.depth-b.depth).forEach((entity)=>entity.draw())
   for(const shot of state.crew.shots){
-    if(!orbitVisible(w,h,shot.x,roll))continue
-    const p=project(shot.x,shot.y,8),radius=Math.max(5,unit*.019)
-    for(let i=5;i>0;i--){const q=project(shot.x-shot.vx*i,shot.y-shot.vy*i,8);ellipse(q[0],q[1],radius*(1-i/7),radius*(1-i/7),'#ffb94b55')}
+    if(!orbitVisible(w,h,shot.x,roll,shot.altitude,cameraAltitude))continue
+    const p=elevated(shot.x,shot.y,shot.altitude),radius=Math.max(5,unit*.019)
+    for(let i=5;i>0;i--){const q=elevated(shot.x-shot.vx*i,shot.y-shot.vy*i,shot.altitude-shot.vAltitude*i);ellipse(q[0],q[1],radius*(1-i/7),radius*(1-i/7),'#ffb94b55')}
     glow(p[0],p[1],radius*3,'#ff9f4daa');ellipse(p[0],p[1],radius,radius,'#ffc974');ellipse(p[0]-radius*.2,p[1]-radius*.2,radius*.5,radius*.5,'#fff5c9')
   }
   for(const blast of state.crew.explosions){
-    if(!orbitVisible(w,h,blast.x,roll))continue
-    const age=1-blast.ticks/blast.life,p=project(blast.x,blast.y),r=blast.radius*w*(.25+age*.85)
+    if(!orbitVisible(w,h,blast.x,roll,blast.altitude,cameraAltitude))continue
+    const age=1-blast.ticks/blast.life,p=elevated(blast.x,blast.y,blast.altitude),r=blast.radius*w*(.25+age*.85)
     ctx.globalAlpha=1-age;glow(p[0],p[1],r,blast.kind==='chain'?'#bca0ffaa':'#ffbc63bb')
     ctx.beginPath();ctx.ellipse(p[0],p[1],r,r*.7,0,0,TAU);ctx.strokeStyle='#ffe2a5';ctx.lineWidth=5*(1-age)+1;ctx.stroke()
     for(let i=0;i<10;i++){const a=i/10*TAU+blast.id;ellipse(p[0]+Math.cos(a)*r,p[1]+Math.sin(a)*r*.7-Math.sin(age*Math.PI)*12,3*(1-age)+.5,3*(1-age)+.5,'#fff0c2')}
     ctx.globalAlpha=1
   }
   if(state.invulnerableTicks>60&&state.invulnerableTicks<=75){ctx.fillStyle='rgba(255,94,76,'+(state.invulnerableTicks-60)/110+')';ctx.fillRect(0,0,w,h)}
-  for(let i=0;i<15;i++) {const x=noise(i+230)*w+Math.sin(t*.5+i)*12,y=noise(i+250)*h;ellipse(x,y,1.1,1.1,theme.glow+'90')}
   const vignette=ctx.createRadialGradient(w*.5,h*.5,w*.15,w*.5,h*.5,Math.max(w,h)*.7);vignette.addColorStop(0,'transparent');vignette.addColorStop(1,'#080d294a');ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h)
 }
 
-export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .9, onZoom }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void; zoom?: number; onZoom?: (zoom: number) => void }) {
+export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = DEFAULT_CAMERA_ZOOM, onZoom }: { getState: () => CoopGameState; preview?: boolean; onTarget?: (id: number | null) => void; zoom?: number; onZoom?: (zoom: number) => void }) {
   const ref=useRef<HTMLCanvasElement>(null)
   const fallbackRef=useRef<HTMLCanvasElement>(null)
   const sceneRef=useRef<TinyWorldScene|null>(null)
   const stateRef=useRef(getState);stateRef.current=getState
   const zoomRef=useRef(zoom);zoomRef.current=zoom
   const rollRef=useRef(0)
+  const altitudeRef=useRef(0)
   const pointers=useRef(new Map<number,{x:number;y:number}>())
   const tap=useRef<{x:number;y:number}|null>(null)
   const pinch=useRef<{distance:number;zoom:number}|null>(null)
@@ -253,7 +241,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
     // Invite/controls and the fallback draw immediately; the larger 3D bundle is non-blocking.
     void import('./TinyWorldScene').then(async({TinyWorldScene})=>{if(!active)return;scene=new TinyWorldScene(canvas,preview);sceneRef.current=scene;resize();await scene.load();if(failed&&active)useFallback()}).catch(()=>{if(active)useFallback()})
     const observer=new ResizeObserver(resize);observer.observe(canvas);resize()
-    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current();rollRef.current=lastDraw?followRoll(rollRef.current,state.boat.x,now-lastDraw):worldRoll(state.boat.x);canvas.dataset.worldRoll=rollRef.current.toFixed(3);canvas.dataset.orbitPosition=state.boat.x.toFixed(4);let drawn=false;try{scene?.setZoom(zoomRef.current);drawn=!!scene&&!failed&&scene.draw(state,now,rollRef.current)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else{ctx.save();ctx.translate(width/2,height/2);ctx.scale(zoomRef.current,zoomRef.current);ctx.translate(-width/2,-height/2);drawExpedition(ctx,width,height,state,now,rollRef.current);ctx.restore()}lastDraw=now}frame=requestAnimationFrame(draw)}
+    const draw=(now:number)=>{if(width&&height&&document.visibilityState!=='hidden'&&(!preview||now-lastDraw>33)){const state=stateRef.current(),dt=lastDraw?Math.min(100,now-lastDraw):100;rollRef.current=lastDraw?followRoll(rollRef.current,state.boat.x,dt):worldRoll(state.boat.x);altitudeRef.current+=(state.boat.altitude-altitudeRef.current)*(1-Math.exp(-dt/160));canvas.dataset.worldRoll=rollRef.current.toFixed(3);canvas.dataset.orbitPosition=state.boat.x.toFixed(4);canvas.dataset.altitude=state.boat.altitude.toFixed(3);canvas.dataset.cameraAltitude=altitudeRef.current.toFixed(3);canvas.dataset.skyMode='world-volume';let drawn=false;try{scene?.setZoom(zoomRef.current);drawn=!!scene&&!failed&&scene.draw(state,now,rollRef.current,altitudeRef.current)}catch{useFallback()}if(drawn){canvas.style.opacity='1';fallback.style.display='none'}else{ctx.save();ctx.translate(width/2,height/2);ctx.scale(zoomRef.current,zoomRef.current);ctx.translate(-width/2,-height/2);drawExpedition(ctx,width,height,state,now,rollRef.current,altitudeRef.current);ctx.restore()}lastDraw=now}frame=requestAnimationFrame(draw)}
     frame=requestAnimationFrame(draw);return()=>{active=false;cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',contextLost);scene?.dispose();sceneRef.current=null}
   },[preview])
   return <><canvas ref={fallbackRef} className="expedition-canvas-fallback" aria-hidden="true" style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}}/><canvas ref={ref} className="expedition-canvas" data-zoom={zoom.toFixed(2)} style={{position:'relative',opacity:0,touchAction:preview?'pan-y':'none'}} onPointerDown={e=>{
@@ -264,7 +252,7 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
   }} onPointerMove={e=>{
     if(!pointers.current.has(e.pointerId))return
     pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY})
-    if(pointers.current.size===2&&pinch.current){const [a,b]=[...pointers.current.values()];onZoom?.(Math.max(.65,Math.min(1.2,pinch.current.zoom*Math.hypot(a!.x-b!.x,a!.y-b!.y)/Math.max(1,pinch.current.distance))))}
+    if(pointers.current.size===2&&pinch.current){const [a,b]=[...pointers.current.values()];onZoom?.(Math.max(.65,Math.min(MAX_CAMERA_ZOOM,pinch.current.zoom*Math.hypot(a!.x-b!.x,a!.y-b!.y)/Math.max(1,pinch.current.distance))))}
     if(tap.current&&Math.hypot(e.clientX-tap.current.x,e.clientY-tap.current.y)>8)tap.current=null
   }} onPointerUp={e=>{
     const select=!!tap.current&&!pinch.current;tap.current=null;pointers.current.delete(e.pointerId);if(!pointers.current.size)pinch.current=null
@@ -273,6 +261,6 @@ export function ExpeditionCanvas({ getState, preview = false, onTarget, zoom = .
     const r=e.currentTarget.getBoundingClientRect()
     if(e.currentTarget.dataset.renderer==='webgl-3d'&&sceneRef.current){onTarget(sceneRef.current.pick(getState(),e.clientX-r.left,e.clientY-r.top));return}
     const state=getState(),roll=rollRef.current
-    const targets=state.objects.filter(o=>o.type==='predator'&&orbitVisible(r.width,r.height,o.x,roll)).map(o=>{const p=projectExpedition(r.width,r.height,o.x,o.y,0,roll);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
-  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Rolling-world 3D expedition with a sky panorama. Steer to roll the river; pinch to zoom; tap a predator to aim." /></>
+    const targets=state.objects.filter(o=>o.type==='predator'&&orbitVisible(r.width,r.height,o.x,roll,objectAltitude(o),altitudeRef.current)).map(o=>{const p=projectRolling(r.width,r.height,o.x,o.y,objectAltitude(o),roll,altitudeRef.current);return {id:o.id,d:Math.hypot((p[0]-r.width/2)*zoom+r.width/2-(e.clientX-r.left),(p[1]-r.height/2)*zoom+r.height/2-(e.clientY-r.top))}}).sort((a,b)=>a.d-b.d);onTarget(targets[0]&&targets[0].d<80?targets[0].id:null)
+  }} onPointerCancel={e=>{pointers.current.delete(e.pointerId);tap.current=null;pinch.current=null}} onLostPointerCapture={e=>{pointers.current.delete(e.pointerId);if(!pointers.current.size){tap.current=null;pinch.current=null}}} aria-label="Living cylinder world with flying enemies and temporary altitude. Steer to orbit; pinch to zoom; cannons automatically aim in three dimensions." /></>
 }
