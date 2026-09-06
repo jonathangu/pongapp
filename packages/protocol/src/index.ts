@@ -1,5 +1,6 @@
 import type { CoopGameState, VersusGameState } from '@pongapp/game-core'
 import { z } from 'zod'
+export * from './rescue'
 
 export const PROTOCOL_VERSION = 10 as const
 
