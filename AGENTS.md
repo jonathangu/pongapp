@@ -37,3 +37,13 @@ ROOM_SERVER_URL=http://127.0.0.1:8787 pnpm smoke:room
 
 Deploy from this repository with `pnpm deploy:worker`, then run
 `ROOM_SERVER_URL=https://pongapp-room.pongapp-room-worker.workers.dev pnpm smoke:room`.
+
+## Future mobile ARPG: reuse-first gate (2026-09-06)
+
+For the future ricochet/physics ARPG, follow `docs/OPEN-SOURCE-FIRST.md` before
+implementing or replacing a major subsystem. Consult the six-field catalog in
+`docs/research/mobile-arpg-parts-bin/`; research alternatives, preserve code/asset
+provenance, prefer structured content and small adapters, and require actual-phone
+evidence before committing architecture. An installed app is explicitly acceptable;
+browser retention is not required for this future game. This does not authorize
+retiring the released browser game or changing its existing competitive rules.

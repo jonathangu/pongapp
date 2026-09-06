@@ -1,0 +1,1471 @@
+{
+  "observedAt": "2026-09-06T23:42:43.538Z",
+  "method": "Read-only GitHub API metadata, default-branch commit and pinned license lookup; no build audit or candidate execution.",
+  "repositories": [
+    {
+      "requested": "flareteam/flare-engine",
+      "repo": "flareteam/flare-engine",
+      "url": "https://github.com/flareteam/flare-engine",
+      "description": "Free/Libre Action Roleplaying Engine (engine only)",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "dab2fb220b1d8505d63905eca108a29c8c7fd80c",
+      "headCommitted": "2026-09-02T14:27:20Z",
+      "pushed": "2026-09-02T14:30:11Z",
+      "license": {
+        "path": "COPYING",
+        "blobSha": "94a9ed024d3859793618152ea559a168bbcbb5e2",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+        "spdx": "GPL-3.0",
+        "name": "GNU General Public License v3.0",
+        "url": "https://github.com/flareteam/flare-engine/blob/dab2fb220b1d8505d63905eca108a29c8c7fd80c/COPYING",
+        "bytes": 35147
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "OpenDiablo2/OpenDiablo2",
+      "repo": "OpenDiablo2/OpenDiablo2",
+      "url": "https://github.com/OpenDiablo2/OpenDiablo2",
+      "description": "An open source re-implementation of Diablo 2",
+      "language": "Go",
+      "archived": true,
+      "defaultBranch": "master",
+      "head": "7f92c571bf04057a7fbdfb5d25a486f7d775e3c3",
+      "headCommitted": "2021-10-21T13:18:36Z",
+      "pushed": "2021-10-21T13:18:36Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7",
+        "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "spdx": "GPL-3.0",
+        "name": "GNU General Public License v3.0",
+        "url": "https://github.com/OpenDiablo2/OpenDiablo2/blob/7f92c571bf04057a7fbdfb5d25a486f7d775e3c3/LICENSE",
+        "bytes": 35149
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "diasurgical/DevilutionX",
+      "repo": "diasurgical/DevilutionX",
+      "url": "https://github.com/diasurgical/DevilutionX",
+      "description": "Diablo build for modern operating systems",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "0ff3186238e7c2786c4d52c21ecce1cb83723ed9",
+      "headCommitted": "2026-09-04T16:33:11Z",
+      "pushed": "2026-09-04T16:33:11Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "73d9d02c96544825e9cfee3499eae8b01821388f",
+        "sha256": "049382c17367e384c622369abbeda0cab1d65658c28611717e18afead341e586",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/diasurgical/DevilutionX/blob/0ff3186238e7c2786c4d52c21ecce1cb83723ed9/LICENSE.md",
+        "bytes": 3629
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "1.5.5",
+        "published": "2025-10-30T17:00:17Z",
+        "url": "https://github.com/diasurgical/DevilutionX/releases/tag/1.5.5"
+      }
+    },
+    {
+      "requested": "OpenMW/openmw",
+      "repo": "OpenMW/openmw",
+      "url": "https://github.com/OpenMW/openmw",
+      "description": "OpenMW is an open-source open-world RPG game engine that supports playing Morrowind. Main repo and issue tracker can be found here: https://gitlab.com/OpenMW/openmw/",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "def941246531187d27cc8ceea8baf8b1894a994e",
+      "headCommitted": "2026-09-05T21:17:37Z",
+      "pushed": "2026-09-05T21:17:43Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "9d742475fed99e0263fcf25849f0133137c06355",
+        "sha256": "a187395428b34e87a0279ba67f1dba3c929eec303bea0d2200a2effd55787829",
+        "spdx": "GPL-3.0",
+        "name": "GNU General Public License v3.0",
+        "url": "https://github.com/OpenMW/openmw/blob/def941246531187d27cc8ceea8baf8b1894a994e/LICENSE",
+        "bytes": 35145
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "openmw-0.51.0",
+        "published": "2026-06-19T19:58:46Z",
+        "url": "https://github.com/OpenMW/openmw/releases/tag/openmw-0.51.0"
+      }
+    },
+    {
+      "requested": "veloren/veloren",
+      "repo": "veloren/veloren",
+      "url": "https://github.com/veloren/veloren",
+      "description": "[mirror of https://gitlab.com/veloren/veloren] An open world, open source voxel RPG inspired by Dwarf Fortress and Cube World. This repository is a mirror. Please submit all PRs and issues on our GitLab page.",
+      "language": "Rust",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "f5cf03e8eb107dfe382903aeb98a102e83afa628",
+      "headCommitted": "2026-09-06T16:40:21Z",
+      "pushed": "2026-09-06T22:13:14Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "58cf522ee916eb9d891886d770d169f3dbb01596",
+        "sha256": "d456cea09bced6a05ff960bd69f7a739c78582baeb79e1cb5edefe6846a78cc5",
+        "spdx": "GPL-3.0",
+        "name": "GNU General Public License v3.0",
+        "url": "https://github.com/veloren/veloren/blob/f5cf03e8eb107dfe382903aeb98a102e83afa628/LICENSE",
+        "bytes": 35087
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "nightly",
+        "published": "2022-04-28T12:07:38Z",
+        "url": "https://github.com/veloren/veloren/releases/tag/nightly"
+      }
+    },
+    {
+      "requested": "CleverRaven/Cataclysm-DDA",
+      "repo": "CleverRaven/Cataclysm-DDA",
+      "url": "https://github.com/CleverRaven/Cataclysm-DDA",
+      "description": "Cataclysm - Dark Days Ahead. A turn-based survival game set in a post-apocalyptic world.",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "b9054a1074041dab7e8e2e52e238ba5e571788d2",
+      "headCommitted": "2026-09-06T19:38:32Z",
+      "pushed": "2026-09-06T19:38:48Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "7382dbb3dac585cefe4d0edbf9caa486dde11fac",
+        "sha256": "6e3d17bae7a8f0dee4b0d0c6af5bdf4396a0e685455efa8c2ad4ce52acdd99e2",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/CleverRaven/Cataclysm-DDA/blob/b9054a1074041dab7e8e2e52e238ba5e571788d2/LICENSE.txt",
+        "bytes": 9144
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "0.I",
+        "published": "2026-06-06T16:41:05Z",
+        "url": "https://github.com/CleverRaven/Cataclysm-DDA/releases/tag/0.I"
+      }
+    },
+    {
+      "requested": "wesnoth/wesnoth",
+      "repo": "wesnoth/wesnoth",
+      "url": "https://github.com/wesnoth/wesnoth",
+      "description": "An open source, turn-based strategy game with a high fantasy theme.",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "a6023944c8b3a151f9b4b660cb95975abaa3c44b",
+      "headCommitted": "2026-09-06T10:17:25Z",
+      "pushed": "2026-09-06T10:17:25Z",
+      "license": {
+        "path": "COPYING",
+        "blobSha": "3912109b5cd65a68039d473c11c9f7ac2303e06d",
+        "sha256": "e6d6a009505e345fe949e1310334fcb0747f28dae2856759de102ab66b722cb4",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/wesnoth/wesnoth/blob/a6023944c8b3a151f9b4b660cb95975abaa3c44b/COPYING",
+        "bytes": 18011
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "GDQuest/godot-open-rpg",
+      "repo": "gdquest-demos/godot-open-rpg",
+      "url": "https://github.com/gdquest-demos/godot-open-rpg",
+      "description": "Learn to create turn-based combat with this Open Source RPG demo ⚔",
+      "language": "GDScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "19bd328fae9e4b534d3bb6db380a3d871d6ea58f",
+      "headCommitted": "2026-05-01T20:26:20Z",
+      "pushed": "2026-05-01T20:26:21Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "92ed087debe5f89034ad50246a31b6f44d182b84",
+        "sha256": "34592284a6ef4db8b906c9e1baccfc1c221317276ff5d1014667a553ded19e78",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/gdquest-demos/godot-open-rpg/blob/19bd328fae9e4b534d3bb6db380a3d871d6ea58f/LICENSE",
+        "bytes": 1064
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "0.4.0",
+        "published": "2025-07-01T09:55:21Z",
+        "url": "https://github.com/gdquest-demos/godot-open-rpg/releases/tag/0.4.0"
+      }
+    },
+    {
+      "requested": "godotengine/godot",
+      "repo": "godotengine/godot",
+      "url": "https://github.com/godotengine/godot",
+      "description": "Godot Engine – Multi-platform 2D and 3D game engine",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "34d06658a85845111a50db9e485ec4a0701d4298",
+      "headCommitted": "2026-09-04T14:11:18Z",
+      "pushed": "2026-09-04T14:14:56Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "0e3ba08d6b2e8cf435241829c96f10b74e4356fe",
+        "sha256": "b0435e3b3e4e55238f05f4b306f30524a1b2e20147810d436eaa554fa6855c80",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/LICENSE.txt",
+        "bytes": 1149
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "4.7.2-stable",
+        "published": "2026-08-18T16:12:28Z",
+        "url": "https://github.com/godotengine/godot/releases/tag/4.7.2-stable"
+      }
+    },
+    {
+      "requested": "bevyengine/bevy",
+      "repo": "bevyengine/bevy",
+      "url": "https://github.com/bevyengine/bevy",
+      "description": "A refreshingly simple data-driven game engine built in Rust",
+      "language": "Rust",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "7a21c21ecbce9ba28c970ffdf73063321b6bb636",
+      "headCommitted": "2026-09-06T07:46:30Z",
+      "pushed": "2026-09-06T08:21:11Z",
+      "license": {
+        "path": "LICENSE-APACHE",
+        "blobSha": "d9a10c0d8e868ebf8da0b3dc95bb0be634c34bfe",
+        "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/bevyengine/bevy/blob/7a21c21ecbce9ba28c970ffdf73063321b6bb636/LICENSE-APACHE",
+        "bytes": 10173
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v0.19.1",
+        "published": "2026-08-13T00:02:58Z",
+        "url": "https://github.com/bevyengine/bevy/releases/tag/v0.19.1"
+      }
+    },
+    {
+      "requested": "o3de/o3de",
+      "repo": "o3de/o3de",
+      "url": "https://github.com/o3de/o3de",
+      "description": "Open 3D Engine (O3DE) is an Apache 2.0-licensed multi-platform 3D engine that enables developers and content creators to build AAA games, cinema-quality 3D worlds, and high-fidelity simulations without any fees or commercial obligations.",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "development",
+      "head": "a186779f6565c45b09edcebe67cc4f45213f7edb",
+      "headCommitted": "2026-09-05T23:32:08Z",
+      "pushed": "2026-09-05T23:32:08Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "d96e24130beb684113d77221d6048f0e0331df87",
+        "sha256": "fff4ba4b799574ffb7f160943dcb6ad0ab25b9f01b09e9f634b2fe00343fcae4",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/o3de/o3de/blob/a186779f6565c45b09edcebe67cc4f45213f7edb/LICENSE.txt",
+        "bytes": 1475
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "2605.0",
+        "published": "2026-05-27T17:01:43Z",
+        "url": "https://github.com/o3de/o3de/releases/tag/2605.0"
+      }
+    },
+    {
+      "requested": "phaserjs/phaser",
+      "repo": "phaserjs/phaser",
+      "url": "https://github.com/phaserjs/phaser",
+      "description": "Phaser is a fun, free and fast 2D game framework for making HTML5 games for desktop and mobile web browsers, supporting Canvas and WebGL rendering.",
+      "language": "JavaScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "02d8931b626d9764c133cbb3fbf99966c03c757c",
+      "headCommitted": "2026-08-21T06:04:38Z",
+      "pushed": "2026-08-21T06:56:13Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "33aa21b2adf01a08ca6acb55ddaf8fd2dc4b3368",
+        "sha256": "c3a9ba7e38d4ef33dccf5fdd1046655c63df06714f84776118fe406f43db5cf2",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/phaserjs/phaser/blob/02d8931b626d9764c133cbb3fbf99966c03c757c/LICENSE.md",
+        "bytes": 1100
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v4.2.1",
+        "published": "2026-07-09T14:33:40Z",
+        "url": "https://github.com/phaserjs/phaser/releases/tag/v4.2.1"
+      }
+    },
+    {
+      "requested": "pixijs/pixijs",
+      "repo": "pixijs/pixijs",
+      "url": "https://github.com/pixijs/pixijs",
+      "description": "The HTML5 Creation Engine: Create beautiful digital content with the fastest, most flexible 2D WebGL renderer.",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "dev",
+      "head": "d3a17517b3e2cac837df1239f9d1923d4ca12a21",
+      "headCommitted": "2026-09-03T18:05:15Z",
+      "pushed": "2026-09-04T08:40:15Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "13f706e9d211dabcd69c80951b0f834f9c70f6c6",
+        "sha256": "5ce7447bc57f7349ffc48338782fbcabe613696e00712b20d66bc58e780f9473",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/pixijs/pixijs/blob/d3a17517b3e2cac837df1239f9d1923d4ca12a21/LICENSE",
+        "bytes": 1092
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v8.20.1",
+        "published": "2026-08-26T14:52:26Z",
+        "url": "https://github.com/pixijs/pixijs/releases/tag/v8.20.1"
+      }
+    },
+    {
+      "requested": "coronalabs/corona",
+      "repo": "coronalabs/corona",
+      "url": "https://github.com/coronalabs/corona",
+      "description": "Solar2D Game Engine main repository (ex Corona SDK)",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "b45ff4b35166e0b182bb1503e27c085ad6dc0476",
+      "headCommitted": "2026-08-31T20:33:28Z",
+      "pushed": "2026-08-31T20:33:31Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "8de3c95796c6b72870b475bf2aef112da996be2a",
+        "sha256": "8b3bad18f5a69906b8f03a4c525af48b76bdc7a46540c633ea0b1bdcc43b4176",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/coronalabs/corona/blob/b45ff4b35166e0b182bb1503e27c085ad6dc0476/LICENSE.md",
+        "bytes": 1070
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "3731",
+        "published": "2026-07-17T23:20:14Z",
+        "url": "https://github.com/coronalabs/corona/releases/tag/3731"
+      }
+    },
+    {
+      "requested": "jrouwe/JoltPhysics",
+      "repo": "jrouwe/JoltPhysics",
+      "url": "https://github.com/jrouwe/JoltPhysics",
+      "description": "A multi core friendly rigid body physics and collision detection library. Written in C++. Suitable for games and VR applications. Used by Horizon Forbidden West and Death Stranding 2.",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "d1c1b4d40ab1033989bd39dbcbe27962f35667b6",
+      "headCommitted": "2026-09-05T09:56:26Z",
+      "pushed": "2026-09-05T09:56:59Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "4f0976848529e8243687918193e0742032aef7dc",
+        "sha256": "800abe35d64ad9defd636ff1ee8c961e06f0ebca3ef8d10083e8aa0e8ef86ac3",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/jrouwe/JoltPhysics/blob/d1c1b4d40ab1033989bd39dbcbe27962f35667b6/LICENSE",
+        "bytes": 1052
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v5.6.0",
+        "published": "2026-07-11T18:55:00Z",
+        "url": "https://github.com/jrouwe/JoltPhysics/releases/tag/v5.6.0"
+      }
+    },
+    {
+      "requested": "dimforge/rapier",
+      "repo": "dimforge/rapier",
+      "url": "https://github.com/dimforge/rapier",
+      "description": "2D and 3D physics engines focused on performance.",
+      "language": "Rust",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "b82079ac41310a8af438af95b49b8fa551ce650f",
+      "headCommitted": "2026-08-28T15:28:58Z",
+      "pushed": "2026-08-28T15:29:38Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "97f4383a35a48ddd50566a879e836491d2fe9b75",
+        "sha256": "ceacfa4d7fa67df64ab09a56fe248c50a3bfc9bc00374d69bd74ad763b14b89c",
+        "spdx": "Apache-2.0",
+        "name": "Apache License 2.0",
+        "url": "https://github.com/dimforge/rapier/blob/b82079ac41310a8af438af95b49b8fa551ce650f/LICENSE",
+        "bytes": 11347
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "erincatto/box2d",
+      "repo": "erincatto/box2d",
+      "url": "https://github.com/erincatto/box2d",
+      "description": "Box2D is a 2D physics engine for games",
+      "language": "C",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "dc67c40ba2ce1ad384b0c985dbc1b539cba9221b",
+      "headCommitted": "2026-09-04T00:43:28Z",
+      "pushed": "2026-09-06T17:55:03Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "e32198ea937cdcfb5028c149b97ea211d8064da6",
+        "sha256": "68a3e676d7e94093b102d5cba0d4e04af812040d6f230c3db67a6664574e43d2",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/erincatto/box2d/blob/dc67c40ba2ce1ad384b0c985dbc1b539cba9221b/LICENSE",
+        "bytes": 1067
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v3.1.1",
+        "published": "2025-06-04T01:01:49Z",
+        "url": "https://github.com/erincatto/box2d/releases/tag/v3.1.1"
+      }
+    },
+    {
+      "requested": "piqnt/planck.js",
+      "repo": "piqnt/planck.js",
+      "url": "https://github.com/piqnt/planck.js",
+      "description": "2D JavaScript Physics Engine",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "93dd64df0fd2e5388551b159bebc6306e7af580a",
+      "headCommitted": "2026-04-07T12:29:37Z",
+      "pushed": "2026-04-07T12:29:53Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "494699749e775cc8e2ee447162f0461d56bdadea",
+        "sha256": "49fd3df949edd5f294edafb22e8905263dd7560b514bee6df2f17538069aafca",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/piqnt/planck.js/blob/93dd64df0fd2e5388551b159bebc6306e7af580a/LICENSE.txt",
+        "bytes": 1078
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "recastnavigation/recastnavigation",
+      "repo": "recastnavigation/recastnavigation",
+      "url": "https://github.com/recastnavigation/recastnavigation",
+      "description": "Industry-standard navigation-mesh toolset for games",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "9f4ce64458dfae86e1239c525ddc219c4e9e06f1",
+      "headCommitted": "2026-02-27T07:16:52Z",
+      "pushed": "2026-02-27T07:17:13Z",
+      "license": {
+        "path": "License.txt",
+        "blobSha": "c259ddf6cd36f4745ca71bff1092d3c9d2af900d",
+        "sha256": "ffad87821cce7cfd3be00b63ffadd01b04e83a4c6a0bcc68f06362ffd42d705e",
+        "spdx": "Zlib",
+        "name": "zlib License",
+        "url": "https://github.com/recastnavigation/recastnavigation/blob/9f4ce64458dfae86e1239c525ddc219c4e9e06f1/License.txt",
+        "bytes": 877
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.6.0",
+        "published": "2023-05-21T17:52:00Z",
+        "url": "https://github.com/recastnavigation/recastnavigation/releases/tag/v1.6.0"
+      }
+    },
+    {
+      "requested": "isaac-mason/recast-navigation-js",
+      "repo": "isaac-mason/recast-navigation-js",
+      "url": "https://github.com/isaac-mason/recast-navigation-js",
+      "description": "WebAssembly port of Recast Navigation, a navigation mesh construction, path-finding, and spatial reasoning toolkit. ",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "8769e8b9995f127033af9f6e6eeac3fad7d66201",
+      "headCommitted": "2026-02-04T13:43:28Z",
+      "pushed": "2026-07-06T08:45:25Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "85b70a6105903d685e32c1ba74e8cd9efdb60f04",
+        "sha256": "319340bb218c8a01bf041dc8f6f2390f176d7c332920695b0774b972b4e99162",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/isaac-mason/recast-navigation-js/blob/8769e8b9995f127033af9f6e6eeac3fad7d66201/LICENSE",
+        "bytes": 1071
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "recast-navigation@0.43.0",
+        "published": "2025-09-24T09:42:40Z",
+        "url": "https://github.com/isaac-mason/recast-navigation-js/releases/tag/recast-navigation%400.43.0"
+      }
+    },
+    {
+      "requested": "BehaviorTree/BehaviorTree.CPP",
+      "repo": "BehaviorTree/BehaviorTree.CPP",
+      "url": "https://github.com/BehaviorTree/BehaviorTree.CPP",
+      "description": "Behavior Trees Library in C++. Batteries included.",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "9b63b505983f76e46d90d71c87d21fad0001f8a3",
+      "headCommitted": "2026-08-31T07:48:39Z",
+      "pushed": "2026-08-31T07:50:38Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "e55a7557fd411c8553ac58c8d408aefaa75c209f",
+        "sha256": "73619551b110524235fd4272e7236a6b6e2e162770b1d79cb929022d165e8706",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/LICENSE",
+        "bytes": 1095
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "4.9.0",
+        "published": "2026-02-11T10:02:09Z",
+        "url": "https://github.com/BehaviorTree/BehaviorTree.CPP/releases/tag/4.9.0"
+      }
+    },
+    {
+      "requested": "bitbrain/beehave",
+      "repo": "bitbrain/beehave",
+      "url": "https://github.com/bitbrain/beehave",
+      "description": "🐝 behavior tree AI for Godot Engine",
+      "language": "GDScript",
+      "archived": false,
+      "defaultBranch": "godot-4.x",
+      "head": "58a0df12330114e330f47fc1469132f016c056bc",
+      "headCommitted": "2026-08-18T06:38:17Z",
+      "pushed": "2026-08-18T06:38:17Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "caabbff9de9159885450a88d83a03291c1f240ba",
+        "sha256": "b7b01f5f34016e8be5ba15ec3cbf88d64de580727647e6789986f11686e7a299",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/bitbrain/beehave/blob/58a0df12330114e330f47fc1469132f016c056bc/LICENSE",
+        "bytes": 1065
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v2.9.3",
+        "published": "2026-08-18T06:37:54Z",
+        "url": "https://github.com/bitbrain/beehave/releases/tag/v2.9.3"
+      }
+    },
+    {
+      "requested": "limbonaut/limboai",
+      "repo": "limbonaut/limboai",
+      "url": "https://github.com/limbonaut/limboai",
+      "description": "LimboAI - Behavior Trees and State Machines for Godot 4",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "3f14ea4c26911e8b8e30c6bcdb575fc589a59deb",
+      "headCommitted": "2026-09-04T17:28:24Z",
+      "pushed": "2026-09-04T17:28:25Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "07c690fc328b090fe13d59a1284ce27b1641eaf2",
+        "sha256": "1b2d39c48e02b683abfafa1187de21e75796cd54cd18f6f60ddf369529ee8240",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/LICENSE.md",
+        "bytes": 1103
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.8.1",
+        "published": "2026-08-20T13:10:47Z",
+        "url": "https://github.com/limbonaut/limboai/releases/tag/v1.8.1"
+      }
+    },
+    {
+      "requested": "Mugen87/yuka",
+      "repo": "Mugen87/yuka",
+      "url": "https://github.com/Mugen87/yuka",
+      "description": "JavaScript library for developing Game AI.",
+      "language": "JavaScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "10591304811222d6856020d5de129b39ef43b58d",
+      "headCommitted": "2023-01-16T10:09:21Z",
+      "pushed": "2026-09-05T07:10:18Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "ae665aadbb9b0cd884d8d72556dce0689db9a611",
+        "sha256": "2b75427a84abb4a68e331d02d14f61ba7405c0e0bbab2aea8d6afe3803580d83",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/Mugen87/yuka/blob/10591304811222d6856020d5de129b39ef43b58d/LICENSE",
+        "bytes": 1072
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "snape/RVO2",
+      "repo": "snape/RVO2",
+      "url": "https://github.com/snape/RVO2",
+      "description": "Optimal Reciprocal Collision Avoidance (C++)",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "1c25b27258d191e26c2df83ff6e31abc8efbdaed",
+      "headCommitted": "2026-07-27T00:12:59Z",
+      "pushed": "2026-09-04T21:34:48Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "spdx": "Apache-2.0",
+        "name": "Apache License 2.0",
+        "url": "https://github.com/snape/RVO2/blob/1c25b27258d191e26c2df83ff6e31abc8efbdaed/LICENSE",
+        "bytes": 11358
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v2.0.2",
+        "published": "2016-05-11T02:09:17Z",
+        "url": "https://github.com/snape/RVO2/releases/tag/v2.0.2"
+      }
+    },
+    {
+      "requested": "mxgmn/WaveFunctionCollapse",
+      "repo": "mxgmn/WaveFunctionCollapse",
+      "url": "https://github.com/mxgmn/WaveFunctionCollapse",
+      "description": "Bitmap & tilemap generation from a single example with the help of ideas from quantum mechanics",
+      "language": "C#",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "de7d22e705e816b62b4d613199d0463820fcaef3",
+      "headCommitted": "2026-03-22T01:19:47Z",
+      "pushed": "2026-03-22T01:25:44Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "736e9e615e7c6356597d10992a567c315e488ca8",
+        "sha256": "c3e9f0d9aceebfe7b2afd99339f7df2689cbfaf9df20bb10e3f578d7e6b3841f",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/mxgmn/WaveFunctionCollapse/blob/de7d22e705e816b62b4d613199d0463820fcaef3/LICENSE",
+        "bytes": 1149
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.00",
+        "published": "2022-07-21T20:03:31Z",
+        "url": "https://github.com/mxgmn/WaveFunctionCollapse/releases/tag/v1.00"
+      }
+    },
+    {
+      "requested": "BorisTheBrave/DeBroglie",
+      "repo": "BorisTheBrave/DeBroglie",
+      "url": "https://github.com/BorisTheBrave/DeBroglie",
+      "description": "DeBroglie is a C# library implementing the Wave Function Collapse algorithm with support for additional non-local constraints, and other useful features.",
+      "language": "C#",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "27b37fa7a54f7c532b52634622f36eddd2a3c7da",
+      "headCommitted": "2025-12-21T11:55:23Z",
+      "pushed": "2025-12-21T11:55:24Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "5032f4be4b31c62c0f434bfce8df79e0d8e07489",
+        "sha256": "6103df16e853ff02b51dcec7d987c42bca94a926a9ccf45b98d00b8dd35cc767",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/BorisTheBrave/DeBroglie/blob/27b37fa7a54f7c532b52634622f36eddd2a3c7da/LICENSE.txt",
+        "bytes": 1067
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v2.0.0",
+        "published": "2022-08-28T21:37:27Z",
+        "url": "https://github.com/BorisTheBrave/DeBroglie/releases/tag/v2.0.0"
+      }
+    },
+    {
+      "requested": "Auburn/FastNoiseLite",
+      "repo": "Auburn/FastNoiseLite",
+      "url": "https://github.com/Auburn/FastNoiseLite",
+      "description": "Fast Portable Noise Library - C# C++ C Java HLSL GLSL JavaScript Rust Go ",
+      "language": "Rust",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "785f37a9ad76e283586a379675085f2063ae03f7",
+      "headCommitted": "2026-06-21T19:35:59Z",
+      "pushed": "2026-06-21T19:35:59Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "dd6df2c160a31fff4e781e9589d56bc29dabb5c0",
+        "sha256": "c08da3239b919c12f4ec616b457a8dd0fc923c8102c8a742c4006fcb5de28fb0",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/Auburn/FastNoiseLite/blob/785f37a9ad76e283586a379675085f2063ae03f7/LICENSE",
+        "bytes": 1120
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.1.1",
+        "published": "2024-03-05T21:15:30Z",
+        "url": "https://github.com/Auburn/FastNoiseLite/releases/tag/v1.1.1"
+      }
+    },
+    {
+      "requested": "ondras/rot.js",
+      "repo": "ondras/rot.js",
+      "url": "https://github.com/ondras/rot.js",
+      "description": "ROguelike Toolkit in JavaScript. Cool dungeon-related stuff, interactive manual, documentation, tests!",
+      "language": "JavaScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "46782e248c2db9d379a5e4f13bb8323f18dff04b",
+      "headCommitted": "2024-11-13T07:21:57Z",
+      "pushed": "2024-11-13T07:22:29Z",
+      "license": {
+        "path": "license.txt",
+        "blobSha": "035c4f402a2693f505b9f5fbe8917eb275edc037",
+        "sha256": "3631775a89d4c07e804baedcc91b61c01b55f50d5715168099d6daf61f67763b",
+        "spdx": "BSD-3-Clause",
+        "name": "BSD 3-Clause \"New\" or \"Revised\" License",
+        "url": "https://github.com/ondras/rot.js/blob/46782e248c2db9d379a5e4f13bb8323f18dff04b/license.txt",
+        "bytes": 1510
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v0.5.0",
+        "published": "2014-09-11T09:21:43Z",
+        "url": "https://github.com/ondras/rot.js/releases/tag/v0.5.0"
+      }
+    },
+    {
+      "requested": "lsalzman/enet",
+      "repo": "lsalzman/enet",
+      "url": "https://github.com/lsalzman/enet",
+      "description": "ENet reliable UDP networking library ",
+      "language": "C",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "5a9c537fd464b3c6d3c55e1d3bd47588faf71b42",
+      "headCommitted": "2026-06-23T19:17:21Z",
+      "pushed": "2026-06-23T19:17:35Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "ec14b3f09b72315c6e774c4aae144a90affe3bc0",
+        "sha256": "a29cd246638974da7c6edf423a0a69d4a6f7d759940b7cfa9a2bc3442ac3834c",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/lsalzman/enet/blob/5a9c537fd464b3c6d3c55e1d3bd47588faf71b42/LICENSE",
+        "bytes": 1060
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "heroiclabs/nakama",
+      "repo": "heroiclabs/nakama",
+      "url": "https://github.com/heroiclabs/nakama",
+      "description": "Scalable open-source game backend server: multiplayer, matchmaking, leaderboards, chat, and social features for games.",
+      "language": "Go",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "eb0d23e9a09685bbccd44b56f3ef249315233d8c",
+      "headCommitted": "2026-09-05T15:10:02Z",
+      "pushed": "2026-09-05T15:10:05Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "spdx": "Apache-2.0",
+        "name": "Apache License 2.0",
+        "url": "https://github.com/heroiclabs/nakama/blob/eb0d23e9a09685bbccd44b56f3ef249315233d8c/LICENSE",
+        "bytes": 11358
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v3.40.0",
+        "published": "2026-07-13T21:12:38Z",
+        "url": "https://github.com/heroiclabs/nakama/releases/tag/v3.40.0"
+      }
+    },
+    {
+      "requested": "colyseus/colyseus",
+      "repo": "colyseus/colyseus",
+      "url": "https://github.com/colyseus/colyseus",
+      "description": "⚔ Multiplayer Framework for Node.js",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "1c8cff6b081051f1685139ee5eeb3fc0769cdfd8",
+      "headCommitted": "2026-09-06T21:34:49Z",
+      "pushed": "2026-09-06T22:10:32Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "1cf9066f4635a3db6e2424b5f896316c2a3a6d45",
+        "sha256": "58f5d8920f8d425a9eec9e8cb07f9d0ac5ac08d2aba15f98270c0caddb9de3e4",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/colyseus/colyseus/blob/1c8cff6b081051f1685139ee5eeb3fc0769cdfd8/LICENSE",
+        "bytes": 1075
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "0.18",
+        "published": "2026-08-25T19:43:34Z",
+        "url": "https://github.com/colyseus/colyseus/releases/tag/0.18"
+      }
+    },
+    {
+      "requested": "ocornut/imgui",
+      "repo": "ocornut/imgui",
+      "url": "https://github.com/ocornut/imgui",
+      "description": "Dear ImGui: Bloat-free Graphical User interface for C++ with minimal dependencies",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "96b6eb7728d298decdc939d4c698502220190050",
+      "headCommitted": "2026-09-04T10:37:48Z",
+      "pushed": "2026-09-04T10:39:22Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "d5ba3155f0f438ba765551a5e2419bf3eaa8be64",
+        "sha256": "173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/ocornut/imgui/blob/96b6eb7728d298decdc939d4c698502220190050/LICENSE.txt",
+        "bytes": 1083
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.92.9b",
+        "published": "2026-07-31T14:33:51Z",
+        "url": "https://github.com/ocornut/imgui/releases/tag/v1.92.9b"
+      }
+    },
+    {
+      "requested": "wolfpld/tracy",
+      "repo": "wolfpld/tracy",
+      "url": "https://github.com/wolfpld/tracy",
+      "description": "Frame profiler",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "da5c8153bc2fd169ef7963c83f6004349823e682",
+      "headCommitted": "2026-09-05T23:48:06Z",
+      "pushed": "2026-09-05T23:52:21Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "5abdf122fdf030e1baa8730ca5b5c490dd0743bb",
+        "sha256": "27ab6b51e57f7e263a6e953d9c8984cd26e69d2f7606bde81e4b3048acf30732",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/wolfpld/tracy/blob/da5c8153bc2fd169ef7963c83f6004349823e682/LICENSE",
+        "bytes": 1618
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v0.14.1",
+        "published": "2026-08-22T18:22:52Z",
+        "url": "https://github.com/wolfpld/tracy/releases/tag/v0.14.1"
+      }
+    },
+    {
+      "requested": "cocopon/tweakpane",
+      "repo": "cocopon/tweakpane",
+      "url": "https://github.com/cocopon/tweakpane",
+      "description": ":control_knobs: Compact GUI for fine-tuning parameters and monitoring value changes",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "50a18c3dba67cb78431d7248dbe4d5a76336885a",
+      "headCommitted": "2026-03-15T08:28:49Z",
+      "pushed": "2026-03-15T08:28:50Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "597ee0936f67ef27bca9f11385517836a42a1bd5",
+        "sha256": "385accdd560bac0013a2965fe9d39c45808b7542d2bbb3ef0cceeb60b7da71c3",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/cocopon/tweakpane/blob/50a18c3dba67cb78431d7248dbe4d5a76336885a/LICENSE.txt",
+        "bytes": 1068
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "4.0.5",
+        "published": "2024-11-03T16:37:01Z",
+        "url": "https://github.com/cocopon/tweakpane/releases/tag/4.0.5"
+      }
+    },
+    {
+      "requested": "SanderMertens/flecs",
+      "repo": "SanderMertens/flecs",
+      "url": "https://github.com/SanderMertens/flecs",
+      "description": "A fast entity component system (ECS) for C & C++",
+      "language": "C",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "9f5152c141077f5b2ca5f24ee7a667ce0b5108e8",
+      "headCommitted": "2026-08-25T23:40:40Z",
+      "pushed": "2026-09-06T21:16:52Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "84c701ef1436dee2c8a9344693fe877eee2a2b3c",
+        "sha256": "5f89f3edd5d1e458cd48509818e23b57d85869f7d57d0ebe31bcfd3a73e5dd60",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/SanderMertens/flecs/blob/9f5152c141077f5b2ca5f24ee7a667ce0b5108e8/LICENSE",
+        "bytes": 1131
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v4.1.6",
+        "published": "2026-06-29T02:09:09Z",
+        "url": "https://github.com/SanderMertens/flecs/releases/tag/v4.1.6"
+      }
+    },
+    {
+      "requested": "skypjack/entt",
+      "repo": "skypjack/entt",
+      "url": "https://github.com/skypjack/entt",
+      "description": "Gaming meets modern C++ - a fast and reliable entity component system (ECS) and much more",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "85c6bba014049b5de8fad49d25424df2f1f6a8c1",
+      "headCommitted": "2026-07-22T16:17:29Z",
+      "pushed": "2026-09-02T16:17:46Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "615c47c5b34953d14de2c70c49c519db736894e3",
+        "sha256": "73547f6370ee16ea560665329bb62d4e2d8250f41eaa204b47a6c694ca3286ea",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/skypjack/entt/blob/85c6bba014049b5de8fad49d25424df2f1f6a8c1/LICENSE",
+        "bytes": 1097
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v4.0.0",
+        "published": "2026-07-23T12:22:33Z",
+        "url": "https://github.com/skypjack/entt/releases/tag/v4.0.0"
+      }
+    },
+    {
+      "requested": "NateTheGreatt/bitECS",
+      "repo": "NateTheGreatt/bitECS",
+      "url": "https://github.com/NateTheGreatt/bitECS",
+      "description": " Flexible, minimal, data-oriented ECS library for Typescript",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "1585cdb4ae9a6586aef5e4d9d30d7039e22cd543",
+      "headCommitted": "2025-12-06T21:47:22Z",
+      "pushed": "2026-08-24T15:31:37Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "a612ad9813b006ce81d1ee438dd784da99a54007",
+        "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+        "spdx": "MPL-2.0",
+        "name": "Mozilla Public License 2.0",
+        "url": "https://github.com/NateTheGreatt/bitECS/blob/1585cdb4ae9a6586aef5e4d9d30d7039e22cd543/LICENSE",
+        "bytes": 16725
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "mapeditor/tiled",
+      "repo": "mapeditor/tiled",
+      "url": "https://github.com/mapeditor/tiled",
+      "description": "Flexible level editor",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "5357e7091be7cd790c223053b0445f0e133c7473",
+      "headCommitted": "2026-09-06T14:53:48Z",
+      "pushed": "2026-09-06T16:05:47Z",
+      "license": {
+        "path": "COPYING",
+        "blobSha": "951634a551303a1b3bf7a357580aba3a63177296",
+        "sha256": "e18e839116ec0da1d50bd71a942509b31a07d00bd25529e9f8340c43b83a636f",
+        "spdx": "NOASSERTION",
+        "name": "Other",
+        "url": "https://github.com/mapeditor/tiled/blob/5357e7091be7cd790c223053b0445f0e133c7473/COPYING",
+        "bytes": 941
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.12.2",
+        "published": "2026-05-27T15:17:56Z",
+        "url": "https://github.com/mapeditor/tiled/releases/tag/v1.12.2"
+      }
+    },
+    {
+      "requested": "deepnight/ldtk",
+      "repo": "deepnight/ldtk",
+      "url": "https://github.com/deepnight/ldtk",
+      "description": "Modern, lightweight and efficient 2D level editor",
+      "language": "Haxe",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "6d69bd1d6be92f01ac30778f6a934f0da8448b16",
+      "headCommitted": "2026-07-12T13:55:51Z",
+      "pushed": "2026-07-12T13:55:51Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "1d96a63457c528790b87b804ee101010a11a5517",
+        "sha256": "f409a37a40e823efefddac3140d991141633d4db3cec4f8667bc23b846dcc335",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/deepnight/ldtk/blob/6d69bd1d6be92f01ac30778f6a934f0da8448b16/LICENSE",
+        "bytes": 1093
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.5.3",
+        "published": "2024-01-15T15:18:29Z",
+        "url": "https://github.com/deepnight/ldtk/releases/tag/v1.5.3"
+      }
+    },
+    {
+      "requested": "donmccurdy/glTF-Transform",
+      "repo": "donmccurdy/glTF-Transform",
+      "url": "https://github.com/donmccurdy/glTF-Transform",
+      "description": "glTF 2.0 SDK for JavaScript and TypeScript, on Web and Node.js.",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "01cad7b8e516b334bb2ac3e7e662231ba017352b",
+      "headCommitted": "2026-09-04T02:32:53Z",
+      "pushed": "2026-09-04T02:34:28Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "066192ec0b90d3f593a83fcb0a694c2055269087",
+        "sha256": "2c4f111d00dbf22b10d31a14813c5f5de6a828640f7311f26b9dda89b3fce165",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/donmccurdy/glTF-Transform/blob/01cad7b8e516b334bb2ac3e7e662231ba017352b/LICENSE.md",
+        "bytes": 1078
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "nathanhoad/godot_dialogue_manager",
+      "repo": "nathanhoad/godot_dialogue_manager",
+      "url": "https://github.com/nathanhoad/godot_dialogue_manager",
+      "description": "A powerful nonlinear dialogue system for Godot",
+      "language": "GDScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "a719088aea342572f29b5559fd8726896c9519b2",
+      "headCommitted": "2026-09-04T04:27:51Z",
+      "pushed": "2026-09-04T04:28:25Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "41671396f3920d148a81b93c6866a14982315815",
+        "sha256": "21c98fa971b5dd23754a5974901df83c83aaebc351c4f4db60e5615f0571ed8b",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/nathanhoad/godot_dialogue_manager/blob/a719088aea342572f29b5559fd8726896c9519b2/LICENSE",
+        "bytes": 1111
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v4.1.0",
+        "published": "2026-09-04T04:30:30Z",
+        "url": "https://github.com/nathanhoad/godot_dialogue_manager/releases/tag/v4.1.0"
+      }
+    },
+    {
+      "requested": "inkle/ink",
+      "repo": "inkle/ink",
+      "url": "https://github.com/inkle/ink",
+      "description": "inkle's open source scripting language for writing interactive narrative.",
+      "language": "C#",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "35c63e52f1d36060930dc7ed3cfba38ea224b528",
+      "headCommitted": "2026-05-05T11:19:29Z",
+      "pushed": "2026-05-05T11:24:42Z",
+      "license": {
+        "path": "LICENSE.txt",
+        "blobSha": "25f347be37007f41e1003e4a0862b8ab83615c30",
+        "sha256": "8ade0ddc1c3ede9acaf6febf2742400aa0dff808f35b202962fe073a184e8d4a",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/inkle/ink/blob/35c63e52f1d36060930dc7ed3cfba38ea224b528/LICENSE.txt",
+        "bytes": 1067
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v1.2.1",
+        "published": "2026-05-05T11:24:42Z",
+        "url": "https://github.com/inkle/ink/releases/tag/v1.2.1"
+      }
+    },
+    {
+      "requested": "YarnSpinnerTool/YarnSpinner",
+      "repo": "YarnSpinnerTool/YarnSpinner",
+      "url": "https://github.com/YarnSpinnerTool/YarnSpinner",
+      "description": "The core compiler and engine-agnostic components for Yarn Spinner, the friendly dialogue tool.",
+      "language": "C#",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "ec1a680fae4c0fc8aae73b23c7b87f3e5f894100",
+      "headCommitted": "2026-08-11T02:19:03Z",
+      "pushed": "2026-08-11T02:36:15Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "5efedba7fbf0332cde1ff9a917fac427f2bed213",
+        "sha256": "11ccf106992986cf9ca496c0d9c7038ceba5460678465d29e81f9e41dae491eb",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/YarnSpinnerTool/YarnSpinner/blob/ec1a680fae4c0fc8aae73b23c7b87f3e5f894100/LICENSE.md",
+        "bytes": 1138
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v3.2.1",
+        "published": "2026-05-05T02:37:44Z",
+        "url": "https://github.com/YarnSpinnerTool/YarnSpinner/releases/tag/v3.2.1"
+      }
+    },
+    {
+      "requested": "xyflow/xyflow",
+      "repo": "xyflow/xyflow",
+      "url": "https://github.com/xyflow/xyflow",
+      "description": "React Flow | Svelte Flow - Powerful open source libraries for building node-based UIs with React (https://reactflow.dev) or Svelte (https://svelteflow.dev). Ready out-of-the-box and infinitely customizable.",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "0a1f9575b25679f2880175de8d3eae21aedde921",
+      "headCommitted": "2026-09-01T12:02:55Z",
+      "pushed": "2026-09-05T17:38:39Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "072ff46d7c23dd8e18ccba11aa6563f14e524312",
+        "sha256": "023119ac20fb1c8c9930abe0bcd196989a1960388529a96fc43cebf96f07c9ff",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/xyflow/xyflow/blob/0a1f9575b25679f2880175de8d3eae21aedde921/LICENSE",
+        "bytes": 1073
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "@xyflow/svelte@1.6.6",
+        "published": "2026-09-01T12:03:53Z",
+        "url": "https://github.com/xyflow/xyflow/releases/tag/%40xyflow/svelte%401.6.6"
+      }
+    },
+    {
+      "requested": "rjsf-team/react-jsonschema-form",
+      "repo": "rjsf-team/react-jsonschema-form",
+      "url": "https://github.com/rjsf-team/react-jsonschema-form",
+      "description": "A React component for building Web forms from JSON Schema.",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "1a2bb662b79dc28156a83eccfffb91fc33dac3b2",
+      "headCommitted": "2026-09-04T21:15:20Z",
+      "pushed": "2026-09-04T21:24:31Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "2283204d9d87952113156221feb80c395f358fcd",
+        "sha256": "2590ed517c3e27c426127a85b4559cf8c7a287f1dd3a12892e8a10cb7d49c8ca",
+        "spdx": "Apache-2.0",
+        "name": "Apache License 2.0",
+        "url": "https://github.com/rjsf-team/react-jsonschema-form/blob/1a2bb662b79dc28156a83eccfffb91fc33dac3b2/LICENSE.md",
+        "bytes": 10934
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v6.9.0",
+        "published": "2026-08-30T21:07:37Z",
+        "url": "https://github.com/rjsf-team/react-jsonschema-form/releases/tag/v6.9.0"
+      }
+    },
+    {
+      "requested": "ajv-validator/ajv",
+      "repo": "ajv-validator/ajv",
+      "url": "https://github.com/ajv-validator/ajv",
+      "description": "The fastest JSON schema Validator. Supports JSON Schema draft-04/06/07/2019-09/2020-12 and JSON Type Definition (RFC8927)",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "f177fe323420ccb23e1a79445fd470cbf80aee7c",
+      "headCommitted": "2026-04-24T13:46:21Z",
+      "pushed": "2026-09-06T19:59:32Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "139162ad2c389a18d3d66e159a2821b2e40087fc",
+        "sha256": "a05350a88e318e4f5f2c2a1ff1e2e88daa4dd38e6e78b71cccae422bdc762cc3",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/ajv-validator/ajv/blob/f177fe323420ccb23e1a79445fd470cbf80aee7c/LICENSE",
+        "bytes": 1090
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v8.20.0",
+        "published": "2026-04-24T13:24:27Z",
+        "url": "https://github.com/ajv-validator/ajv/releases/tag/v8.20.0"
+      }
+    },
+    {
+      "requested": "clauderic/dnd-kit",
+      "repo": "clauderic/dnd-kit",
+      "url": "https://github.com/clauderic/dnd-kit",
+      "description": "The modern toolkit for building drag and drop interfaces",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "4fa5c574107eaa2d40dc2c444d6138f93003aca7",
+      "headCommitted": "2026-09-05T20:08:23Z",
+      "pushed": "2026-09-06T12:37:10Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "4a86c7f6fb9adce21fbfc5c7227fee008697daeb",
+        "sha256": "6fdf84a73d062925aa339ef281196dfee3bd73aa825739c7fdc349b360f46993",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/clauderic/dnd-kit/blob/4fa5c574107eaa2d40dc2c444d6138f93003aca7/LICENSE",
+        "bytes": 1074
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "@dnd-kit/collision@0.5.0",
+        "published": "2026-06-11T13:05:55Z",
+        "url": "https://github.com/clauderic/dnd-kit/releases/tag/%40dnd-kit/collision%400.5.0"
+      }
+    },
+    {
+      "requested": "peter-kish/gloot",
+      "repo": "peter-kish/gloot",
+      "url": "https://github.com/peter-kish/gloot",
+      "description": "A universal inventory system for the Godot game engine.",
+      "language": "GDScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "6b09b87ac07a8536779ef1ab0fafc7e99830f948",
+      "headCommitted": "2026-07-14T19:04:34Z",
+      "pushed": "2026-07-14T19:04:39Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "e9b4efd556b2146efe104d467c130ef5abe1a9d8",
+        "sha256": "1488679eaef8077a9c1895137f5db6a32d96c6682bb820e696980364e99b6312",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/peter-kish/gloot/blob/6b09b87ac07a8536779ef1ab0fafc7e99830f948/LICENSE",
+        "bytes": 1067
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v3.0.2",
+        "published": "2026-07-05T07:06:08Z",
+        "url": "https://github.com/peter-kish/gloot/releases/tag/v3.0.2"
+      }
+    },
+    {
+      "requested": "expressobits/inventory-system",
+      "repo": "expressobits/inventory-system",
+      "url": "https://github.com/expressobits/inventory-system",
+      "description": "Modular inventory system for godot 4 with nodes, compatible with multiplayer, separate logic from the UI, Using items as separate resources.",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "f716e2c1d762988ca37bdc92a2fdc4df29a7835c",
+      "headCommitted": "2026-02-20T01:49:01Z",
+      "pushed": "2026-02-20T01:54:34Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "0cefe812e38d091d6de098c91d9ff4e56a6590bd",
+        "sha256": "6d9b7e58d57b3e77061c9f72398be68e453f83ac791ce8a8e9c00b61d9ff0d45",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/expressobits/inventory-system/blob/f716e2c1d762988ca37bdc92a2fdc4df29a7835c/LICENSE",
+        "bytes": 1070
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "addon-2.13.0",
+        "published": "2026-03-21T13:48:36Z",
+        "url": "https://github.com/expressobits/inventory-system/releases/tag/addon-2.13.0"
+      }
+    },
+    {
+      "requested": "Alchemist0823/three.quarks",
+      "repo": "Alchemist0823/three.quarks",
+      "url": "https://github.com/Alchemist0823/three.quarks",
+      "description": "Three.quarks is a general purpose particle system /  VFX engine for three.js",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "de7c207f791c8b2260c43334a282976221688b1b",
+      "headCommitted": "2026-05-21T01:48:03Z",
+      "pushed": "2026-05-21T01:48:08Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "2e287c8ff9c81f0298551457a2ca6155159c9eae",
+        "sha256": "4846c46a25cd0baab940d02389c40475cee79bfd4e06195c844a00c71663fbd1",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/Alchemist0823/three.quarks/blob/de7c207f791c8b2260c43334a282976221688b1b/LICENSE",
+        "bytes": 1068
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "pmndrs/postprocessing",
+      "repo": "pmndrs/postprocessing",
+      "url": "https://github.com/pmndrs/postprocessing",
+      "description": "A post processing library for three.js.",
+      "language": "JavaScript",
+      "archived": false,
+      "defaultBranch": "main",
+      "head": "703a17523c8d52045dadfdb228aaab5fb1888edc",
+      "headCommitted": "2026-07-27T22:22:46Z",
+      "pushed": "2026-09-06T22:13:24Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "0dbaabc8f47bb16b8fd827d2fb9cc953bd26c54d",
+        "sha256": "b7650918449bd5fb011ce30ce0e5bcda27aa9639db1fb3aef8c67c32945237f2",
+        "spdx": "Zlib",
+        "name": "zlib License",
+        "url": "https://github.com/pmndrs/postprocessing/blob/703a17523c8d52045dadfdb228aaab5fb1888edc/LICENSE.md",
+        "bytes": 858
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v6.39.4",
+        "published": "2026-07-27T22:26:39Z",
+        "url": "https://github.com/pmndrs/postprocessing/releases/tag/v6.39.4"
+      }
+    },
+    {
+      "requested": "ashima/webgl-noise",
+      "repo": "ashima/webgl-noise",
+      "url": "https://github.com/ashima/webgl-noise",
+      "description": "Procedural Noise Shader Routines compatible with WebGL",
+      "language": "C++",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "6abed1e77ed1e18b181627c35f688eb30c9fe75e",
+      "headCommitted": "2024-11-15T20:49:15Z",
+      "pushed": "2024-11-15T20:49:15Z",
+      "license": {
+        "path": "LICENSE",
+        "blobSha": "fe03f28c76b4759250822e17e1554eb71635b966",
+        "sha256": "bdafce1bb01517c9ae6c4f3620c01340790b5e9d039ae9e356347d1174250916",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/ashima/webgl-noise/blob/6abed1e77ed1e18b181627c35f688eb30c9fe75e/LICENSE",
+        "bytes": 1145
+      },
+      "licenseError": null,
+      "release": null
+    },
+    {
+      "requested": "goldfire/howler.js",
+      "repo": "goldfire/howler.js",
+      "url": "https://github.com/goldfire/howler.js",
+      "description": "Javascript audio library for the modern web.",
+      "language": "JavaScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "1d3053576a860e9854645493ad6c4a72c6cc6e45",
+      "headCommitted": "2025-11-23T23:49:01Z",
+      "pushed": "2025-11-23T23:49:01Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "29686f511f6fbe01c49365d7cea7469180fe89b3",
+        "sha256": "0ad5aef7beeb552832fe01db1c46933f948dfe5da35017bd0efa0006ffd2ced9",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/goldfire/howler.js/blob/1d3053576a860e9854645493ad6c4a72c6cc6e45/LICENSE.md",
+        "bytes": 1088
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "v2.2.4",
+        "published": "2023-09-19T15:00:30Z",
+        "url": "https://github.com/goldfire/howler.js/releases/tag/v2.2.4"
+      }
+    },
+    {
+      "requested": "Tonejs/Tone.js",
+      "repo": "Tonejs/Tone.js",
+      "url": "https://github.com/Tonejs/Tone.js",
+      "description": "A Web Audio framework for making interactive music in the browser.",
+      "language": "TypeScript",
+      "archived": false,
+      "defaultBranch": "dev",
+      "head": "d6e555b8cb9289de0b7a4ba4f490cb81fa43d59a",
+      "headCommitted": "2026-08-07T12:36:36Z",
+      "pushed": "2026-09-03T00:12:17Z",
+      "license": {
+        "path": "LICENSE.md",
+        "blobSha": "9368a0276030d8dc22200bdc3071ffa77ae0c393",
+        "sha256": "c2f9e2f9fd21639e8f8976e56b7df01d6efcc3b003dfd43ca59d4b10616efce7",
+        "spdx": "MIT",
+        "name": "MIT License",
+        "url": "https://github.com/Tonejs/Tone.js/blob/d6e555b8cb9289de0b7a4ba4f490cb81fa43d59a/LICENSE.md",
+        "bytes": 1072
+      },
+      "licenseError": null,
+      "release": {
+        "tag": "15.1.22",
+        "published": "2026-07-12T15:06:38Z",
+        "url": "https://github.com/Tonejs/Tone.js/releases/tag/15.1.22"
+      }
+    },
+    {
+      "requested": "chr15m/jsfxr",
+      "repo": "chr15m/jsfxr",
+      "url": "https://github.com/chr15m/jsfxr",
+      "description": "JavaScript sound effects generator.",
+      "language": "JavaScript",
+      "archived": false,
+      "defaultBranch": "master",
+      "head": "b7b6aa27d62f8f356db267276bf54b451555c49d",
+      "headCommitted": "2026-05-05T09:58:04Z",
+      "pushed": "2026-05-05T09:58:09Z",
+      "license": {
+        "path": "UNLICENSE",
+        "blobSha": "6d9eabbb7579f19b207be0e7ed52548ffdb32c90",
+        "sha256": "7b30c10d168b77d43ddaa3269e7bef3e1a9dd68a54a5f23f1630a653d7e2e2f4",
+        "spdx": "Unlicense",
+        "name": "The Unlicense",
+        "url": "https://github.com/chr15m/jsfxr/blob/b7b6aa27d62f8f356db267276bf54b451555c49d/UNLICENSE",
+        "bytes": 1211
+      },
+      "licenseError": null,
+      "release": null
+    }
+  ],
+  "failures": []
+}
