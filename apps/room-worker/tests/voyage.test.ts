@@ -103,4 +103,11 @@ describe('paid voyage safety and actual recipe consumption',()=>{
     expect(generationFailure(Error('Bearer test-secret'))).toBe('invalid_response')
     expect(generationFailure(new SyntaxError('private contents'))).toBe('invalid_json')
   })
+  it('accepts bounded poetic punctuation and inscriptions, but rejects markup, links and executable fields',()=>{
+    const pack=structuredClone(DEFAULT_VOYAGE);pack.title='The Clockmaker’s Menagerie (Dusk)'
+    pack.monsters[0]!.caption='Shell inscriptions glow; brass claws chime — a tiny cathedral on legs.'
+    expect(validateVoyage(pack)).not.toBeNull()
+    for(const caption of ['<script>alert(1)</script>','https://example.test','a'.repeat(121)])expect(validateVoyage({...pack,monsters:pack.monsters.map(m=>({...m,caption}))})).toBeNull()
+    expect(validateVoyage({...pack,monsters:pack.monsters.map(m=>({...m,execute:'evil()'}))})).toBeNull()
+  })
 })
