@@ -3,11 +3,11 @@ import { createCoopGame, createVersusGame } from '@pongapp/game-core'
 import { applyCrewControl, controlAdvances, neutralControl, stepLocal, type Controls } from '../src/online/LocalSimulation'
 
 describe('local prediction and idempotent actions',()=>{
-  it('moves the boat on the very next local tick without a server response',()=>{
+  it('starts the crew running on the next local tick, without prematurely moving the ship',()=>{
     const state=createCoopGame([{id:'a',name:'A'},{id:'b',name:'B'}],42);state.phase='playing'
     const controls={a:{...neutralControl(),rightTaps:1},b:neutralControl()}
     stepLocal(state,controls,{})
-    expect(state.boat.x).toBeGreaterThan(.5)
+    expect(state.boat.x).toBe(.5);expect(state.players.a!.deck.moving).toBe(true);expect(state.players.a!.station).toBe('right')
   })
   it('a duplicated tap packet switches only once, and two taps between frames are preserved',()=>{
     const state=createVersusGame([{id:'a',name:'A'},{id:'b',name:'B'}],42);state.phase='playing'
@@ -34,14 +34,14 @@ describe('local prediction and idempotent actions',()=>{
     applyCrewControl(controls.a,{targetId:42});stepLocal(state,controls,consumed);expect(state.crew.targetId).toBe(42)
     applyCrewControl(controls.a,{targetId:null});stepLocal(state,controls,consumed);expect(state.crew.targetId).toBeNull()
   })
-  it('preserves held levels through repeated packets and rejects a stale held packet after release',()=>{
+  it('preserves a station through repeated packets and rejects a stale destination',()=>{
     const s=createCoopGame([{id:'a',name:'A'},{id:'b',name:'B'}]);s.phase='playing';s.hearts=2;s.invulnerableTicks=10000
     const controls={a:neutralControl(),b:neutralControl()},consumed:Controls={}
-    applyCrewControl(controls.a,{steer:1,action:true,recoverHeld:true,tap:'shoot'})
+    applyCrewControl(controls.a,{station:'shoot'})
     const held=structuredClone(controls.a)
-    for(let t=0;t<30;t++)stepLocal(s,structuredClone(controls),consumed)
-    expect(s.crew.shotsFired).toBeGreaterThan(2);expect(s.crew.actions.a?.shoot).toBe(1);expect(s.crew.repair).toBeGreaterThan(0)
-    applyCrewControl(controls.a,{steer:0,action:false,recoverHeld:false})
+    for(let t=0;t<100;t++)stepLocal(s,structuredClone(controls),consumed)
+    expect(s.crew.shotsFired).toBe(2);expect(s.crew.actions.a?.shoot).toBe(1);expect(s.crew.repair).toBe(0)
+    applyCrewControl(controls.a,{station:'recover'})
     expect(controlAdvances(controls.a,held)).toBe(false)
     const fired=s.crew.shotsFired,repair=s.crew.repair
     for(let t=0;t<30;t++)stepLocal(s,controls,consumed)

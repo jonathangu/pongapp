@@ -17,6 +17,10 @@
       {
         "name": "ROOMS",
         "class_name": "GameRoom"
+      },
+      {
+        "name": "VOYAGES",
+        "class_name": "VoyageDirector"
       }
     ]
   },
@@ -24,6 +28,15 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["GameRoom"]
+    },
+    {
+      "tag": "v2-voyage-director",
+      "new_sqlite_classes": ["VoyageDirector"]
     }
-  ]
+  ],
+  "vars": {
+    "ENABLE_PAID": "false",
+    "MONTHLY_BUDGET_USD": "100",
+    "OPENROUTER_LIMIT_CONFIRMED": "unverified"
+  }
 }

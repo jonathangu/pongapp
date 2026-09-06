@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { EXPEDITION_WORLDS, RIVER_WIDTH, ORBIT_LAP, bossWarning, combatDistance, objectAltitude, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
+import { RIVER_WIDTH, ORBIT_LAP, arkHeading, bossWarning, combatDistance, objectAltitude, orbitDelta, expeditionWorld, type CoopGameState } from '@pongapp/game-core'
 import { CYLINDER_RADIUS, MAX_CAMERA_ZOOM, cylinderPoint, orbitVisible, rollingCamera, skyDropHeight, worldRoll } from './RollingWorld'
 import { livingSky } from './LivingSky'
+import { drawArk, drawBeast } from './ArkAnimation'
 
 const ART = import.meta.env.BASE_URL + 'art/'
 const TAU = Math.PI * 2
@@ -92,6 +93,7 @@ export class TinyWorldScene {
   private materials: THREE.Material[] = []
   private textures: THREE.Texture[] = []
   private transform = new THREE.Object3D()
+  private assembly = new THREE.Object3D()
   private tint = new THREE.Color()
   private point = new THREE.Vector3()
   private ground: THREE.Mesh
@@ -200,6 +202,16 @@ export class TinyWorldScene {
     this.batches.get(name)?.add(this.transform.matrix,this.tint.setHex(color))
   }
   private shadow(x: number,z: number,size: number,stretch=1) {this.add('_shadow',x,-.235,z,size,1,size*stretch)}
+  private anchor(x:number,y:number,z:number,yaw:number,scale=1){
+    const p=cylinderPoint(x,y,z,this.roll)
+    this.assembly.position.set(p.x,p.y,p.z);this.assembly.scale.setScalar(scale);this.assembly.rotation.set(0,yaw,0)
+    this.rollRotation.setFromAxisAngle(this.rollAxis,-p.angle);this.assembly.quaternion.premultiply(this.rollRotation);this.assembly.updateMatrix()
+  }
+  private part=(name:string,x:number,y:number,z:number,sx=1,sy=sx,sz=sx,yaw=0,color=0xffffff,rx=0,rz=0)=>{
+    this.transform.position.set(x,y,z);this.transform.scale.set(sx,sy,sz);this.transform.rotation.set(rx,yaw,rz);this.transform.updateMatrix()
+    this.transform.matrix.premultiply(this.assembly.matrix)
+    this.batches.get(name)?.add(this.transform.matrix,this.tint.setHex(color))
+  }
   private line(x1: number,y1: number,z1: number,x2: number,y2: number,z2: number,color: number) {
     if(this.beamCount>=96)return
     const a=cylinderPoint(x1,y1,z1,this.roll),b=cylinderPoint(x2,y2,z2,this.roll)
@@ -243,7 +255,6 @@ export class TinyWorldScene {
     this.canvas.dataset.worldRoll=this.roll.toFixed(3);this.canvas.dataset.worldShape='rolling-cylinder'
     const scroll=state.distance*.67
     this.floorTexture.offset.y=-scroll*.16
-    const theme=EXPEDITION_WORLDS[world]!
     const sky=livingSky(world,state.distance,state.tick)
     for(const o of sky){
       const x=(o.x-.5)*RIVER_WIDTH,z=(o.y-.5)*this.depth
@@ -291,13 +302,13 @@ export class TinyWorldScene {
       const drop=skyDropHeight(object)
       if(drop>.1){this.add('_ring',x,.02,z,.55,.55,.55,t,object.type==='rock'||object.type==='log'?0xffb887:0xa8f2e5);this.line(x,drop+.35,z,x,drop+1.8,z,object.type==='rock'||object.type==='log'?0xffcd93:0xd6fff0)}
       if(object.type==='predator'){
-        const boss=object.enemy==='boss',scale=boss?object.bossKind==='sentinel'?1.9:2.5:.85
+        const recipe=state.voyage.monsters[object.recipe??-1]
+        const boss=object.enemy==='boss',scale=(boss?object.bossKind==='sentinel'?2:1.6:1.3)*(recipe?.scale??1)
         const tx=x+orbitDelta(object.targetX??state.boat.x,object.x)*RIVER_WIDTH,tz=((object.targetY??.76)-.5)*this.depth
         const angle=Math.atan2(-(tx-x),-(tz-z))
-        const warning=(object.age??0)<55||boss&&((object.age??0)%300<80||(object.age??0)%300>180)
+        const warning=object.attackPhase==='telegraph'
         this.shadow(x,z,scale*2.8+drop*.15,1.5)
-        this.add(world?'predator'+world:'predator',x,drop+.03+bob*.4,z,scale,scale,scale,angle,object.slowTicks?0x9ae5ff:object.bossKind==='sentinel'?0xffd6a0:0xffffff,0,Math.sin(t*8+object.id)*.035)
-        if(boss||drop>.8){for(const side of [-1,1])this.add('crystal',x+side*scale*.75,drop+.55*scale,z,scale*.22,scale*.8,scale*.38,angle,object.bossKind==='sentinel'?0xffce86:0xcad9ff,0,side*(.8+Math.sin(t*5)*.12))}
+        this.anchor(x,drop+(object.family==='jelly'?1.2:.08)+bob,z,angle,scale);drawBeast(this.part,object,t,recipe)
         if(boss)this.add('_ring',x,drop+.6,z,scale*1.4,scale*.8,scale*1.4,t*.3,object.bossKind==='sentinel'?0xffd896:0xc3abff,.45)
         if(warning){
           for(let i=0;i<8;i++){const a=i/8,b=a+.05;this.line(x+(tx-x)*a,drop+(state.boat.altitude-drop)*a+.14,z+(tz-z)*a,x+(tx-x)*b,drop+(state.boat.altitude-drop)*b+.14,z+(tz-z)*b,0xff775c)}
@@ -322,18 +333,16 @@ export class TinyWorldScene {
       }
     }
     const bx=(state.boat.x-.5)*RIVER_WIDTH,bz=.26*this.depth
-    const heading=-Math.atan2(state.boat.heading*RIVER_WIDTH,Math.max(.002,state.boat.speed)*this.depth)
+    const heading=arkHeading(state.boat.heading,state.boat.speed)
     const lift=state.boat.altitude+(world===3?.28:world===4?.25:.02)
     const bob=(world===1||world===2?Math.sin(t*22)*.025:Math.sin(t*3)*.055)
-    this.shadow(bx,bz,2.4+state.boat.altitude*.2,1.3)
-    this.add(theme.vehicle,bx,lift+bob,bz,1.08,1.08,1.08,heading,0xffffff,0,-heading*.07)
+    this.shadow(bx,bz,6+state.boat.altitude*.2,1.1)
     const target=state.objects.filter(o=>o.type==='predator'&&Math.abs(orbitDelta(o.x,state.boat.x))<1.3).sort((a,b)=>(a.id===state.crew.targetId?-10:combatDistance(a.x,a.y,objectAltitude(a),state.boat.x,.76,state.boat.altitude))-(b.id===state.crew.targetId?-10:combatDistance(b.x,b.y,objectAltitude(b),state.boat.x,.76,state.boat.altitude)))[0]
-    for(const side of [-1,1]){
-      const x=bx+Math.cos(heading)*side*.7,z=bz-Math.sin(heading)*side*.7-.05
-      const aim=target?Math.atan2(-orbitDelta(target.x,x/RIVER_WIDTH+.5)*RIVER_WIDTH,-((target.y-.5)*this.depth-z)):heading
-      const pitch=target?Math.atan2(objectAltitude(target)+.45-(lift+.76),Math.hypot(orbitDelta(target.x,x/RIVER_WIDTH+.5)*RIVER_WIDTH,(target.y-.5)*this.depth-z)):0
-      this.add('turret',x,.76+lift+bob,z,.85,.85,.85,aim,0xffffff,pitch)
-    }
+    const aim=target?Math.atan2(-orbitDelta(target.x,state.boat.x)*RIVER_WIDTH,-((target.y-.5)*this.depth-bz)):heading
+    const pitch=target?Math.atan2(objectAltitude(target)+.45-(lift+1.06),Math.hypot(orbitDelta(target.x,state.boat.x)*RIVER_WIDTH,(target.y-.5)*this.depth-bz)):0
+    this.anchor(bx,lift+bob,bz,heading);drawArk(this.part,state,t,aim-heading,pitch)
+    this.canvas.dataset.crew=JSON.stringify(Object.values(state.players).map(p=>({id:p.id,station:p.station,...p.deck})))
+    this.canvas.dataset.ship='four-room-ark'
     if(state.crew.shieldTicks||state.crew.bubble){
       this.add('_ring',bx,lift+.45,bz,1.5,1.5,1.5,t,0x9affeb)
       this.add('_ring',bx,lift+.6,bz,1.45,1.45,1.45,-t,0xa7dcff,.8)

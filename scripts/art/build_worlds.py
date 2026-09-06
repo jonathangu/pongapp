@@ -95,7 +95,8 @@ def asset(name):
     obj.data.materials.clear();obj.data.materials.append(paint)
     # All primitives have UVs; sculpted surfaces receive a modest planar projection.
     if not obj.data.uv_layers: obj.data.uv_layers.new(name='UVMap')
-    uv=obj.data.uv_layers.active.data
+    obj.data.uv_layers.active_index=0
+    uv=obj.data.uv_layers[0].data
     for poly in obj.data.polygons:
         axis=max(range(3),key=lambda i:abs(poly.normal[i]))
         axes=[i for i in range(3) if i!=axis]
@@ -303,6 +304,9 @@ for j in range(5):
     orb((math.cos(a)*.15,math.sin(a)*.15,.25),(.13,.13,.055),'#f5a39c',8,4)
 orb((0,0,.29),(.095,.095,.065),'#ffe7a0',8,4)
 rod((0,0,0),(0,0,.24),.03,'#649866');asset('flower')
+
+# The larger four-room expedition uses independently articulated parts.
+exec(compile((ROOT/'scripts/art/build_ark.py').read_text(), 'build_ark.py', 'exec'))
 
 # Export one compact library. Runtime chooses names, not the overlapping layout.
 bpy.ops.object.select_all(action='DESELECT')

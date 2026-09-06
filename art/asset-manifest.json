@@ -141,7 +141,97 @@
       "name": "flower",
       "triangles": 324,
       "vertices": 176
+    },
+    {
+      "name": "ark_hull",
+      "triangles": 5372,
+      "vertices": 2798
+    },
+    {
+      "name": "ark_controls",
+      "triangles": 1688,
+      "vertices": 882
+    },
+    {
+      "name": "ark_cannon",
+      "triangles": 468,
+      "vertices": 240
+    },
+    {
+      "name": "ark_engine",
+      "triangles": 600,
+      "vertices": 310
+    },
+    {
+      "name": "crew_body",
+      "triangles": 384,
+      "vertices": 198
+    },
+    {
+      "name": "crew_head",
+      "triangles": 728,
+      "vertices": 372
+    },
+    {
+      "name": "crew_arm",
+      "triangles": 196,
+      "vertices": 102
+    },
+    {
+      "name": "crew_boot",
+      "triangles": 136,
+      "vertices": 72
+    },
+    {
+      "name": "beast_crab",
+      "triangles": 1028,
+      "vertices": 532
+    },
+    {
+      "name": "crab_leg",
+      "triangles": 72,
+      "vertices": 40
+    },
+    {
+      "name": "crab_claw",
+      "triangles": 252,
+      "vertices": 132
+    },
+    {
+      "name": "beast_manta",
+      "triangles": 1040,
+      "vertices": 538
+    },
+    {
+      "name": "manta_wing",
+      "triangles": 137,
+      "vertices": 82
+    },
+    {
+      "name": "beast_jelly",
+      "triangles": 894,
+      "vertices": 465
+    },
+    {
+      "name": "jelly_tentacle",
+      "triangles": 264,
+      "vertices": 142
+    },
+    {
+      "name": "beast_wyrm",
+      "triangles": 740,
+      "vertices": 382
+    },
+    {
+      "name": "wyrm_segment",
+      "triangles": 416,
+      "vertices": 212
+    },
+    {
+      "name": "wyrm_fin",
+      "triangles": 22,
+      "vertices": 16
     }
   ],
-  "bytes": 2474280
+  "bytes": 3483872
 }

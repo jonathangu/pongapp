@@ -45,7 +45,7 @@ export function validControl(value: unknown): value is Control {
   const c = value as Control
   return Number.isFinite(c.paddle) && c.paddle >= 0 && c.paddle <= 1 &&
     Number.isFinite(c.steer) && c.steer >= -1 && c.steer <= 1 && typeof c.action === 'boolean' && typeof c.recoverHeld === 'boolean' &&
-    (c.station === null || ['pilot','gunner','engineer'].includes(c.station)) &&
+    (c.station === null || ['left','right','shoot','recover'].includes(c.station)) &&
     (c.upgrade === null || ['chain','frost','twin','bubble','magnet'].includes(c.upgrade)) &&
     (c.targetId === null || Number.isSafeInteger(c.targetId) && c.targetId >= 0) &&
     [c.seq, ...COUNTERS.map(key => c[key])].every((n) => Number.isSafeInteger(n) && n >= 0 && n < 10_000_000)

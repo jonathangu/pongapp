@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { DEFAULT_VOYAGE, type VoyagePack } from '@pongapp/game-core'
 import type { CreateRoomRequest } from '@pongapp/protocol'
 import { SoloRiver } from './game/SoloRiver'
 import { OnlineRoom } from './online/OnlineRoom'
@@ -6,6 +7,7 @@ import { OnlineVersusRoom } from './online/OnlineVersusRoom'
 import { normalizeRoomCode, pongHomeUrlFor } from './online/invite'
 import { loadProfile, saveProfile, type GuestProfile } from './store'
 import { ExpeditionPreview } from './game/ExpeditionPreview'
+import { VoyageWorkshop } from './game/VoyageWorkshop'
 
 type Screen =
   | { type: 'home' }
@@ -26,14 +28,15 @@ export default function App() {
   const [joinCode, setJoinCode] = useState('')
   const [joinOpen, setJoinOpen] = useState(false)
   const [howOpen, setHowOpen] = useState(false)
+  const [voyage,setVoyage]=useState<VoyagePack>(DEFAULT_VOYAGE)
   const identity = useMemo(() => ({ guestId: profile.id, displayName: profile.name }), [profile.id, profile.name])
   const home = () => { window.history.replaceState(null, '', pongHomeUrlFor(window.location.origin, import.meta.env.BASE_URL)); setScreen({ type: 'home' }) }
-  const launchCoop = () => setScreen({ type: 'coop', request: { hostName: profile.name, roomName: `${profile.name}'s Boat`, mode: 'coop' } })
+  const launchCoop = () => setScreen({ type: 'coop', request: { hostName: profile.name, roomName: `${profile.name}'s Boat`, mode: 'coop',...(voyage.source==='generated'?{voyageKey:voyage.key}:{}) } })
   const launchVersus = () => setScreen({ type: 'versus', request: { hostName: profile.name, roomName: `${profile.name}'s River Race`, mode: 'versus' } })
   const join = (mode: 'coop' | 'versus') => { const code = normalizeRoomCode(joinCode); if (code) setScreen({ type: mode, roomCode: code }) }
   const rename = (name: string) => { const next = { ...profile, name: name || 'Rower One' }; setProfile(next); saveProfile(next) }
 
-  if (screen.type === 'solo') return <SoloRiver playerName={profile.name} onExit={home}/>
+  if (screen.type === 'solo') return <SoloRiver playerName={profile.name} onExit={home} voyage={voyage}/>
   if (screen.type === 'coop') return <OnlineRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} identity={identity} onExit={home} />
   if (screen.type === 'versus') return <OnlineVersusRoom serverUrl={ROOM_SERVER} roomCode={screen.roomCode} createRequest={screen.request} identity={identity} onExit={home} />
 
@@ -44,9 +47,9 @@ export default function App() {
         <div className="oars-hero-copy">
           <p className="oars-kicker">Two people. A whole little universe.</p>
           <h1>Go somewhere<br/><em>extraordinary.</em></h1>
-          <p className="oars-tagline">Tap, dodge, shoot, recover. Race monster trucks into sunsets, sail through rainbows, and take on the stars—together.</p>
+          <p className="oars-tagline">Two tiny crew. One extraordinary ship. Run between four rooms, outwit magnificent monsters, and sail through five living worlds—together.</p>
           <div className="oars-mode-grid">
-            <button className="oars-launch" onClick={launchCoop}><span>♥</span><strong>Co-op Adventure</strong><small>Four tap buttons · big explosions · five worlds</small><em>BEST FOR COUPLES</em></button>
+            <button className="oars-launch" onClick={launchCoop}><span>♥</span><strong>Co-op Adventure</strong><small>Four rooms · two crew · one marvelous ship</small><em>BEST FOR COUPLES</em></button>
             <button className="oars-launch oars-launch--versus" onClick={launchVersus}><span>⚡</span><strong>Rapid Rivals</strong><small>Two boats · tap lanes · race a friend</small><em>NEW</em></button>
             <button className="oars-launch oars-launch--solo" onClick={() => setScreen({ type: 'solo' })}><span>✦</span><strong>Solo Adventure</strong><small>Scout AI joins your crew</small><em>PLAY NOW</em></button>
           </div>
@@ -56,10 +59,11 @@ export default function App() {
         </div>
         <ExpeditionPreview/>
       </section>
-      <section className="oars-feature-band"><div><span>⚡</span><p><strong>Two people. Four buttons.</strong><small>Tap left, right, shoot or recover. More taps, more action.</small></p></div><div><span>◆</span><p><strong>Rescue & explore</strong><small>Save little friends, discover relics, thread golden gates.</small></p></div><div><span>▲</span><p><strong>Outsmart predators</strong><small>More enemies. Wider rivers. Big slow shells with a bigger splash.</small></p></div></section>
+      <section className="oars-feature-band"><div><span>⚡</span><p><strong>Two people. Four rooms.</strong><small>Choose your station. Run across the deck. Make every move count.</small></p></div><div><span>◆</span><p><strong>Rescue & explore</strong><small>Save little friends, discover relics, thread golden gates.</small></p></div><div><span>▲</span><p><strong>Magnificent monsters</strong><small>Fewer, larger hunters. Watch their tells. Plan your escape.</small></p></div></section>
+      <VoyageWorkshop serverUrl={ROOM_SERVER} pack={voyage} onPack={setVoyage}/>
       <section className="oars-promise"><article><b>01 · INVITE</b><h2>The link is the lobby</h2><p>Your friend taps once and lands in the open boat or oar. No signup, install, ready button, or code ritual.</p></article><article><b>02 · CO-OP</b><h2>Be a little dangerous</h2><p>Both players can steer, fire and repair. New cannon powers equip automatically. Rescue three friends and beat the guardian.</p></article><article><b>03 · VERSUS</b><h2>Race, don’t wait</h2><p>Every tap switches lanes and gives a speed kick. Dodge rocks, hit ramps, and grab the finish first.</p></article></section>
     </main>
     <footer className="oars-footer"><span>Two phones. Same Wi-Fi or hotspot. One adventure.</span><span>Local play · direct peer connection when available</span></footer>
-    {howOpen && <div className="oars-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setHowOpen(false) }}><section className="oars-modal" role="dialog" aria-modal="true"><button className="oars-modal__close" onClick={() => setHowOpen(false)}>Close</button><p className="oars-kicker">Pick your world</p><h2>Hold to flow. Tap for power.</h2><div className="oars-how"><div><span>♥</span><p><strong>Co-op Adventure</strong><small>Hold Left or Right to orbit the whole world; tap for a stronger dash. Hold Shoot for cannon fire; tap for a heavier blast. Hold Recover or tap five times to restore a shared heart. Recovery is free, with a visible progress bar. Both players have all four buttons. Rescue 3 friends and defeat the guardian.</small></p></div><div><span>⚡</span><p><strong>Rapid Rivals</strong><small>Each person has a boat. Tap to switch lanes and boost. Dodge rocks, hit ramps, and race to 620m.</small></p></div><div><span>✦</span><p><strong>Solo Adventure</strong><small>You control the boat. Scout helps with occasional cannon shots and emergency repairs, but never takes over your steering.</small></p></div></div><p>Every multiplayer mode starts from one complete link and automatically begins when the second person arrives.</p><button className="oars-primary" onClick={() => { setHowOpen(false); launchCoop() }}>Start co-op</button></section></div>}
+    {howOpen && <div className="oars-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setHowOpen(false) }}><section className="oars-modal" role="dialog" aria-modal="true"><button className="oars-modal__close" onClick={() => setHowOpen(false)}>Close</button><p className="oars-kicker">Pick your world</p><h2>Your ship is your controller.</h2><div className="oars-how"><div><span>♥</span><p><strong>Co-op Adventure</strong><small>Choose Left, Right, Shoot or Recover. Your crewmate runs to that room and operates it until you choose another. Two people can staff two rooms. Plan ahead: large monsters pursue you and telegraph dangerous attacks. Rescue 3 friends and defeat the guardian.</small></p></div><div><span>⚡</span><p><strong>Rapid Rivals</strong><small>Each person has a boat. Tap to switch lanes and boost. Dodge rocks, hit ramps, and race to 620m.</small></p></div><div><span>✦</span><p><strong>Solo Adventure</strong><small>Scout runs to the cannon or repair room, following the same travel rules. You choose your own job and handle the helms.</small></p></div></div><p>Every multiplayer mode starts from one complete link and automatically begins when the second person arrives.</p><button className="oars-primary" onClick={() => { setHowOpen(false); launchCoop() }}>Start co-op</button></section></div>}
   </div>
 }
