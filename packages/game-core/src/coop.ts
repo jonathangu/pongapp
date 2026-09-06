@@ -70,7 +70,7 @@ export interface RiverObject {
 export interface CrewState {
   heat: number; overheated: boolean; shotCooldown: number
   shieldTicks: number; shieldCooldown: number; boostCooldown: number
-  scrap: number; repair: number; kills: number
+  scrap: number; repair: number; repairShockTicks:number; kills: number
   swap: { from: string; to: string; expires: number } | null
   upgrades: CrewUpgrade[]; choice: number; choiceTicks: number; bubble: number
   bossSpawned: boolean; bossDefeated: boolean; victory: boolean
@@ -163,7 +163,7 @@ export function createCoopGame(humans: Array<{ id: string; name: string }>, seed
     boat: { x: 0.5, heading: 0, speed: 0, wake: 0, altitude:0, flight:null }, paddles: { left: 0, right: 0 }, objects: [],
     score: 0, hearts: 3, streak: 0, bestStreak: 0, distance: 0, harmony: 0, rushTicks: 0,
     lanternTicks: 0, nearMisses: 0, rescued: 0, relics: 0, gates: 0, flareCooldown: 0, flareTicks: 0, invulnerableTicks: 0, events: [],
-    crew: { heat: 0, overheated: false, shotCooldown: 0, shieldTicks: 0, shieldCooldown: 0, boostCooldown: 0, scrap: 3, repair: 0, kills: 0, swap: null, upgrades: [], choice: 0, choiceTicks: 0, bubble: 0, bossSpawned: false, bossDefeated: false, victory: false, encounterIndex:0, bossesDefeated:0, altitudeEventIndex:0, finishedTick: null, targetId: null, shots: [], explosions: [], pendingShots: [], shotsFired: 0, actions: {} },
+    crew: { heat: 0, overheated: false, shotCooldown: 0, shieldTicks: 0, shieldCooldown: 0, boostCooldown: 0, scrap: 3, repair: 0, repairShockTicks:0, kills: 0, swap: null, upgrades: [], choice: 0, choiceTicks: 0, bubble: 0, bossSpawned: false, bossDefeated: false, victory: false, encounterIndex:0, bossesDefeated:0, altitudeEventIndex:0, finishedTick: null, targetId: null, shots: [], explosions: [], pendingShots: [], shotsFired: 0, actions: {} },
   }
   ;[0.38, 0.5, 0.62].forEach((x, index) => spawnObject(state, 0.08 + index * 0.13, 'firefly', x))
   spawnObject(state, 0.53, 'rock', 0.32)

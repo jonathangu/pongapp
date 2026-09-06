@@ -79,6 +79,7 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     if (--s.countdownTicks <= 0) { s.phase = 'playing'; s.events.push({ type: 'tripStart' }) }
     return
   }
+  c.repairShockTicks=Math.max(0,c.repairShockTicks-1)
   const elapsed = s.tick - 180, world = expeditionWorld(s)
   const lift=ALTITUDE_EVENTS[c.altitudeEventIndex]
   if(lift&&elapsed>=lift.at){
@@ -109,7 +110,7 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     if(station==='right')steer++
     if(station==='shoot')gunners.push(p.id)
     if (input?.targetId !== undefined) c.targetId = input.targetId
-    if (station==='recover' && s.hearts < 3) {
+    if (station==='recover' && s.hearts < 3 && !c.repairShockTicks) {
       c.repair+=c.scrap>=RECOVERY_SCRAP?1.5:1
       if (c.repair >= RECOVERY_WORK) {
         c.scrap = Math.max(0,c.scrap-RECOVERY_SCRAP); s.hearts++; c.repair = 0
@@ -221,7 +222,7 @@ export function advanceCrew(s: CoopGameState, inputs: CoopInputs): void {
     if (collided && (o.type!=='predator'||o.attackPhase==='strike')) {
       if (hazard) {
         if (c.shieldTicks || c.bubble) { if (!c.shieldTicks) c.bubble--; say(s, 'BUBBLE BLOCKED THE HIT'); s.score += 25 }
-        else if (!s.invulnerableTicks) { s.hearts--; s.streak = 0; s.invulnerableTicks = 90; s.events.push({ type: 'crash', x: o.x, y: o.y }) }
+        else if (!s.invulnerableTicks) { s.hearts--; s.streak = 0; s.invulnerableTicks = 90; c.repair=Math.floor(c.repair*.5); c.repairShockTicks=90; say(s,'HULL SHOCK · EVADE TO REPAIR'); s.events.push({ type: 'crash', x: o.x, y: o.y }) }
       } else if (o.type === 'rescue') { s.rescued++; s.score += 120; s.events.push({ type: 'rescued', x: o.x, y: o.y }) }
       else if (o.type === 'relic') { s.relics++; c.scrap += 2; s.score += 50; s.events.push({ type: 'relic', x: o.x, y: o.y }) }
       else if (o.type === 'heart') { s.hearts = Math.min(3, s.hearts + 1); s.events.push({ type: 'healed', x: o.x, y: o.y }) }

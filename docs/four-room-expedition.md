@@ -21,7 +21,9 @@ Reference: https://www.asteroidbase.com/dangerous-spacetime/ (station-switching 
 
 Scope: standalone PongApp. Animal-farm/Clearing code is read-only reference. Preserve preexisting AGENTS.md modification. No subagents, recurring automation, new account economy or unrelated deployment.
 
-Status: locally verified; release pending. `pnpm check` passes107 tests plus lint/typecheck/build. Eight Chrome/WebKit phone/landscape/desktop station/audio/layout/GPU-fallback journeys pass. Real local Durable Objects co-op/versus and stale-protocol9 rejection pass. Real browser direct+relay crew travel, stale input, 3D aiming, exact sea return, reconnect/rematch and invitation UI pass. Five-world4×CPU tests pass with no freezes; final balance probe idle0/20 versus coordinated14/20 wins. Final Blender renders inspected and phone crew/art reviewed. Evidence: `/Users/guclaw/.openclaw/workspace/task-artifacts/four-room-expedition/PROGRESS.md`.
+Status: locally verified before release. `pnpm check` passes109 tests plus lint/typecheck/build. Fresh eight Chrome/WebKit phone/landscape/desktop station/audio/layout/GPU-fallback journeys and full direct/relay peer checks pass after the anti-turtling adjustment below. Real local Durable Objects co-op/versus and stale-protocol9 rejection pass. Both-engine flight/boss and five-world4×CPU checks pass. Final Blender renders inspected and phone crew/art reviewed. Evidence: `/Users/guclaw/.openclaw/workspace/task-artifacts/four-room-expedition/PROGRESS.md`.
+
+Final balance correction: a manual run exposed a stationary repair+cannon strategy winning20/20 deterministic runs. Hull damage now halves partial repair progress and interrupts it for1.5seconds, with an explicit HULL SHOCK meter/message and guide explanation. Shielded hits preserve progress; walking away still preserves progress. Added damage/interruption and parked-crew regression tests. Final80run probe: idle0/20, parked repair0/20, parked shooting0/20, coordinated9/20. These are deterministic tactical probes, not claims of human win rate. No extra enemy spam or blanket HP increase.
 
 ## Paid-generation authorization
 

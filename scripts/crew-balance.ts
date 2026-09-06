@@ -3,7 +3,7 @@ import { orbitDelta } from '../packages/game-core/src/orbit'
 
 // Deterministic tactical probe, not a substitute for a human playtest.
 const rows=[]
-for(const mode of ['idle','coordinated'] as const)for(let seed=1;seed<=20;seed++){
+for(const mode of ['idle','parked_repair','parked_shoot','coordinated'] as const)for(let seed=1;seed<=20;seed++){
   const s=createCoopGame([{id:'pilot',name:'Pilot'},{id:'support',name:'Support'}],seed)
   for(let t=0;t<11000&&s.phase!=='finished';t++){
     let inputs:Record<string,CoopInput>={}
@@ -20,8 +20,9 @@ for(const mode of ['idle','coordinated'] as const)for(let seed=1;seed<=20;seed++
       const supportDest:CrewStation=s.hearts<3&&destination!=='recover'?'recover':'shoot'
       inputs={pilot:{paddle:0,station:pilot.deck.moving?undefined:destination},support:{paddle:0,station:support.deck.moving?undefined:supportDest,targetId:s.objects.find(o=>o.enemy==='boss')?.id??null}}
     }
+    if(mode==='parked_repair'||mode==='parked_shoot')inputs={pilot:{paddle:0,station:mode==='parked_repair'?'recover':'shoot'},support:{paddle:0,station:'shoot'}}
     advanceCoopGame(s,inputs)
   }
   rows.push({mode,seed,win:s.crew.victory,seconds:Math.round((s.tick-180)/60),hearts:s.hearts,rescued:s.rescued,kills:s.crew.kills,boss:s.crew.bossDefeated,bossHp:Math.round(s.objects.find(o=>o.bossKind==='guardian')?.hp??0)})
 }
-console.log(JSON.stringify({runtimeSession:'01a0369d-0914-7190-ac0e-b4d37e1fc052',summary:['idle','coordinated'].map(mode=>({mode,wins:rows.filter(r=>r.mode===mode&&r.win).length,runs:20})),rows},null,2))
+console.log(JSON.stringify({runtimeSession:'01a0369d-0914-7190-ac0e-b4d37e1fc052',summary:['idle','parked_repair','parked_shoot','coordinated'].map(mode=>({mode,wins:rows.filter(r=>r.mode===mode&&r.win).length,runs:20})),rows},null,2))

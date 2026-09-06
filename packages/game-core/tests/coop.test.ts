@@ -54,6 +54,19 @@ describe('four-room expedition ruleset11',()=>{
     step(s,30);expect(s.objects[0]!.hp).toBeLessThan(90);expect(s.crew.shotsFired).toBe(1)
     step(s,20);expect(s.crew.shotsFired).toBe(2)
   })
+  it('hull impacts interrupt repair briefly and lose half its progress, while shields protect it',()=>{
+    const s=start();s.hearts=2;s.crew.repair=100;s.objects=[rock(s)];s.crew.bubble=1
+    step(s,1);expect(s.crew.repair).toBe(100);expect(s.crew.repairShockTicks).toBe(0)
+    s.objects=[rock(s)];step(s,1);expect(s.hearts).toBe(1);expect(s.crew.repair).toBe(50);expect(s.crew.repairShockTicks).toBe(90)
+    arrive(s,'a','recover');step(s,89);expect(s.crew.repair).toBe(50)
+    step(s,1);expect(s.crew.repair).toBeGreaterThan(50);expect(s.crew.repairShockTicks).toBe(0)
+  })
+  it('does not reward parking one crewmate on repair and one on the cannon for an entire trip',()=>{
+    for(let seed=1;seed<=6;seed++){
+      const s=start(seed);arrive(s,'a','recover');arrive(s,'b','shoot');step(s,s.durationTicks)
+      expect(s.crew.victory).toBe(false);expect(s.hearts).toBe(0)
+    }
+  })
   it('keeps enemies sparse, persistent and snapshots bounded',()=>{
     const s=start(),ids=new Set<number>();s.invulnerableTicks=100000;let max=0,bytes=0
     for(let i=0;i<10800;i++){advanceCoopGame(s,{});const es=s.objects.filter(o=>o.type==='predator');max=Math.max(max,es.length);if(i<1200)for(const o of es)ids.add(o.id);bytes=Math.max(bytes,JSON.stringify(s).length)}
