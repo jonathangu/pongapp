@@ -53,10 +53,12 @@ try {
   // Chromium's offline emulation does not terminate an already-open WebSocket; force that transport loss explicitly.
   await host.evaluate(() => window.__peerTestSockets.filter(s => s.readyState === WebSocket.OPEN).forEach(s => s.close(1000, 'Connectivity exercise')))
   console.log('Testing connection recovery after AI takeover grace…')
+  await host.waitForFunction(() => !window.__STARLING__?.stats().status.startsWith('Online'), null, { timeout: 12000 })
   await friend.waitForFunction(id => window.__STARLING__.snapshot().crew.find(c => c.id === id)?.pet === true, before.id, { timeout: 35000 })
   await hostContext.setOffline(false)
   await host.waitForFunction(() => window.__STARLING__?.stats().status.startsWith('Online'), null, { timeout: 20000 })
   await friend.waitForFunction(id => window.__STARLING__.snapshot().crew.find(c => c.id === id)?.pet === false, before.id, { timeout: 20000 })
+  await host.waitForFunction(() => window.__STARLING__.snapshot().tick > 600)
   assert.equal(await host.evaluate(id => window.__STARLING__.snapshot().crew.filter(c => c.id === id).length, before.id), 1)
   await host.getByRole('button', { name: 'Pause and settings' }).click()
   await host.getByRole('button', { name: 'Save & exit', exact: true }).click()

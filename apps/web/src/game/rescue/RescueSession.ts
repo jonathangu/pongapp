@@ -25,14 +25,46 @@ export class RescueSession {
   private token = ''
   private lastSaved = 0
   private lastSavedTick = -1
+  private connecting = false
+  private terminal = false
+  private lastReceived = 0
+  private connectionCheck: ReturnType<typeof setInterval> | null = null
+  private offline = () => {
+    if (this.disposed || this.terminal) return
+    this.clearRetry(); this.releaseSocket(); this.connected = false; this.pending = []
+    this.status = 'Offline · your crew will hold the ship'
+  }
+  private online = () => {
+    if (this.disposed || this.terminal || this.connected) return
+    this.clearRetry(); this.attempts++; void this.connect()
+  }
   constructor(readonly options: RescueSessionOptions) {
     this.state = options.saved ? resumeRescueSolo(options.saved) : createRescueGame({ players: [{ id: options.guestId, name: options.name }], seed: crypto.getRandomValues(new Uint32Array(1))[0]!, voyage: options.voyage?.source === 'generated' ? options.voyage : null })
     this.authoritative = this.state; this.playerId = this.state.crew.find(c => !c.pet)!.id
-    if (options.online) void this.connect()
+    if (options.online) {
+      window.addEventListener('offline', this.offline); window.addEventListener('online', this.online)
+      this.connectionCheck = setInterval(() => {
+        if (this.disposed || this.terminal || !this.socket || performance.now() - this.lastReceived < 8000) return
+        this.clearRetry(); this.releaseSocket(); this.connected = false; this.pending = []
+        this.status = 'Connection lost · your crew will hold the ship'
+        if (navigator.onLine) { this.attempts++; void this.connect() }
+      }, 1000)
+      void this.connect()
+    }
     else { this.connected = true; this.status = 'Solo · offline ready' }
   }
   get isHost() { return !this.options.online || this.presence.find(p => p.connected)?.id === this.playerId }
+  private clearRetry() { if (this.retry) clearTimeout(this.retry); this.retry = null }
+  private releaseSocket() {
+    const socket = this.socket; this.socket = null
+    if (!socket) return
+    socket.onopen = null; socket.onmessage = null; socket.onclose = null; socket.onerror = null
+    try { socket.close(1000, 'Connection recovery') } catch { /* A connecting or failed transport may already be closed. */ }
+  }
   private async connect() {
+    if (this.disposed || this.terminal || this.connecting || this.socket) return
+    if (!navigator.onLine) { this.offline(); return }
+    this.connecting = true
     try {
       if (!this.code) {
         this.code = this.options.code ?? null
@@ -43,18 +75,20 @@ export class RescueSession {
         }
         try { this.token = localStorage.getItem(`starling.token.${this.code}.${this.options.guestId}`) ?? '' } catch { /* device storage optional */ }
       }
-      if (this.disposed) return
+      if (this.disposed || !navigator.onLine) return
       this.status = this.attempts ? 'Reconnecting…' : 'Joining your ship…'
+      this.lastReceived = performance.now()
       const socket = new WebSocket(this.options.server.replace(/^http/, 'ws') + `/api/rescue/rooms/${this.code}/websocket`); this.socket = socket
-      socket.onopen = () => socket.send(JSON.stringify({ type: 'hello', version: RESCUE_PROTOCOL_VERSION, name: this.options.name, guestId: this.options.guestId, ...(this.token ? { token: this.token } : {}) }))
+      socket.onopen = () => { if (this.socket === socket && !this.disposed) socket.send(JSON.stringify({ type: 'hello', version: RESCUE_PROTOCOL_VERSION, name: this.options.name, guestId: this.options.guestId, ...(this.token ? { token: this.token } : {}) })) }
       socket.onmessage = event => {
-        if (this.disposed || typeof event.data !== 'string') return
+        if (this.disposed || this.socket !== socket || typeof event.data !== 'string') return
+        this.lastReceived = performance.now()
         let message: RescueServerMessage
         try { message = JSON.parse(event.data) as RescueServerMessage } catch { this.error = 'An unreadable update arrived. Reconnect to continue.'; return }
         if (message.type === 'welcome') {
           this.authoritative = message.state; this.state = structuredClone(message.state); this.playerId = message.playerId; this.token = message.token; this.presence = message.presence
           this.seq = Math.max(this.seq, (this.state.crew.find(c => c.id === this.playerId)?.lastSeq ?? -1) + 1); this.pending = []
-          this.connected = true; this.attempts = 0; this.status = `Online · ${message.code}`
+          this.connected = true; this.attempts = 0; this.error = ''; this.status = `Online · ${message.code}`
           try { localStorage.setItem(`starling.token.${message.code}.${this.options.guestId}`, message.token) } catch { /* ephemeral reconnect still works */ }
           history.replaceState(null, '', `#/rescue/${message.code}`)
         } else if (message.type === 'frame' && this.connected) {
@@ -69,14 +103,18 @@ export class RescueSession {
         else if (message.type === 'error') this.error = message.message
       }
       socket.onclose = event => {
+        if (this.socket !== socket) return
+        this.socket = null
         this.connected = false; this.pending = []
         if (this.disposed) return
-        if ([4001, 4002, 4003, 4004].includes(event.code)) { this.status = 'Connection closed'; if (!this.error) this.error = 'This invitation needs a fresh tab or game update.'; return }
+        if ([4001, 4002, 4003, 4004].includes(event.code)) { this.terminal = true; this.status = 'Connection closed'; if (!this.error) this.error = 'This invitation needs a fresh tab or game update.'; return }
         this.status = 'Connection lost · your crew will hold the ship'
-        this.retry = setTimeout(() => { this.attempts++; void this.connect() }, Math.min(10000, 700 * 2 ** this.attempts))
+        this.clearRetry()
+        if (navigator.onLine) this.retry = setTimeout(() => { this.retry = null; this.attempts++; void this.connect() }, Math.min(10000, 700 * 2 ** this.attempts))
       }
-      socket.onerror = () => { this.status = 'Checking connection…' }
+      socket.onerror = () => { if (this.socket === socket && !this.disposed) this.status = 'Checking connection…' }
     } catch (error) { if (!this.disposed) { this.error = error instanceof Error ? error.message : 'Cannot connect right now.'; this.status = 'Offline' } }
+    finally { this.connecting = false }
   }
   tick(input: RescueInput) {
     if (this.disposed || !this.connected) return
@@ -111,5 +149,10 @@ export class RescueSession {
     catch { this.error = 'Device save unavailable. Use Export save to keep your voyage.'; return null }
   }
   exportSave() { return encodeRescueSave(this.authoritative) }
-  dispose() { if (this.disposed) return; this.save(); this.disposed = true; this.abort.abort(); if (this.retry) clearTimeout(this.retry); this.socket?.close(1000, 'Leaving ship') }
+  dispose() {
+    if (this.disposed) return
+    this.save(); this.disposed = true; this.abort.abort(); this.clearRetry(); this.releaseSocket()
+    if (this.connectionCheck) clearInterval(this.connectionCheck)
+    window.removeEventListener('offline', this.offline); window.removeEventListener('online', this.online)
+  }
 }
