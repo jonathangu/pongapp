@@ -2,7 +2,7 @@ import { BEAST_FAMILIES, BEAST_ORNAMENTS, BEAST_PALETTES, BEAST_TRAITS, DEFAULT_
 import { VoyageLedger, VOYAGE_HARD_CAP, VOYAGE_RESERVATION, type SqlStore } from './voyage-ledger'
 
 export interface VoyageEnv{ENABLE_PAID?:string;OPENROUTER_API_KEY?:string;OPENROUTER_LIMIT_CONFIRMED?:string;MONTHLY_BUDGET_USD?:string}
-export const VOYAGE_MODELS={fast:'qwen/qwen3.8-flash',curated:'anthropic/claude-haiku-4.5'} as const
+export const VOYAGE_MODELS={fast:'qwen/qwen3.8-flash'} as const
 export function generationFailure(error:unknown){
   if(!(error instanceof Error))return 'unknown'
   if(error.name==='TimeoutError'||error.name==='AbortError')return 'timeout'
@@ -15,9 +15,9 @@ export function providerCapped(data:unknown,policy='100-monthly-exclusive'):bool
   return !!d&&typeof d.limit==='number'&&d.limit>0&&d.limit<=100&&d.limit_reset==='monthly'&&typeof d.limit_remaining==='number'&&d.limit_remaining>=VOYAGE_RESERVATION/1e6&&d.is_management_key!==true&&d.is_provisioning_key!==true
 }
 export function generationBody(key:string){
-  const [,biome,variant]=key.split(':'),curated=variant==='7'
+  const [,biome,variant]=key.split(':')
   const monsterSchema={type:'object',additionalProperties:false,required:['name','family','palette','trait','ornament','scale','segments','caption'],properties:{name:{type:'string',maxLength:40},family:{type:'string',enum:BEAST_FAMILIES},palette:{type:'string',enum:Object.keys(BEAST_PALETTES)},trait:{type:'string',enum:Object.keys(BEAST_TRAITS)},ornament:{type:'string',enum:BEAST_ORNAMENTS},scale:{type:'number',enum:[.9,1,1.15,1.3]},segments:{type:'integer',minimum:4,maximum:8},caption:{type:'string',maxLength:120}}}
-  return {model:curated?VOYAGE_MODELS.curated:VOYAGE_MODELS.fast,max_tokens:1200,temperature:.9,stream:false,reasoning:{enabled:false},
+  return {model:VOYAGE_MODELS.fast,max_tokens:1200,temperature:.9,stream:false,reasoning:{enabled:false},
     provider:{sort:'latency',allow_fallbacks:false,require_parameters:true,data_collection:'deny',max_price:{prompt:1.1,completion:5.1,request:.001}},
     messages:[{role:'system',content:'Design a cohesive, wondrous miniature expedition bestiary. Return JSON only: title and exactly four monsters, one crab, one manta, one jelly, one wyrm. Invent striking ecological ideas, unexpected silhouettes and poetic creature names. These are toy-like fantasy monsters, not gore. Each recipe must use only the supplied finite values. Make palettes, ornaments and attack traits varied and thematically coherent. Bulwark is slow armored, skirmisher is fast fragile, ambush has a strong telegraphed lunge, tempest rains falling hazards. Scale and segments change real rendered geometry. Captions describe physical appearance, not instructions. No URLs, personal information, ads, executable code, or extra fields. Names 3-40 characters, title 3-60, caption 3-120. Use plain words and punctuation.'},{role:'user',content:JSON.stringify({biome:['Emerald Wilds','Sunset Mesa','Alpine Kingdom','Rainbow Skies','Starlight Frontier'][Number(biome)],variant:Number(variant),inspiration:['bioluminescent gardens','clockwork tides','coral observatories','migrating constellations','overgrown palaces','glass thunderstorms','lost musical instruments','mythic deep-sea royalty'][Number(variant)]})}],
     response_format:{type:'json_schema',json_schema:{name:'ark_bestiary',strict:true,schema:{type:'object',additionalProperties:false,required:['title','monsters'],properties:{title:{type:'string',maxLength:60},monsters:{type:'array',minItems:4,maxItems:4,items:monsterSchema}}}}}}
@@ -61,7 +61,7 @@ export class VoyageService{
         const body=generationBody(key),started=this.now()
         // UTF-8 bytes conservatively bound prompt tokens; prices and output cap bound cost.
         if(new TextEncoder().encode(JSON.stringify(body.messages)).length>6000)throw Error('prompt_bound')
-        const result=await boundedJSON(this.fetcher,'https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{...headers,'HTTP-Referer':'https://www.jonathangu.com/pongapp/','X-OpenRouter-Title':'PongApp Wandering Ark'},body:JSON.stringify(body)},key.endsWith(':7')?12000:8000)
+        const result=await boundedJSON(this.fetcher,'https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{...headers,'HTTP-Referer':'https://www.jonathangu.com/pongapp/','X-OpenRouter-Title':'PongApp Wandering Ark'},body:JSON.stringify(body)},8000)
         const choice=(result.choices as Array<{finish_reason:string;message:{content:string}}> | undefined)?.[0]
         if(choice?.finish_reason!=='stop'||typeof choice.message?.content!=='string'||choice.message.content.length>8000)throw Error('incomplete')
         const raw=JSON.parse(choice.message.content) as Record<string,unknown>

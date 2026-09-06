@@ -35,8 +35,8 @@ describe('paid voyage safety and actual recipe consumption',()=>{
     expect(providerCapped(valid)).toBe(true)
     for(const d of [{...valid,limit:null},{...valid,limit:101},{...valid,limit_reset:null},{...valid,is_management_key:true},{...valid,limit_remaining:.001}])expect(providerCapped(d)).toBe(false)
   })
-  it('uses cheap fast model normally and stronger model for special packs, with bounded price/tokens',()=>{
-    expect(generationBody('ark-v1:0:1').model).toBe(VOYAGE_MODELS.fast);expect(generationBody('ark-v1:4:7').model).toBe(VOYAGE_MODELS.curated)
+  it('uses the live-verified fast model for every theme, with bounded price/tokens',()=>{
+    expect(generationBody('ark-v1:0:1').model).toBe(VOYAGE_MODELS.fast);expect(generationBody('ark-v1:4:7').model).toBe(VOYAGE_MODELS.fast)
     const body=generationBody('ark-v1:4:7');expect(body.reasoning.enabled).toBe(false);expect(body.provider.sort).toBe('latency')
     const worstUSD=6000*body.provider.max_price.prompt/1e6+body.max_tokens*body.provider.max_price.completion/1e6+body.provider.max_price.request
     expect(worstUSD).toBeLessThan(VOYAGE_RESERVATION/1e6)
