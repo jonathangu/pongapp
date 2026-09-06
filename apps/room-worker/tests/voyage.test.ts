@@ -41,6 +41,21 @@ describe('paid voyage safety and actual recipe consumption',()=>{
     const worstUSD=6000*body.provider.max_price.prompt/1e6+body.max_tokens*body.provider.max_price.completion/1e6+body.provider.max_price.request
     expect(worstUSD).toBeLessThan(VOYAGE_RESERVATION/1e6)
   })
+  it('allows an explicitly authorized shared key without weakening the isolated app budget',async()=>{
+    const uncapped={limit:null,limit_reset:null,is_management_key:false}
+    expect(providerCapped(uncapped)).toBe(false)
+    expect(providerCapped(uncapped,'shared-user-authorized')).toBe(true)
+    expect(providerCapped({...uncapped,is_management_key:true},'shared-user-authorized')).toBe(false)
+    expect(providerCapped({limit:10,limit_remaining:0},'shared-user-authorized')).toBe(false)
+    let generations=0
+    const service=new VoyageService(store(),{...env,OPENROUTER_LIMIT_CONFIRMED:'shared-user-authorized',MONTHLY_BUDGET_USD:'.03'},async input=>{
+      if(String(input).endsWith('/key'))return Response.json({data:uncapped})
+      generations++;return Response.json(validReply)
+    },()=>now)
+    expect((await (await service.fetch(req())).json() as {source:string}).source).toBe('generated')
+    expect((await (await service.fetch(req('ark-v1:0:2'))).json() as {reason:string}).reason).toBe('budget')
+    expect(generations).toBe(1);expect(service.ledger.spent(now)).toBe(VOYAGE_RESERVATION)
+  })
   it('makes zero provider calls for visits, invalid keys, disabled service or absent trusted IP',async()=>{
     let calls=0;const fetcher=async()=>{calls++;throw Error('should not call')}
     const s=new VoyageService(store(),env,fetcher,()=>now)

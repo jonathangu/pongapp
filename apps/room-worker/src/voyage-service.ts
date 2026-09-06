@@ -3,8 +3,9 @@ import { VoyageLedger, VOYAGE_HARD_CAP, VOYAGE_RESERVATION, type SqlStore } from
 
 export interface VoyageEnv{ENABLE_PAID?:string;OPENROUTER_API_KEY?:string;OPENROUTER_LIMIT_CONFIRMED?:string;MONTHLY_BUDGET_USD?:string}
 export const VOYAGE_MODELS={fast:'qwen/qwen3.8-flash',curated:'anthropic/claude-haiku-4.5'} as const
-export function providerCapped(data:unknown):boolean{
+export function providerCapped(data:unknown,policy='100-monthly-exclusive'):boolean{
   const d=data as Record<string,unknown>|null
+  if(policy==='shared-user-authorized')return !!d&&d.is_management_key!==true&&d.is_provisioning_key!==true&&(d.limit===null||typeof d.limit==='number'&&d.limit>0&&typeof d.limit_remaining==='number'&&d.limit_remaining>=VOYAGE_RESERVATION/1e6)
   return !!d&&typeof d.limit==='number'&&d.limit>0&&d.limit<=100&&d.limit_reset==='monthly'&&typeof d.limit_remaining==='number'&&d.limit_remaining>=VOYAGE_RESERVATION/1e6&&d.is_management_key!==true&&d.is_provisioning_key!==true
 }
 export function generationBody(key:string){
@@ -41,11 +42,11 @@ export class VoyageService{
     const tag=Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('')
     if(!this.ledger.rate('ip:'+tag,3,now)||!this.ledger.rate('global:generation',20,now))return fallback('daily_limit',429)
     const cap=Number(this.env.MONTHLY_BUDGET_USD)*1e6
-    if(this.env.ENABLE_PAID!=='true'||!this.env.OPENROUTER_API_KEY||this.env.OPENROUTER_LIMIT_CONFIRMED!=='100-monthly-exclusive'||!Number.isSafeInteger(cap)||cap<=0||cap>VOYAGE_HARD_CAP)return fallback('not_enabled')
+    if(this.env.ENABLE_PAID!=='true'||!this.env.OPENROUTER_API_KEY||!['100-monthly-exclusive','shared-user-authorized'].includes(this.env.OPENROUTER_LIMIT_CONFIRMED??'')||!Number.isSafeInteger(cap)||cap<=0||cap>VOYAGE_HARD_CAP)return fallback('not_enabled')
     const headers={Authorization:'Bearer '+this.env.OPENROUTER_API_KEY,'Content-Type':'application/json'}
     try{
       const account=await boundedJSON(this.fetcher,'https://openrouter.ai/api/v1/key',{headers},2000,8192)
-      if(!providerCapped(account.data))return fallback('provider_limit')
+      if(!providerCapped(account.data,this.env.OPENROUTER_LIMIT_CONFIRMED))return fallback('provider_limit')
       const reservation=this.ledger.begin(key,this.now(),cap)
       if(reservation.kind==='cache')return Response.json({source:'cache',pack:reservation.pack})
       if(reservation.kind!=='reserved')return fallback(reservation.kind)
