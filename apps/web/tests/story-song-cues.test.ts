@@ -15,15 +15,22 @@ describe('two complementary original song cues', () => {
     s.story!.pending = null; s.phase = 'won'
     expect(storySongCue(s)).toBe('afterglow'); expect(songForCue(storySongCue(s))).toBe('turn')
   })
-  it('does not assign automatic narrative music to sailing or overwrite manual home selection', () => {
+  it('fills sailing with instrumentals but does not overwrite manual home selection', () => {
     const s = createRescueGame({ story: true }); s.story!.pending = null
-    expect(storySongCue(s)).toBe('sailing'); expect(songForCue('sailing')).toBeNull(); expect(songForCue('home')).toBeNull()
+    expect(storySongCue(s)).toBe('sailing'); expect(songForCue('sailing')).toBe('rope'); expect(songForCue('home')).toBeNull()
     expect(storySongCue(createRescueGame())).toBe('sailing')
   })
   it('ducks both reading themes and identifies the two complete recordings', () => {
     expect(songCueVolume('reflection')).toBe(.55); expect(songCueVolume('ending')).toBe(.55)
-    expect(songCueVolume('afterglow')).toBe(1)
+    expect(songCueVolume('afterglow')).toBe(.65)
     expect(SONGS.tides.title).toBe('Tides of the Old World'); expect(SONGS.turn.title).toBe('Each Way I Turn')
     expect(SONGS.turn.duration).toBeGreaterThan(253)
+  })
+  it('scores the other seas and the Keeper with the supplied instrumentals', () => {
+    const s = createRescueGame(); s.region = 'jungle'; expect(songForCue(storySongCue(s))).toBe('tiger')
+    s.region = 'space'; expect(songForCue(storySongCue(s))).toBe('moonshot')
+    s.guardianSpawned = true; expect(songForCue(storySongCue(s))).toBe('saltwake')
+    expect(Object.keys(SONGS)).toHaveLength(7); expect(SONGS.tiger.duration).toBeLessThan(20)
+    expect(songForCue('unwritten')).toBe('hearts'); expect(SONGS.hearts.duration).toBeGreaterThan(304)
   })
 })

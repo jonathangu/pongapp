@@ -29,7 +29,7 @@ const ship = record({ ...xy, ...velocity, angle: one(0), angularVelocity: one(0)
 const stations = array(station, RESCUE_STATIONS.length, RESCUE_STATIONS.length)
 const world = record({ width: one(112), height: one(104), title: text(80), portal: record(xy), fog: array(one(0, 1), 700, 700),
   obstacles: array(record({ ...xy, id, radius: num(.1, 6), style: num(0, 3, true) }), 28),
-  cages: array(record({ ...xy, id, hp: num(0, 35), open: bool, rescued: bool, pet: num(0, 4, true) }), 5, 5),
+  cages: array(record({ ...xy, id, hp: num(0, 35), open: bool, rescued: bool, pet: num(0, 4, true) }), 5),
   gifts: array(record({ ...xy, id, kind: gemKind, opened: bool }), 3, 3) })
 const stateCheck = record({ rulesetVersion: one(RESCUE_RULESET), tick: counter, time, seed: num(0, 0xffffffff, true), initialSeed: num(0, 0xffffffff, true), epoch: num(1, 1e9, true),
   biome: one(0, 1, 2), phase: one('playing', 'won', 'lost'), solo: bool, paused: bool, ship, crew: array(crew, 16, 1), stations, world,
@@ -44,15 +44,20 @@ const stateCheck = record({ rulesetVersion: one(RESCUE_RULESET), tick: counter, 
   campaign: record({ salvage: num(0, 1e8, true), upgrades: record({ hull: num(0, 3, true), drive: num(0, 3, true), reactor: num(0, 3, true), tractor: num(0, 3, true) }), completed: array(one(0, 1, 2), 3), voyages: counter, portVisits: counter,
     alumni: array(record({ id: text(), name: text(16), color: one(...RESCUE_CREW_COLORS), ability, availableAt: counter, reunions: counter }), 64) }),
   vessels: array(record({ id, name: text(40), role: one('ally', 'merchant', 'raider'), ship, crew: array(crew, 8, 1), stations, targetX: num(), targetY: num(), visited: bool, cooldown: time, disabled: bool }), 3),
-  region: one('sea', 'space', 'jungle'), docks: array(record({ ...xy, id: text(), name: text(40), kind: one('town', 'city', 'island', 'launch'), destination: nullable(one('sea', 'space', 'jungle')) }), 4, 2), docked: nullable(text()),
+  region: one('sea', 'sky', 'space', 'jungle'), docks: array(record({ ...xy, id: text(), name: text(40), kind: one('town', 'city', 'island', 'launch'), destination: nullable(one('sea', 'sky', 'space', 'jungle')) }), 4, 2), docked: nullable(text()),
   meal: record({ remaining: num(0, 100), progress: num(0, 3), cooldown: num(0, 65) }),
   weather: record({ phase: one('clear', 'building', 'storm', 'eye'), intensity: num(0, 1), nextStrike: time, strike: nullable(record({ ...xy, at: time })), wave: time, flash: num(0, 1) }),
   story: optional(nullable(validRescueStory)),
+  seamanship: optional(record({ step: num(0, 5, true), difficulty: one('gentle', 'adventure', 'tempest'), travelStart: num(0, 1e9) })),
+  littleWing: optional(record({ remaining: num(0, 6), cooldown: num(0, 75), arrivals: counter })),
+  odyssey: optional(record({ stage: one('sky', 'gate', 'inner'), pending: nullable(one('launch', 'flare', 'gate', 'dragon', 'unwritten')), history: array(one('launch', 'flare', 'gate', 'dragon', 'unwritten'), 5), pulse: bool })),
 })
 const unique = (values: unknown[]) => new Set(values).size === values.length
 export function validRescueSaveState(value: unknown): value is RescueState {
   if (!stateCheck(value)) return false
   const s = value as RescueState
+  if (s.world.cages.length !== (s.odyssey ? 0 : 5)) return false
+  if (s.odyssey && (!s.story || !unique(s.odyssey.history) || s.odyssey.pending && s.odyssey.history.includes(s.odyssey.pending) || s.odyssey.stage !== 'sky' && !s.odyssey.pulse)) return false
   if (s.story && (!s.crew.some(c => c.id === s.story!.motherId) || !s.crew.some(c => c.id === s.story!.sonId))) return false
   if (!unique(s.crew.map(c => c.id)) || !unique(s.stations.map(v => v.id)) || s.ship.hp > s.ship.maxHp || s.ship.maxHp !== 12 + s.campaign.upgrades.hull * 3) return false
   if (!unique(s.crew.filter(c => c.seat).map(c => c.seat)) || s.crew.filter(c => c.origin === 'human').length > 8) return false

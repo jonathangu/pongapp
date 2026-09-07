@@ -46,7 +46,7 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       if (this.record) return new Response('exists', { status: 409 })
       const raw = await request.json() as RescueRoomRequest & { code: string }, config = parseRescueRoomRequest(raw)
       if (!config || !/^[A-Z2-9]{6}$/.test(raw.code)) return new Response('invalid', { status: 400 })
-      const state = (config.save ? decodeRescueSave(config.save) : null) ?? createRescueGame({ seed: config.seed, biome: config.biome, solo: true, story: config.story, players: [{ id: 'pending-host', name: config.name }] }); state.paused = true
+      const state = (config.save ? decodeRescueSave(config.save) : null) ?? createRescueGame({ seed: config.seed, biome: config.biome, solo: true, story: config.story, guided: config.guided, players: [{ id: 'pending-host', name: config.name }] }); state.paused = true
       for (const crew of state.crew) if (crew.origin === 'human') { crew.pet = true; crew.lastSeq = -1; crew.lastButtons = 0 }
       delete config.save
       if (config.voyageKey && !state.voyage) {

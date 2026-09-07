@@ -6,6 +6,8 @@ import { advanceRescueBullets, advanceRescueEnemies, damageRescueEnemy, damageRe
 import { revealRescueFog, segmentCircle } from './world'
 import { advanceRescueAbilities, advanceRescueWeather, recruitRescueCrew } from './campaign'
 import { advanceRescueStory } from './story'
+import { advanceSeamanship, learningToSail } from './seamanship'
+import { advanceLittleWing, advanceOdyssey } from './odyssey'
 
 export function validRescueInput(value: unknown): value is RescueInput {
   if (!value || typeof value !== 'object') return false
@@ -165,7 +167,7 @@ export function advanceRescueVessels(s: RescueState, dt: number) {
   for (const v of s.vessels) {
     if (v.disabled) continue
     // The opening rescue teaches the ship before hostile crews enter the encounter budget.
-    if (v.role === 'raider' && (s.stats.rescues < 2 || s.time < 45)) continue
+    if (v.role === 'raider' && (learningToSail(s) || s.stats.rescues < 2 || s.time < 45)) continue
     const distance = Math.hypot(v.ship.x - s.ship.x, v.ship.y - s.ship.y)
     if (distance > 55) continue
     v.cooldown = Math.max(0, v.cooldown - dt); v.ship.invulnerable = Math.max(0, v.ship.invulnerable - dt)
@@ -238,6 +240,15 @@ export function advanceRescueShip(s: RescueState, dt: number) {
 }
 
 function advanceObjectives(s: RescueState, dt: number) {
+  if (s.odyssey) {
+    advanceOdyssey(s, dt)
+    if (s.odyssey.stage !== 'inner' && !s.odyssey.pending && s.time >= s.nextWave) {
+      s.nextWave = s.time + (s.seamanship?.difficulty === 'tempest' ? 12 : 25)
+      const limit = s.seamanship?.difficulty === 'tempest' ? 4 : 2
+      if (s.enemies.length < limit) spawnRescueEnemy(s, 'sentinel', s.ship.x + 18, s.ship.y + 12)
+    }
+    return
+  }
   for (const cage of s.world.cages) if (cage.open && !cage.rescued && Math.hypot(cage.x - s.ship.x, cage.y - s.ship.y) < 9 + s.campaign.upgrades.tractor * 2) {
     cage.rescued = true; s.stats.rescues++; s.ship.hp = Math.min(s.ship.maxHp, s.ship.hp + 1)
     s.campaign.salvage += 8; recruitRescueCrew(s, String(cage.id), cage.pet)
@@ -254,9 +265,10 @@ function advanceObjectives(s: RescueState, dt: number) {
     s.extraction += dt
     if (s.extraction >= 1.5) { s.phase = 'won'; s.campaign.salvage += 30; if (!s.campaign.completed.includes(s.biome)) s.campaign.completed.push(s.biome); rescueEvent(s, 'win') }
   } else s.extraction = 0
-  if (s.time >= s.nextWave && !s.guardianSpawned) {
-    s.nextWave = s.time + 16 + rescueRandom(s) * 8
-    const count = 2 + Math.min(2, Math.floor(s.stats.rescues / 2))
+  if (s.time >= s.nextWave && !s.guardianSpawned && !learningToSail(s)) {
+    const difficulty = s.seamanship?.difficulty
+    s.nextWave = s.time + (difficulty === 'gentle' ? 30 : difficulty === 'tempest' ? 10 : 16) + rescueRandom(s) * 8
+    const count = (difficulty === 'gentle' ? 1 : difficulty === 'tempest' ? 3 : 2) + Math.min(2, Math.floor(s.stats.rescues / 2))
     for (let i = 0; i < count && s.enemies.length < 7 + s.biome; i++) {
       const angle = rescueRandom(s) * Math.PI * 2, kinds = s.biome === 0 ? ['moth', 'beetle', 'jelly'] as const : s.biome === 1 ? ['sentinel', 'beetle', 'needle'] as const : ['needle', 'jelly', 'moth'] as const
       spawnRescueEnemy(s, kinds[Math.floor(rescueRandom(s) * kinds.length)]!, s.ship.x + Math.cos(angle) * 22, s.ship.y + Math.sin(angle) * 22)
@@ -266,13 +278,14 @@ function advanceObjectives(s: RescueState, dt: number) {
 
 /** One authoritative clock; a solo command slows BOTH physics contexts together. */
 export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueInput>, step = RESCUE_STEP) {
-  if (s.story?.pending) { s.events = []; return }
+  if (s.story?.pending || s.odyssey?.pending) { s.events = []; return }
   if (s.phase === 'won') { advanceRescueStory(s); s.events = []; return }
   if (s.phase !== 'playing' || s.paused || s.docked) { s.events = []; return }
   const slow = s.solo && s.crew.some(p => !p.pet && Boolean(inputs[p.id]?.buttons && (inputs[p.id]!.buttons & RESCUE_BUTTON.command)))
   const dt = clampRescue(step, 0, 1 / 30) * (slow ? .16 : 1)
   s.tick++; s.time += dt; s.events = []; s.ship.thrust = 0; s.ship.invulnerable = Math.max(0, s.ship.invulnerable - dt)
   advanceRescueAbilities(s, dt)
+  advanceLittleWing(s, dt)
   for (const station of s.stations) {
     const operator = s.crew.find(p => p.seat === station.id)
     const rate = (s.meal.remaining > 0 ? 1.2 : 1) * (operator?.ability === 'spark' ? 1.2 : 1) * (1 + s.campaign.upgrades.reactor * .1)
@@ -294,7 +307,9 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
           occupant.order = free?.id ?? (crew.seat && crew.seat !== input.command ? crew.seat : input.command === 'galley' ? 'map' : 'galley')
           occupant.route = []; occupant.commandSeq = input.seq
         }
-        crew.order = input.command; crew.route = []; crew.commandSeq = input.seq
+        // Repeated taps on the selected job must not restart the ladder route.
+        if (crew.order !== input.command) crew.route = []
+        crew.order = input.command; crew.commandSeq = input.seq
         rescueEvent(s, 'order', s.ship.x, s.ship.y, 0, 1, 0, input.command)
       }
     }
@@ -318,6 +333,7 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
   }
   advanceGems(s, dt); advanceRescueWeather(s, dt); advanceRescueShip(s, dt); advanceRescueVessels(s, dt); advanceRescueEnemies(s, dt); advanceRescueBullets(s, dt)
   if (s.phase === 'playing') advanceObjectives(s, dt)
+  advanceSeamanship(s)
   advanceRescueStory(s)
   if (s.tick % 30 === 0) {
     const map = s.stations.find(v => v.id === 'map')!

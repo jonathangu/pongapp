@@ -13,7 +13,7 @@ export type CrewAbility = 'none' | 'pilot' | 'medic' | 'prism' | 'spark' | 'scou
 export type ShipUpgrade = 'hull' | 'drive' | 'reactor' | 'tractor'
 export const RESCUE_BUTTON = { jump: 1, interact: 2, fire: 4, drop: 8, command: 16 } as const
 export type StationId = 'engine' | 'shield' | 'north' | 'east' | 'south' | 'west' | 'starburst' | 'map' | 'galley'
-export type RescueRegion = 'sea' | 'space' | 'jungle'
+export type RescueRegion = 'sea' | 'sky' | 'space' | 'jungle'
 export type GemKind = 'power' | 'beam' | 'metal'
 export type BiomeId = 0 | 1 | 2
 export type EnemyKind = 'moth' | 'beetle' | 'jelly' | 'needle' | 'sentinel' | 'guardian'
@@ -90,6 +90,9 @@ export interface RescueState {
   meal: { remaining: number; progress: number; cooldown: number }
   weather: RescueWeather
   story?: RescueStory | null
+  seamanship?: { step: number; difficulty: 'gentle' | 'adventure' | 'tempest'; travelStart: number }
+  littleWing?: { remaining: number; cooldown: number; arrivals: number }
+  odyssey?: { stage: 'sky' | 'gate' | 'inner'; pending: 'launch' | 'flare' | 'gate' | 'dragon' | 'unwritten' | null; history: Array<'launch' | 'flare' | 'gate' | 'dragon' | 'unwritten'>; pulse: boolean }
 }
 export const neutralRescueInput = (seq = 0): RescueInput => ({ seq, x: 0, y: 0, aimX: 0, aimY: 0, buttons: 0, command: null, commandCrew: null, active: true })
 export const clampRescue = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
