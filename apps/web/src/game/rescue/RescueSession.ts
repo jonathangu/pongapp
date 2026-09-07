@@ -2,7 +2,7 @@ import { advanceRescueGame, applyRescueAction, createRescueGame, encodeRescueSav
 import { mergeRescueFrame, RESCUE_PROTOCOL_VERSION, type RescuePresence, type RescueServerMessage } from '@pongapp/protocol'
 
 export type RescueSessionOptions = { name: string; guestId: string; saved?: RescueState; online?: boolean; code?: string; server: string; voyage?: VoyagePack }
-export const SAVE_KEY = 'starling-rescue.save.v1'
+export const SAVE_KEY = 'starling-rescue.save.v2'
 export class RescueSession {
   state: RescueState
   authoritative: RescueState
@@ -121,7 +121,7 @@ export class RescueSession {
     input.seq = ++this.seq
     if (this.options.online) {
       this.pending.push({ ...input }); this.pending = this.pending.slice(-12)
-      if (++this.counter % 2 === 0 || input.buttons !== this.lastSentButtons) { this.send({ type: 'input', epoch: this.state.epoch, input }); this.lastSentButtons = input.buttons }
+      if (++this.counter % 2 === 0 || input.command || input.buttons !== this.lastSentButtons) { this.send({ type: 'input', epoch: this.state.epoch, input }); this.lastSentButtons = input.buttons }
       if (this.counter % 180 === 0) this.send({ type: 'ping', at: performance.now() })
     }
     advanceRescueGame(this.state, { [this.playerId]: input })

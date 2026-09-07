@@ -1,0 +1,20 @@
+config_version=5
+
+[application]
+config/name="Starling · Lantern Sea"
+run/main_scene="res://main.tscn"
+
+[display]
+window/size/viewport_width=1180
+window/size/viewport_height=1250
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.025, 0.12, 0.18, 1)
+
+[audio]
+driver/enable_input=false

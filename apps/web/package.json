@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node ../../scripts/build-starling-pack.mjs",
+    "build": "node ../../scripts/build-godot.mjs && tsc -b && vite build && node ../../scripts/build-starling-pack.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --passWithNoTests"
   },

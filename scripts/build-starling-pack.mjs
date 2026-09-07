@@ -6,8 +6,8 @@ import { execFileSync } from 'node:child_process'
 
 const dist = fileURLToPath(new URL('../apps/web/dist/', import.meta.url))
 const candidates = ['index.html', 'manifest.webmanifest', 'favicon.svg', 'starling-apple-touch-icon.png', 'starling-icon-192.png', 'starling-icon-512.png', 'starling-icon-maskable-512.png',
-  ...(await readdir(join(dist, 'assets'), { withFileTypes: true })).filter(file => file.isFile() && !file.name.endsWith('.map')).map(file => 'assets/' + file.name),
-  ...(await readdir(join(dist, 'art/starling'))).filter(file => /\.(webp|glb)$/.test(file)).map(file => 'art/starling/' + file)]
+  ...(await readdir(join(dist, 'godot'))).filter(file => /\.(html|js|wasm|pck|png|txt)$/.test(file)).map(file => 'godot/' + file),
+  ...(await readdir(join(dist, 'assets'), { withFileTypes: true })).filter(file => file.isFile() && !file.name.endsWith('.map')).map(file => 'assets/' + file.name)]
 const files = []
 for (const path of [...new Set(candidates)].sort()) {
   const body = await readFile(join(dist, path))
