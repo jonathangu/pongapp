@@ -4,6 +4,7 @@ import { isRescueStation, RESCUE_STATIONS, RESCUE_LADDERS } from './interior'
 import { RESCUE_NAV } from './navigation'
 import { rescueMapReachable } from './world'
 import { validateMonster, validVoyageKey } from '../bestiary'
+import { validRescueStory } from './story'
 
 export const RESCUE_SAVE_VERSION = 1
 export const RESCUE_SAVE_MAX_BYTES = 512_000
@@ -46,11 +47,13 @@ const stateCheck = record({ rulesetVersion: one(RESCUE_RULESET), tick: counter, 
   region: one('sea', 'space', 'jungle'), docks: array(record({ ...xy, id: text(), name: text(40), kind: one('town', 'city', 'island', 'launch'), destination: nullable(one('sea', 'space', 'jungle')) }), 4, 2), docked: nullable(text()),
   meal: record({ remaining: num(0, 100), progress: num(0, 3), cooldown: num(0, 65) }),
   weather: record({ phase: one('clear', 'building', 'storm', 'eye'), intensity: num(0, 1), nextStrike: time, strike: nullable(record({ ...xy, at: time })), wave: time, flash: num(0, 1) }),
+  story: optional(nullable(validRescueStory)),
 })
 const unique = (values: unknown[]) => new Set(values).size === values.length
 export function validRescueSaveState(value: unknown): value is RescueState {
   if (!stateCheck(value)) return false
   const s = value as RescueState
+  if (s.story && (!s.crew.some(c => c.id === s.story!.motherId) || !s.crew.some(c => c.id === s.story!.sonId))) return false
   if (!unique(s.crew.map(c => c.id)) || !unique(s.stations.map(v => v.id)) || s.ship.hp > s.ship.maxHp || s.ship.maxHp !== 12 + s.campaign.upgrades.hull * 3) return false
   if (!unique(s.crew.filter(c => c.seat).map(c => c.seat)) || s.crew.filter(c => c.origin === 'human').length > 8) return false
   if (s.crew.some(c => Math.abs(c.x) > 4.7 || c.y < -3.5 || c.y > 4.3)) return false

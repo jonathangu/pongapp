@@ -3,8 +3,9 @@ import { clearRescueDockApproaches, makeRescueDocks } from './campaign'
 import { validateVoyage, type VoyagePack } from '../bestiary'
 import { RESCUE_STATIONS, createRescueCrew } from './interior'
 import { createRescueWorld, revealRescueFog } from './world'
+import { createRescueStory } from './story'
 
-export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo?: boolean; players?: Array<{ id: string; name: string }>; epoch?: number; inspiration?: string; region?: RescueRegion; voyage?: VoyagePack | null } = {}): RescueState {
+export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo?: boolean; players?: Array<{ id: string; name: string }>; epoch?: number; inspiration?: string; region?: RescueRegion; voyage?: VoyagePack | null; story?: boolean } = {}): RescueState {
   const seed = (options.seed ?? 20260906) >>> 0, biome = options.biome ?? 0, solo = options.solo ?? true
   const crew = (options.players ?? [{ id: 'captain', name: 'You' }, { id: 'pip', name: 'Pip' }]).slice(0, MAX_RESCUE_HUMANS).map((p, i) => {
     const c = createRescueCrew(p.id, p.name, i > 0, !options.players && solo && i === 1)
@@ -12,6 +13,11 @@ export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo
     return c
   })
   if (crew.length < 2) crew.push(createRescueCrew('pip', 'Pip', true, true))
+  if (options.story) {
+    const finn = createRescueCrew('story-finn', 'Finn', true, true)
+    finn.color = 'gold'; finn.order = 'map'; finn.commandSeq = 0; finn.tourEnds = 1e9
+    crew.push(finn)
+  }
   const state: RescueState = {
     rulesetVersion: RESCUE_RULESET, tick: 0, time: 0, seed, initialSeed: seed, epoch: options.epoch ?? 1, biome, phase: 'playing', solo, paused: false,
     ship: { x: 0, y: -24, vx: 0, vy: 0, angle: 0, angularVelocity: 0, hp: 12, maxHp: 12, invulnerable: 0, thrust: 0, hitAngle: 0, shieldHits: 0 },
@@ -23,6 +29,7 @@ export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo
     voyage: validateVoyage(options.voyage),
     region: options.region ?? 'sea', docks: makeRescueDocks(options.region ?? 'sea'), docked: null,
     meal: { remaining: 0, progress: 0, cooldown: 0 }, weather: { phase: 'clear', intensity: 0, nextStrike: 62, strike: null, wave: 0, flash: 0 },
+    story: options.story ? createRescueStory(crew[0]!.id, 'story-finn') : null,
   }
   clearRescueDockApproaches(state)
   for (const [i, role] of (['ally', 'merchant', 'raider'] as const).entries()) {
@@ -41,6 +48,7 @@ export function restartRescueGame(s: RescueState, nextBiome = false): RescueStat
   const next = createRescueGame({ seed: nextBiome ? (s.initialSeed + 1777) >>> 0 : s.initialSeed, biome: nextBiome ? ((s.biome + 1) % 3) as BiomeId : s.biome,
     solo: s.solo, players: s.crew.filter(c => c.origin === 'human').map(c => ({ id: c.id, name: c.name })), epoch: s.epoch + 1, inspiration: s.inspiration, region: s.region, voyage: s.voyage })
   next.campaign = structuredClone(s.campaign)
+  next.story = s.story ? structuredClone(s.story) : null
   if (nextBiome) next.campaign.voyages++
   next.crew = s.crew.map(c => ({ ...createRescueCrew(c.id, c.name, c.pet, c.pet), color: c.color, origin: c.origin, ability: c.ability, tourEnds: c.tourEnds, order: c.order }))
   next.ship.maxHp = 12 + next.campaign.upgrades.hull * 3; next.ship.hp = next.ship.maxHp

@@ -1,4 +1,5 @@
 import type { VoyagePack } from '../bestiary'
+import type { RescueStory } from './story'
 /** Starling Rescue: simulation data only. No browser, renderer, clock or network imports. */
 export const RESCUE_RULESET = 13 as const
 export const RESCUE_STEP = 1 / 60
@@ -88,6 +89,7 @@ export interface RescueState {
   region: RescueRegion; docks: RescueDock[]; docked: string | null
   meal: { remaining: number; progress: number; cooldown: number }
   weather: RescueWeather
+  story?: RescueStory | null
 }
 export const neutralRescueInput = (seq = 0): RescueInput => ({ seq, x: 0, y: 0, aimX: 0, aimY: 0, buttons: 0, command: null, commandCrew: null, active: true })
 export const clampRescue = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))

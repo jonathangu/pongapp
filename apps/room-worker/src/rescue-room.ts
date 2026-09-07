@@ -46,7 +46,7 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       if (this.record) return new Response('exists', { status: 409 })
       const raw = await request.json() as RescueRoomRequest & { code: string }, config = parseRescueRoomRequest(raw)
       if (!config || !/^[A-Z2-9]{6}$/.test(raw.code)) return new Response('invalid', { status: 400 })
-      const state = (config.save ? decodeRescueSave(config.save) : null) ?? createRescueGame({ seed: config.seed, biome: config.biome, solo: true, players: [{ id: 'pending-host', name: config.name }] }); state.paused = true
+      const state = (config.save ? decodeRescueSave(config.save) : null) ?? createRescueGame({ seed: config.seed, biome: config.biome, solo: true, story: config.story, players: [{ id: 'pending-host', name: config.name }] }); state.paused = true
       for (const crew of state.crew) if (crew.origin === 'human') { crew.pet = true; crew.lastSeq = -1; crew.lastButtons = 0 }
       delete config.save
       if (config.voyageKey && !state.voyage) {
@@ -90,6 +90,7 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
         }
         member = { id: crypto.randomUUID(), guestId: message.guestId, name: message.name, token: crypto.randomUUID() + crypto.randomUUID(), connected: true, disconnectedAt: null, seq: -1 }
         let crew = r.state.crew.find(c => c.origin === 'human' && !r.members.some(m => m.id === c.id))
+        if (!crew && r.state.story) crew = r.state.crew.find(c => c.id === r.state.story!.sonId && c.pet && !r.members.some(m => m.id === c.id))
         if (!crew) {
           if (r.state.crew.length >= MAX_RESCUE_CREW) { this.send(socket, { type: 'error', code: 'crew_full', message: 'The ship roster is full.' }); return }
           crew = createRescueCrew(member.id, member.name, true); crew.x = (r.members.length % 6 - 2.5) * .55; r.state.crew.push(crew)
@@ -97,6 +98,8 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
         r.members.push(member)
         const previousId = crew.id
         crew.id = member.id; crew.name = member.name; crew.pet = false; crew.origin = 'human'; crew.color = RESCUE_CREW_COLORS[(r.members.length - 1) % RESCUE_CREW_COLORS.length]!
+        if (r.state.story?.motherId === previousId) r.state.story.motherId = crew.id
+        if (r.state.story?.sonId === previousId) { r.state.story.sonId = crew.id; crew.color = 'gold'; crew.commandSeq = -1 }
         for (const gem of r.state.gems) if (gem.heldBy === previousId) gem.heldBy = crew.id
       }
       member.connected = true; member.disconnectedAt = null
@@ -120,14 +123,14 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       this.inputs[member.id] = message.input
     } else if (message.type === 'action' && message.epoch === this.record.state.epoch) {
       const host = this.record.members.find(m => m.connected)
-      if (host?.id !== member.id) { this.send(socket, { type: 'error', code: 'host_action', message: 'The connected captain chooses docking, crew and ship upgrades.' }); return }
+      if (host?.id !== member.id) { this.send(socket, { type: 'error', code: 'host_action', message: 'The connected captain chooses the shared story, docking, crew and ship upgrades.' }); return }
       const updated = applyRescueAction(this.record.state, message.action)
       if (!updated) { this.send(socket, { type: 'error', code: 'action_unavailable', message: 'Approach slowly, dock first, or check your available salvage.' }); return }
       const changed = updated.epoch !== this.record.state.epoch
       this.record.state = updated
       if (changed) { this.presses = {}; this.commands = {}; for (const m of this.record.members) { m.seq = -1; this.inputs[m.id] = neutralRescueInput() } }
       this.eventQueue.push(...updated.events); this.broadcastWelcomeStates(); await this.persist()
-    } else if (message.type === 'rematch' && message.epoch === this.record.state.epoch && this.record.state.phase !== 'playing' && this.record.members.find(m => m.connected)?.id === member.id) {
+    } else if (message.type === 'rematch' && message.epoch === this.record.state.epoch && this.record.state.phase !== 'playing' && !this.record.state.story?.pending && this.record.members.find(m => m.connected)?.id === member.id) {
       this.record.state = restartRescueGame(this.record.state, message.next && this.record.state.phase === 'won')
       this.record.state.paused = !this.record.members.some(m => m.connected)
       this.presses = {}; this.commands = {}

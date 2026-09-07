@@ -24,6 +24,10 @@ async function start(page, name, online = false) {
   await page.locator('.g-player-name input').fill(name)
   await page.getByRole('button', { name: online ? /Play together/ : /Play solo/ }).click()
   await ready(page)
+  if (await page.locator('[data-story-choice="wind"]').count()) {
+    await page.locator('[data-story-choice="wind"]').click()
+    await page.locator('[data-story-continue="watch"]').click()
+  }
 }
 async function ready(page) {
   await page.waitForFunction(() => window.__STARLING__?.stats().frames > 90, null, { timeout: 45000 })
@@ -78,7 +82,7 @@ try {
   await shot(page, 'live-deck-phone')
   await page.getByRole('button', { name: 'Close deck' }).click()
   await page.getByRole('button', { name: 'Open world map' }).click()
-  await page.waitForTimeout(800)
+  await page.waitForFunction(() => window.__STARLING__.stats().visibleWorldWidth > 115)
   const map = await stats(page)
   assert.ok(map.visibleWorldWidth > 115)
   await shot(page, 'world-map-phone')

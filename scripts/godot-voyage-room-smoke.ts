@@ -2,13 +2,14 @@
 // Reuses the radial approach procedure from starling-voyage-room-smoke.ts.
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { advanceRescueGame, encodeRescueSave, neutralRescueInput, type RescueState, type RescueInput, type StationId } from '../packages/game-core/src/rescue'
+import { advanceRescueGame, encodeRescueSave, neutralRescueInput, storyHas, type RescueState, type RescueInput, type StationId } from '../packages/game-core/src/rescue'
 import { mergeRescueFrame } from '../packages/protocol/src/rescue'
 const server = process.env.ROOM_SERVER_URL || 'http://127.0.0.1:8787'
 const evidence = process.env.GODOT_EVIDENCE || 'artifacts/godot-voyage'
 const latency = Number(process.env.GODOT_LATENCY_MS || 150), dropEvery = Number(process.env.GODOT_DROP_EVERY || 10)
+const story = process.env.GODOT_STORY === '1'
 await mkdir(evidence, { recursive: true })
-const response = await fetch(server + '/api/rescue/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Godot Captain', guestId: crypto.randomUUID(), seed: 73599, biome: 0 }) })
+const response = await fetch(server + '/api/rescue/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Godot Captain', guestId: crypto.randomUUID(), seed: 73599, biome: 0, story }) })
 assert.equal(response.status, 201)
 const { roomCode } = await response.json() as { roomCode: string }
 console.log('Assisted full voyage room', roomCode)
@@ -20,16 +21,18 @@ async function connect(name: string): Promise<Peer> {
     const ws = new WebSocket(server.replace(/^http/, 'ws') + `/api/rescue/rooms/${roomCode}/websocket`)
     const peer = { ws, seq: 0, bytes: 0, frames: 0, dropped: 0, errors: [], pending: [] } as unknown as Peer
     const timeout = setTimeout(() => reject(new Error('Welcome timeout')), 10000)
+    let generation = 0
     ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'hello', version: 1, guestId: crypto.randomUUID(), name })))
     ws.addEventListener('message', event => {
       peer.bytes += String(event.data).length
       const message = JSON.parse(String(event.data))
       if (message.type === 'error') peer.errors.push(message.code)
-      if (message.type === 'welcome') { peer.id = message.playerId; peer.authoritative = message.state; peer.state = structuredClone(message.state); clearTimeout(timeout); resolve(peer) }
+      if (message.type === 'welcome') { generation++; peer.pending = []; peer.id = message.playerId; peer.authoritative = message.state; peer.state = structuredClone(message.state); clearTimeout(timeout); resolve(peer) }
       if (message.type === 'frame') {
         if (++peer.frames % dropEvery === 0) { peer.dropped++; return }
+        const frameGeneration = generation
         setTimeout(() => {
-          if (done) return
+          if (done || frameGeneration !== generation) return
           peer.authoritative = mergeRescueFrame(peer.authoritative, message)
           peer.pending = peer.pending.filter(input => input.seq > (message.acks[peer.id] ?? -1)).slice(-12)
           peer.state = structuredClone(peer.authoritative)
@@ -55,9 +58,22 @@ function command(peer: Peer, input: RescueInput, station: StationId) {
 try {
   const host = await connect('Godot Captain'), friend = await connect('Godot Cook'); peers.push(host, friend)
   let stage = 'cage', previous = -1, progress = 0, cooked = false, minHp = 12, lastTrace = 0
+  const sentStoryActions = new Set<string>()
   const started = Date.now()
   timer = setInterval(() => {
     const s = host.state
+    const decision = host.authoritative
+    if (decision.story?.pending) {
+      const encounter = decision.story.pending, result = decision.story.result, key = encounter + ':' + (result ?? 'choice')
+      if (!sentStoryActions.has(key)) {
+        sentStoryActions.add(key)
+        const choices = { watch: 'wind', whale: 'channel', 'first-light': 'signal', coat: 'patch', sometimes: 'spoon', 'small-hands': 'read', keeper: 'together', home: 'pass' }
+        const action = result ? { kind: 'story-continue', encounter } : { kind: 'story-choice', encounter, choice: choices[encounter] }
+        setTimeout(() => { if (!done && host.ws.readyState === WebSocket.OPEN) host.ws.send(JSON.stringify({ type: 'action', epoch: decision.epoch, action })) }, latency)
+        trace.push({ story: encounter, action, time: decision.time }); console.log('story', key)
+      }
+      return
+    }
     minHp = Math.min(minHp, s.ship.hp)
     if (s.stats.rescues !== progress || s.time - lastTrace > 15) {
       progress = s.stats.rescues; lastTrace = s.time
@@ -84,13 +100,14 @@ try {
     const destination = cooked ? 'shield' : 'galley', friendInput = neutralRescueInput()
     command(friend, friendInput, destination); send(friend, friendInput)
   }, 1000 / 30)
-  while (host.authoritative.phase === 'playing' && Date.now() - started < 240000) await new Promise(resolve => setTimeout(resolve, 500))
+  while ((host.authoritative.phase === 'playing' || host.authoritative.story?.pending || story && !storyHas(host.authoritative, 'home') && host.authoritative.phase !== 'lost') && Date.now() - started < 240000) await new Promise(resolve => setTimeout(resolve, 500))
   const final = host.authoritative
   await writeFile(`${evidence}/assisted-voyage-save.json`, encodeRescueSave(final))
-  report = { runtimeSession: '01a0369d-0914-7190-ac0e-b4d37e1fc052', server, roomCode, ruleset: final.rulesetVersion, latencyEachWayMs: latency, dropEvery, seconds: (Date.now() - started) / 1000, phase: final.phase, rescued: final.stats.rescues, guardian: final.guardianDefeated, minHp, hp: final.ship.hp, cooked, trace, peers: peers.map(p => ({ frames: p.frames, logicalBytes: p.bytes, droppedPackets: p.dropped, errors: p.errors })), crew: final.crew.map(c => ({ name: c.name, seat: c.seat, order: c.order })) }
+  report = { runtimeSession: '01a0369d-0914-7190-ac0e-b4d37e1fc052', server, roomCode, ruleset: final.rulesetVersion, latencyEachWayMs: latency, dropEvery, seconds: (Date.now() - started) / 1000, phase: final.phase, rescued: final.stats.rescues, guardian: final.guardianDefeated, minHp, hp: final.ship.hp, cooked, trace, story: final.story ?? null, peers: peers.map(p => ({ frames: p.frames, logicalBytes: p.bytes, droppedPackets: p.dropped, errors: p.errors })), crew: final.crew.map(c => ({ name: c.name, seat: c.seat, order: c.order })) }
   console.log(JSON.stringify(report, null, 2))
   assert.equal(final.phase, 'won'); assert.ok(cooked); assert.ok(final.crew.length > 3)
   assert.deepEqual(peers.flatMap(p => p.errors), [])
+  if (story) { assert.equal(final.story?.history.length, 8); assert.equal(final.story?.pending, null); assert.ok(final.crew.some(c => c.id === final.story?.sonId)) }
 } finally {
   done = true; if (timer) clearInterval(timer)
   for (const peer of peers) peer.ws.close(1000, 'Assisted full voyage verification')
