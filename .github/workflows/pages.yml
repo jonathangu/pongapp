@@ -29,12 +29,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cache/pongapp-godot/4.7.2/templates
-            ~/.cache/pongapp-godot/4.7.2/Godot_v4.7.2-stable_linux.x86_64
-          key: godot-4.7.2-linux-web-nothreads-v1
       - run: pnpm check
         env:
           VITE_ROOM_SERVER_URL: ${{ vars.ROOM_SERVER_URL }}
@@ -74,6 +68,10 @@ jobs:
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
       - name: Verify authoritative production multiplayer
         run: node scripts/room-smoke.mjs
+        env:
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
+      - name: Verify two-player shared puzzle
+        run: node scripts/puzzle-room-smoke.mjs
         env:
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
       - name: Verify authoritative production versus

@@ -93,6 +93,7 @@ function validateManifest(m) {
 async function installPack(port) {
   if (download) { send(port, { type: 'error', message: 'A download is already running in another tab.' }); return }
   const controller = new AbortController(); download = controller
+  const deadline = setTimeout(() => controller.abort(), 19000)
   let staging = null
   try {
     const response = await fetch(BASE + 'starling-pack.json', { cache: 'no-store', signal: controller.signal })
@@ -125,7 +126,7 @@ async function installPack(port) {
   } catch (error) {
     if (staging) await caches.delete(staging)
     send(port, { type: 'error', cancelled: error.name === 'AbortError', message: error.name === 'AbortError' ? 'Download cancelled. Your previous pack is unchanged.' : error.name === 'QuotaExceededError' ? 'Browser storage is full. Your previous pack is unchanged.' : error.message || 'Download failed. Your previous pack is unchanged.' })
-  } finally { download = null }
+  } finally { clearTimeout(deadline); download = null }
 }
 self.addEventListener('message', event => {
   const message = event.data, port = event.ports[0]

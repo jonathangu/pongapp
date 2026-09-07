@@ -1,12 +1,12 @@
 {
-  "name": "Starling — The Sea We Carry",
+  "name": "Starling — A little closer to home",
   "short_name": "Starling",
-  "description": "One little boat. A crossing for two. Learn to steer, rescue and cook together. Offline solo or online co-op, with six original songs.",
+  "description": "A little match-three puzzle with Mara, Finn and Luma. Play solo offline or share one board online.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",
-  "background_color": "#071c22",
-  "theme_color": "#071c22",
+  "background_color": "#dff3f3",
+  "theme_color": "#dff3f3",
   "orientation": "portrait-primary",
   "icons": [
     {

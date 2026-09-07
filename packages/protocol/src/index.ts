@@ -115,3 +115,4 @@ export function parseWireMessage(value: string): ClientMessage | null {
 export function encodeServerMessage(message: ServerMessage): string {
   return JSON.stringify(message)
 }
+export * from './puzzle'
