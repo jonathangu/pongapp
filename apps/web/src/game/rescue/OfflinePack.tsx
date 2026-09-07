@@ -23,8 +23,10 @@ export function OfflinePack() {
         const channel = new MessageChannel(); port.current = channel.port1
         channel.port1.onmessage = event => { if (!alive) return; setStatus(event.data); setMessage(event.data.ready ? 'Complete pack verified on this device.' : event.data.reason === 'evicted' ? 'Some offline files were removed by your browser. Download again before going offline.' : 'Download once. Play solo without internet.') }
         worker.current?.postMessage({ type: 'starling-status' }, [channel.port2])
-        const response = await fetch(import.meta.env.BASE_URL + 'starling-pack.json', { cache: 'no-store' })
-        if (response.ok && alive) setManifest(await response.json())
+        if (navigator.onLine) {
+          const response = await fetch(import.meta.env.BASE_URL + 'starling-pack.json', { cache: 'no-store' })
+          if (response.ok && alive) setManifest(await response.json())
+        }
       } catch { if (alive) setMessage('Cannot check the pack right now. Connect once and try again.') }
     })()
     return () => { alive = false; port.current?.close(); window.removeEventListener('beforeinstallprompt', showInstall); window.removeEventListener('appinstalled', didInstall) }

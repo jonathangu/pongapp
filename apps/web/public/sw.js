@@ -24,6 +24,20 @@ async function checkedPack() {
   }
   return { ready: true, version: manifest.version, bytes: manifest.bytes, files: manifest.files.length }
 }
+async function rangeResponse(request, response) {
+  const range = request.headers.get('range')
+  if (!response || !range) return response
+  const bytes = await response.arrayBuffer(), length = bytes.byteLength
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+  const unsatisfied = () => new Response(null, { status: 416, headers: { 'content-range': `bytes */${length}`, 'accept-ranges': 'bytes' } })
+  if (!match || (!match[1] && !match[2])) return unsatisfied()
+  const start = match[1] ? Number(match[1]) : Math.max(0, length - Number(match[2]))
+  const end = match[1] && match[2] ? Math.min(Number(match[2]), length - 1) : length - 1
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= length || end < start) return unsatisfied()
+  const headers = new Headers(response.headers)
+  headers.set('content-range', `bytes ${start}-${end}/${length}`); headers.set('content-length', String(end - start + 1)); headers.set('accept-ranges', 'bytes')
+  return new Response(bytes.slice(start, end + 1), { status: 206, headers })
+}
 async function cachedResponse(request) {
   const active = await activePack()
   if (!active) return undefined
@@ -34,11 +48,11 @@ async function cachedResponse(request) {
   const requested = new URL(request.url)
   const key = request.mode === 'navigate' && [BASE, BASE + 'index.html'].includes(requested.pathname) ? new URL(BASE, self.location.origin).href : request.url
   const response = await cache.match(key)
-  if (response || request.mode === 'navigate') return response
+  if (response || request.mode === 'navigate') return rangeResponse(request, response)
   // An already-open old tab may still request its old hashed lazy chunk after an update.
   for (const key of await caches.keys()) if (key.startsWith(PACK_PREFIX) && key !== active.cache) {
     const previous = await caches.open(key)
-    if (await previous.match(COMPLETE)) { const saved = await previous.match(request.url); if (saved) return saved }
+    if (await previous.match(COMPLETE)) { const saved = await previous.match(request.url); if (saved) return rangeResponse(request, saved) }
   }
   return undefined
 }

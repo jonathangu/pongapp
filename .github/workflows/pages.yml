@@ -85,3 +85,7 @@ jobs:
         run: node scripts/starling-room-smoke.mjs
         env:
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
+      - name: Verify shared story authority and one-time choices
+        run: node scripts/story-room-smoke.mjs
+        env:
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev

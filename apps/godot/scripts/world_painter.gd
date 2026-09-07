@@ -192,7 +192,7 @@ func draw_enemy(enemy: Dictionary, time: float) -> void:
 		draw_line(at + Vector2(-radius, radius + 12), at + Vector2(radius, radius + 12), Color("#163941"), 6.0, true)
 		draw_line(at + Vector2(-radius, radius + 12), at + Vector2(-radius + radius * 2.0 * float(enemy.hp) / float(enemy.maxHp), radius + 12), Color("#ffae88"), 4.0, true)
 	if enemy.kind == "guardian":
-		label("THE LANTERN GUARDIAN", at - Vector2(0, radius * 1.6), Color("#ffe0b0"), 34)
+		label("THE BREAKWATER KEEPER" if state.get("story") else "THE LANTERN GUARDIAN", at - Vector2(0, radius * 1.6), Color("#ffe0b0"), 34)
 
 func draw_ship(at: Vector2, ship: Dictionary, stations: Array, crew: Array, tint: Color, player_ship: bool) -> void:
 	var radius := 4.7 * UNIT
@@ -229,10 +229,29 @@ func draw_ship(at: Vector2, ship: Dictionary, stations: Array, crew: Array, tint
 				draw_circle(base + direction * 31.0, 9.0, Color("#b9ffdc"), true, -1, true)
 			if float(station.charge) > 0.0:
 				ring(base, 14.0 + float(station.charge) * 14.0, Color("#c6acff"), 4.0)
+	var family: Dictionary = state.get("story") if state.get("story") is Dictionary else {}
 	for person in crew:
 		var local := Vector2(float(person.x), -float(person.y) - 0.42) * UNIT
 		var color: Color = COLORS.get(person.color, Color.WHITE)
 		var bob := sin(float(person.step) * TAU) * 1.4 if not person.seat else 0.0
+		var mother: bool = player_ship and person.id == family.get("motherId", "")
+		var son: bool = player_ship and person.id == family.get("sonId", "")
+		if mother or son:
+			var body := at + local + Vector2(0, 3 if son else 0)
+			var coat := Color("#d4a642") if son else Color("#347578")
+			var scale := 0.78 if son else 1.0
+			draw_line(body + Vector2(-3, 4), body + Vector2(-4, 11 + bob), Color("#28333b"), 4.0, true)
+			draw_line(body + Vector2(3, 4), body + Vector2(4, 11 - bob), Color("#28333b"), 4.0, true)
+			draw_colored_polygon(PackedVector2Array([body + Vector2(-6, -4) * scale, body + Vector2(6, -4) * scale, body + Vector2(8, 8) * scale, body + Vector2(-8, 8) * scale]), coat)
+			draw_circle(body + Vector2(0, -8) * scale, 6.0 * scale, Color("#dcac7e"), true, -1, true)
+			draw_arc(body + Vector2(0, -9) * scale, 5.0 * scale, PI, TAU, 12, Color("#48372e"), 5.0, true)
+			if mother:
+				draw_circle(body + Vector2(-7, -8), 3.5, Color("#49382c"), true, -1, true)
+				draw_line(body + Vector2(-5, -1), body + Vector2(7, 2), Color("#cd7855"), 4.0, true)
+			label("FINN · 9" if son else "MARA", body + Vector2(0, -28), Color("#e5c587") if son else Color("#cbe4d0"), 15)
+			if person.id == state.get("playerId"):
+				ring(body + Vector2(0, -3), 16.0, Color(0.8, 1.0, 0.85, 0.5), 1.5)
+			continue
 		draw_line(at + local + Vector2(-3, 4), at + local + Vector2(-4, 11 + bob), color.darkened(0.25), 3.0, true)
 		draw_line(at + local + Vector2(3, 4), at + local + Vector2(4, 11 - bob), color.darkened(0.25), 3.0, true)
 		draw_circle(at + local, 7.0, color, true, -1, true)

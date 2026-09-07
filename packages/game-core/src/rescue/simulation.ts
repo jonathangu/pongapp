@@ -5,6 +5,7 @@ import { petRescueInput, routeRescueCrew } from './navigation'
 import { advanceRescueBullets, advanceRescueEnemies, damageRescueEnemy, damageRescueShip, damageRescueVessel, openRescueGift, rescueBeam, spawnRescueBullet, spawnRescueEnemy } from './combat'
 import { revealRescueFog, segmentCircle } from './world'
 import { advanceRescueAbilities, advanceRescueWeather, recruitRescueCrew } from './campaign'
+import { advanceRescueStory } from './story'
 
 export function validRescueInput(value: unknown): value is RescueInput {
   if (!value || typeof value !== 'object') return false
@@ -265,6 +266,8 @@ function advanceObjectives(s: RescueState, dt: number) {
 
 /** One authoritative clock; a solo command slows BOTH physics contexts together. */
 export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueInput>, step = RESCUE_STEP) {
+  if (s.story?.pending) { s.events = []; return }
+  if (s.phase === 'won') { advanceRescueStory(s); s.events = []; return }
   if (s.phase !== 'playing' || s.paused || s.docked) { s.events = []; return }
   const slow = s.solo && s.crew.some(p => !p.pet && Boolean(inputs[p.id]?.buttons && (inputs[p.id]!.buttons & RESCUE_BUTTON.command)))
   const dt = clampRescue(step, 0, 1 / 30) * (slow ? .16 : 1)
@@ -282,7 +285,7 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
     if (!p.pet && input.command && input.seq > p.commandSeq) {
       p.commandSeq = input.seq
       const crew = input.assist && input.commandCrew === p.id ? p : s.crew.find(c => c.pet && (!input.commandCrew || c.id === input.commandCrew))
-      const occupant = s.crew.find(c => c.id !== crew?.id && (c.seat === input.command || c.commandSeq >= 0 && c.order === input.command))
+      const occupant = s.crew.find(c => c.id !== crew?.id && (c.seat === input.command || (c.pet || c.commandSeq >= 0) && c.order === input.command))
       if (crew && (!occupant || occupant.pet)) {
         if (occupant?.pet) {
           const free = s.stations.find(st => st.id !== input.command && !s.crew.some(c => c.id !== occupant.id && (c.seat === st.id || c.order === st.id)))
@@ -315,6 +318,7 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
   }
   advanceGems(s, dt); advanceRescueWeather(s, dt); advanceRescueShip(s, dt); advanceRescueVessels(s, dt); advanceRescueEnemies(s, dt); advanceRescueBullets(s, dt)
   if (s.phase === 'playing') advanceObjectives(s, dt)
+  advanceRescueStory(s)
   if (s.tick % 30 === 0) {
     const map = s.stations.find(v => v.id === 'map')!
     revealRescueFog(s.world, s.ship, map.operated ? map.upgrade === 'power' ? 44 : 30 : 19)

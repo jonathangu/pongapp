@@ -1,7 +1,7 @@
 import { decodeRescueSave, validRescueAction, validRescueInput, type RescueAction, type RescueInput, type RescueState, type RescueWorld, type BiomeId } from '@pongapp/game-core'
 
 export const RESCUE_PROTOCOL_VERSION = 1 as const
-export interface RescueRoomRequest { name: string; guestId: string; biome: BiomeId; seed: number; voyageKey?: string; save?: string }
+export interface RescueRoomRequest { name: string; guestId: string; biome: BiomeId; seed: number; voyageKey?: string; save?: string; story?: boolean }
 export type RescueClientMessage =
   | { type: 'hello'; version: typeof RESCUE_PROTOCOL_VERSION; guestId: string; name: string; token?: string }
   | { type: 'input'; epoch: number; input: RescueInput }
@@ -25,7 +25,8 @@ export function parseRescueRoomRequest(v: unknown): RescueRoomRequest | null {
   const r = v as RescueRoomRequest
   if (!text(r.name, 1, 16) || !text(r.guestId, 8, 80) || ![0, 1, 2].includes(r.biome) || !Number.isInteger(r.seed) || r.seed < 0 || r.seed > 0xffffffff || (r.voyageKey !== undefined && !/^ark-v1:[0-4]:[0-7]$/.test(r.voyageKey))) return null
   if (r.save !== undefined && (typeof r.save !== 'string' || !decodeRescueSave(r.save))) return null
-  return { name: r.name.trim() || 'Explorer', guestId: r.guestId, biome: r.biome, seed: r.seed, ...(r.voyageKey ? { voyageKey: r.voyageKey } : {}), ...(r.save ? { save: r.save } : {}) }
+  if (r.story !== undefined && typeof r.story !== 'boolean') return null
+  return { name: r.name.trim() || 'Explorer', guestId: r.guestId, biome: r.biome, seed: r.seed, ...(r.voyageKey ? { voyageKey: r.voyageKey } : {}), ...(r.save ? { save: r.save } : {}), ...(r.story !== undefined ? { story: r.story } : {}) }
 }
 export function parseRescueClientMessage(raw: string): RescueClientMessage | null {
   if (raw.length > 2048) return null

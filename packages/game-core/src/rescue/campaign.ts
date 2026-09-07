@@ -43,7 +43,7 @@ export function dockRescueShip(s: RescueState): boolean {
   if (!dock || Math.hypot(s.ship.vx, s.ship.vy) > 4) return false
   s.docked = dock.id; s.ship.vx = 0; s.ship.vy = 0; s.ship.hp = s.ship.maxHp
   s.bullets = []; s.campaign.portVisits++
-  for (const p of [...s.crew]) if (p.pet && p.origin !== 'human' && p.tourEnds <= s.campaign.voyages) {
+  for (const p of [...s.crew]) if (p.pet && p.origin !== 'human' && p.id !== s.story?.motherId && p.id !== s.story?.sonId && p.tourEnds <= s.campaign.voyages) {
     if (p.gem !== null) { const gem = s.gems.find(g => g.id === p.gem); if (gem) { gem.heldBy = null; gem.x = p.x; gem.y = p.y + .3 } }
     const memory = s.campaign.alumni.find(a => a.id === p.id)
     if (memory) memory.availableAt = s.campaign.portVisits + 2

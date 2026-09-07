@@ -24,6 +24,10 @@ async function start(page, name, online = false) {
   await page.locator('.g-player-name input').fill(name)
   await page.getByRole('button', { name: online ? /Play together/ : /Play solo/ }).click()
   await ready(page)
+  if (await page.locator('[data-story-choice="wind"]').count()) {
+    await page.locator('[data-story-choice="wind"]').click()
+    await page.locator('[data-story-continue="watch"]').click()
+  }
 }
 async function ready(page) {
   await page.waitForFunction(() => window.__STARLING__?.stats().frames > 90, null, { timeout: 45000 })

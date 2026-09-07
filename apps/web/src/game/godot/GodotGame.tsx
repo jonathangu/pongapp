@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import { RESCUE_STATIONS, availableRescueCrew, nearestRescueDock, neutralRescueInput, rescueUpgradeCost, stationSpec, type RescueState, type ShipUpgrade, type StationId } from '@pongapp/game-core'
+import { RESCUE_STATIONS, availableRescueCrew, nearestRescueDock, neutralRescueInput, rescueUpgradeCost, stationSpec, storyCrewName, type RescueState, type ShipUpgrade, type StationId } from '@pongapp/game-core'
 import { RescueSession, type RescueSessionOptions } from '../rescue/RescueSession'
 import { RescueAudio } from '../rescue/RescueAudio'
 import shipArt from '../../../../godot/assets/starling.png'
+import { StoryBanter, StoryEncounter, StoryFamily, StoryJournal } from './Story'
+import { SongControls, type StorySong } from './StorySong'
 
 type Bridge = { snapshot: () => string; ready: (engine: string) => void; metrics: (frames: number, fps: number, view: number) => void; steer: (x: number, y: number) => void }
 type Settings = { music: number; effects: number; reducedMotion: boolean }
@@ -24,18 +26,21 @@ function Deck({ state, playerId, order }: { state: RescueState; playerId: string
       const occupant = state.crew.find(c => c.seat === station.id), player = state.crew.find(c => c.id === playerId), taken = occupant && !occupant.pet && occupant.id !== playerId
       return <button key={station.id} className={player?.order === station.id ? 'g-deck-station chosen' : 'g-deck-station'} style={{ left: `${50 + station.x * 8}%`, top: `${50 - (station.y + .35) * 8}%` }} disabled={Boolean(taken)} onClick={() => order(station.id)} aria-label={`${stationLabels[station.id]}${taken ? ' occupied by ' + occupant.name : ''}`} title={stationLabels[station.id]}>{stationIcons[station.id]}</button>
     })}
-    {state.crew.map(person => <span key={person.id} title={person.name} className={'g-deck-person' + (person.id === playerId ? ' you' : '')} style={{ left: `${50 + person.x * 8}%`, top: `${50 - (person.y + .45) * 8}%`, background: crewColors[person.color] }}>{person.pet ? '•' : person.name.slice(0, 1)}</span>)}
+    {state.crew.map(person => <span key={person.id} title={storyCrewName(state, person)} className={'g-deck-person' + (person.id === playerId ? ' you' : '') + (person.id === state.story?.sonId ? ' finn' : '')} style={{ left: `${50 + person.x * 8}%`, top: `${50 - (person.y + .45) * 8}%`, background: crewColors[person.color] }}>{person.id === state.story?.sonId ? 'F' : person.id === state.story?.motherId ? 'M' : person.pet ? '•' : person.name.slice(0, 1)}</span>)}
   </div>
 }
 
-export function GodotGame({ options, onExit }: { options: RescueSessionOptions; onExit: () => void }) {
+export function GodotGame({ options, onExit, song }: { options: RescueSessionOptions; onExit: () => void; song: StorySong }) {
   const runtime = useRef<{ session: RescueSession; audio: RescueAudio } | null>(null)
   const controls = useRef({ x: 0, y: 0, command: null as StationId | null, crew: '', ready: false })
   const [state, setState] = useState<RescueState | null>(null), [engine, setEngine] = useState(''), [status, setStatus] = useState('Preparing your ship…')
   const [error, setError] = useState(''), [toast, setToast] = useState(''), [deck, setDeck] = useState(false), [menu, setMenu] = useState(false), [mapView, setMapView] = useState(false)
   const [settings, setSettings] = useState<Settings>(settingsDefault), [crewSelection, setCrewSelection] = useState('')
-  const menuRef = useRef(menu), mapRef = useRef(mapView), settingsRef = useRef(settings)
-  menuRef.current = menu; mapRef.current = mapView; settingsRef.current = settings
+  const [journal, setJournal] = useState(false)
+  const menuRef = useRef(menu), mapRef = useRef(mapView), settingsRef = useRef(settings), songRef = useRef(song)
+  menuRef.current = menu || journal; mapRef.current = mapView; settingsRef.current = settings; songRef.current = song
+  const cue = !state ? null : state.story?.pending === 'watch' ? 'opening' : state.phase === 'won' && state.story ? 'ending' : 'sailing'
+  useEffect(() => { if (cue) song.setCue(cue) }, [cue, song.setCue])
   useEffect(() => {
     const session = new RescueSession(options), audio = new RescueAudio()
     runtime.current = { session, audio }
@@ -49,7 +54,7 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
     }
     Object.assign(window, { __STARLING_BRIDGE__: bridge, __STARLING__: {
       snapshot: () => structuredClone(session.authoritative), renderState: () => structuredClone(session.state),
-      stats: () => ({ engine: engineName, frames, fps, visibleWorldWidth, status: session.status, connected: session.connected, latency: session.latency, audio: audio.stats() }),
+      stats: () => ({ engine: engineName, frames, fps, visibleWorldWidth, status: session.status, connected: session.connected, latency: session.latency, audio: audio.stats(), song: songRef.current.stats() }),
       ...(import.meta.env.DEV ? { dev: { session, controls: controls.current } } : {}),
     } })
     const keys = new Set<string>()
@@ -74,14 +79,16 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
       const elapsed = Math.min(.08, (now - last) / 1000); last = now
       if (controls.current.ready) accumulator += elapsed
       if (!options.online) session.state.paused = !controls.current.ready || menuRef.current || document.hidden
+      if (session.state.story?.pending) { clear(); keys.clear() }
       const events: RescueState['events'] = []
       while (accumulator >= 1 / 60) {
         const input = neutralRescueInput(); input.assist = true
         input.x = menuRef.current || document.hidden ? 0 : controls.current.x; input.y = menuRef.current || document.hidden ? 0 : controls.current.y
         const player = session.state.crew.find(c => c.id === session.playerId)
         if (session.connected && player && player.commandSeq < 0 && !controls.current.command) {
-          const helmTaken = session.state.crew.some(c => !c.pet && c.id !== player.id && (c.seat === 'engine' || c.commandSeq >= 0 && c.order === 'engine'))
-          controls.current.command = helmTaken ? 'east' : 'engine'; controls.current.crew = player.id
+          const humanClaims = (station: StationId) => session.state.crew.some(c => !c.pet && c.id !== player.id && (c.seat === station || c.commandSeq >= 0 && c.order === station))
+          const helmTaken = !session.isHost || humanClaims('engine')
+          controls.current.command = helmTaken ? (['east', 'north', 'west', 'south', 'shield', 'galley', 'map'] as StationId[]).find(station => !humanClaims(station)) ?? 'east' : 'engine'; controls.current.crew = player.id
         }
         if (session.connected) {
           input.command = controls.current.command; input.commandCrew = controls.current.crew || session.playerId
@@ -90,7 +97,7 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
         session.tick(input); events.push(...session.state.events); accumulator -= 1 / 60
       }
       if (events.length) session.state.events = events.slice(-100)
-      audio.setSettings(settingsRef.current); audio.update(session.state)
+      audio.setSettings({ ...settingsRef.current, music: songRef.current.playing ? 0 : settingsRef.current.music }); audio.update(session.state)
       if (session.state.epoch !== epoch) { epoch = session.state.epoch; lastEvent = -1 }
       for (const event of session.state.events) if (event.id > lastEvent) {
         lastEvent = event.id
@@ -104,7 +111,7 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
         const current = session.state
         rendered = JSON.stringify({ ...current, world: { ...current.world, fog: [] }, playerId: session.playerId, mapView: mapRef.current, reducedMotion: settingsRef.current.reducedMotion })
       }
-      if (now - lastUI > 100) { lastUI = now; setState({ ...session.state }); setStatus(session.status); setError(session.error) }
+      if (now - lastUI > 100) { lastUI = now; setState({ ...session.state, story: session.authoritative.story }); setStatus(session.status); setError(session.error) }
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
@@ -157,24 +164,31 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
     anchor.href = url; anchor.download = 'starling-voyage.json'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   const exit = () => { runtime.current?.session.save(); onExit() }
-  return <div className={'g-game' + (settings.reducedMotion ? ' g-reduced' : '')}>
+  return <div className={'g-game' + (settings.reducedMotion ? ' g-reduced' : '') + (state?.story ? ' story-game' : '')}>
     <iframe className="g-engine" title="Starling Godot game world" src={import.meta.env.BASE_URL + 'godot/index.html'} allow="autoplay; fullscreen; gamepad" onError={() => setError('The Godot game could not load. Please reload.')}/>
-    <header className="g-game-top"><button className="g-round" onClick={() => { setMenu(true); controls.current.x = 0; controls.current.y = 0 }} aria-label="Pause and settings">☰</button><div><strong>{state?.region === 'space' ? 'THE HIGH STARS' : state?.region === 'jungle' ? 'FERNHEART' : 'LANTERN SEA'}</strong><small>{options.online ? status : 'A STARLING ADVENTURE'}</small></div><button className={'g-round' + (mapView ? ' active' : '')} onClick={() => setMapView(!mapView)} aria-label={mapView ? 'Close world map' : 'Open world map'}>⌖</button></header>
+    <header className="g-game-top"><button className="g-round" onClick={() => { setMenu(true); controls.current.x = 0; controls.current.y = 0 }} aria-label="Pause and settings">☰</button><div><strong>{state?.region === 'space' ? 'THE HIGH STARS' : state?.region === 'jungle' ? 'FERNHEART' : 'LANTERN SEA'}</strong><small>{options.online ? status : state?.story ? 'MARA & FINN’S CROSSING' : 'A STARLING ADVENTURE'}</small></div>{state?.story && <button className="g-round" aria-label="Open logbook" onClick={() => { setJournal(true); controls.current.x = 0; controls.current.y = 0 }}>▤</button>}<button className={'g-round' + (mapView ? ' active' : '')} onClick={() => setMapView(!mapView)} aria-label={mapView ? 'Close world map' : 'Open world map'}>⌖</button></header>
     {state && <><div className="g-hud"><div className="g-health" role="meter" aria-label="Ship health" aria-valuemin={0} aria-valuemax={state.ship.maxHp} aria-valuenow={state.ship.hp}><span>♥</span><div><i style={{ width: `${state.ship.hp / state.ship.maxHp * 100}%` }}/></div></div><span className="g-rescue-count">♡ <b>{state.stats.rescues}</b><small>/ 5</small></span><span className="g-salvage">✧ {state.campaign.salvage}</span></div>
-      <div className="g-mission">{state.stats.rescues < 5 ? 'Find the lantern cages. Bring your friends home.' : !state.guardianDefeated ? 'The guardian is here. Protect your crew!' : 'Everyone is safe. Return to the glowing beacon.'}</div>
+      <div className="g-mission">{state.stats.rescues < 5 ? state.story ? 'Rescue five crews. Find a passage for Mara and Finn.' : 'Find the lantern cages. Bring your friends home.' : !state.guardianDefeated ? state.story ? 'Face the Keeper. Get everyone through the breakwater.' : 'The guardian is here. Protect your crew!' : 'Everyone is safe. Return to the glowing beacon.'}</div>
+      <StoryFamily state={state}/>
+      {!menu && !journal && !deck && <StoryBanter state={state}/>}
       {session?.code && <button className="g-invite" onClick={() => void invite()}>Invite · {session.code} ↗</button>}
-      {deck && <aside className="g-deck-panel"><div className="g-panel-heading"><div><strong>ALL HANDS ON DECK</strong><small>Tap a station. Your crewmate walks there.</small></div><button className="g-round" aria-label="Close deck" onClick={() => setDeck(false)}>×</button></div><select aria-label="Choose crewmate to command" value={crewSelection} onChange={e => setCrewSelection(e.target.value)}><option value="">You · {player?.name}</option>{state.crew.filter(c => c.pet).map(c => <option key={c.id} value={c.id}>{c.name} · crew</option>)}</select><Deck state={state} playerId={crewSelection || session?.playerId || ''} order={order}/><div className="g-all-stations">{RESCUE_STATIONS.map(s => <button key={s.id} className={player?.order === s.id ? 'selected' : ''} onClick={() => order(s.id)}>{stationIcons[s.id]} {stationLabels[s.id]}</button>)}</div></aside>}
+      {deck && <aside className="g-deck-panel"><div className="g-panel-heading"><div><strong>ALL HANDS ON DECK</strong><small>Tap a station. Your crewmate walks there.</small></div><button className="g-round" aria-label="Close deck" onClick={() => setDeck(false)}>×</button></div><select aria-label="Choose crewmate to command" value={crewSelection} onChange={e => setCrewSelection(e.target.value)}><option value="">You · {player ? storyCrewName(state, player) : ''}</option>{state.crew.filter(c => c.pet).map(c => <option key={c.id} value={c.id}>{storyCrewName(state, c)} · {c.id === state.story?.sonId ? '9 · lookout' : 'crew'}</option>)}</select><Deck state={state} playerId={crewSelection || session?.playerId || ''} order={order}/><div className="g-all-stations">{RESCUE_STATIONS.map(s => <button key={s.id} className={player?.order === s.id ? 'selected' : ''} onClick={() => order(s.id)}>{stationIcons[s.id]} {stationLabels[s.id]}</button>)}</div></aside>}
       {toast && <div className="g-toast" role="status">{toast}</div>}
-      {!menu && !state.docked && state.phase === 'playing' && <div className="g-bottom">
+      {!menu && !journal && !state.story?.pending && !state.docked && state.phase === 'playing' && <div className="g-bottom">
         <div className="g-helm-row">{helm ? <div className="g-stick" role="application" aria-label="Steering joystick" onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); move(e) }} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} onLostPointerCapture={stop}><span>↑</span><i/></div> : <button className="g-back-helm" onClick={() => { setCrewSelection(''); controls.current.command = 'engine'; controls.current.crew = session?.playerId || '' }}>◈<small>Take helm</small></button>}<div className="g-station-status"><strong>{travelling ? `Walking to ${stationLabels[player.order].toLowerCase()}…` : station}</strong><span>{travelling ? 'Your crewmate handles the ladders.' : helm ? 'Drag to steer · release to brake' : player?.seat === 'shield' ? 'Automatically blocks incoming fire' : player?.seat === 'galley' ? 'Automatically cooks for the crew' : player?.seat === 'map' ? 'Lookout reveals more of the world' : 'Auto aim · auto fire'}</span>{helm && <small>WASD / arrows on keyboard</small>}</div>{nearbyDock && <button className="g-dock-button" onClick={() => session?.action({ kind: 'dock' })}>⚓<small>Dock</small></button>}</div>
         <nav className="g-stations" aria-label="Crew stations"><button aria-label="Helm" className={player?.order === 'engine' ? 'selected' : ''} onClick={() => order('engine', session?.playerId)}><span aria-hidden="true">◈</span>Helm</button><button aria-label="Cannons" className={player && ['east', 'west', 'north', 'south', 'starburst'].includes(player.order) ? 'selected' : ''} onClick={cannon}><span aria-hidden="true">✦</span>Cannons</button><button aria-label="Shield" className={player?.order === 'shield' ? 'selected' : ''} onClick={() => order('shield', session?.playerId)}><span aria-hidden="true">◒</span>Shield</button><button aria-label="Cook" className={player?.order === 'galley' ? 'selected' : ''} onClick={() => order('galley', session?.playerId)}><span aria-hidden="true">♨</span>Cook</button><button aria-label="Deck" className={deck ? 'selected' : ''} onClick={() => setDeck(!deck)}><span aria-hidden="true">▦</span>Deck</button></nav>
       </div>}
-      {(menu || state.phase !== 'playing' || dock) && <div className="g-modal-backdrop"><section className="g-modal" role="dialog" aria-modal="true" aria-label={dock ? dock.name : state.phase !== 'playing' ? 'Voyage complete' : 'Pause and settings'}>
+      {!state.story?.pending && !journal && (menu || state.phase !== 'playing' || dock) && <div className="g-modal-backdrop"><section className="g-modal" role="dialog" aria-modal="true" aria-label={dock ? dock.name : state.phase !== 'playing' ? 'Voyage complete' : 'Pause and settings'}>
         <p className="g-eyebrow">{dock ? 'A SAFE HARBOUR' : state.phase === 'won' ? 'EVERYONE MADE IT HOME' : state.phase === 'lost' ? 'THE SEA GETS ANOTHER CHANCE' : 'TAKE A BREATHER'}</p>
-        <h2>{dock ? dock.name : state.phase === 'won' ? 'A little braver. Together.' : state.phase === 'lost' ? 'Your crew will try again.' : 'Your voyage.'}</h2>
+        <h2>{dock ? dock.name : state.phase === 'won' ? state.story ? 'And ours begins.' : 'A little braver. Together.' : state.phase === 'lost' ? state.story ? 'Not this crossing.' : 'Your crew will try again.' : 'Your voyage.'}</h2>
+        {state.story && state.phase === 'lost' && <p>The lantern goes out. Mara finds Finn’s hand in the dark. Take the crossing again; the things you learned stay in the logbook.</p>}
+        {state.story && <button onClick={() => { setMenu(false); setJournal(true) }}>Read the family logbook</button>}
         {dock ? <><p>Ship repaired. Spend your {state.campaign.salvage} salvage, meet returning crew, or keep exploring.</p><div className="g-upgrades">{(['hull', 'drive', 'reactor', 'tractor'] as ShipUpgrade[]).map(upgrade => <button key={upgrade} disabled={!session?.isHost || state.campaign.salvage < rescueUpgradeCost(state, upgrade)} onClick={() => session?.action({ kind: 'upgrade', upgrade })}>{upgrade}<small>Lv {state.campaign.upgrades[upgrade]} · {rescueUpgradeCost(state, upgrade)} ✧</small></button>)}</div>{availableRescueCrew(state).map(c => <button key={c.id} onClick={() => session?.action({ kind: 'recruit', crew: c.id })}>Welcome {c.name} aboard</button>)}{dock.destination && <button className="g-primary" disabled={!session?.isHost} onClick={() => session?.action({ kind: 'travel' })}>Travel to {dock.destination} →</button>}<button className="g-secondary" disabled={!session?.isHost} onClick={() => session?.action({ kind: 'undock' })}>Back to the sea</button></> : state.phase !== 'playing' ? <><p>{state.stats.rescues}/5 friends rescued · {state.stats.kills} dangers defeated</p><button className="g-primary" disabled={!session?.isHost} onClick={() => session?.rematch(state.phase === 'won')}>{state.phase === 'won' ? 'Sail into the next chapter' : 'Try the voyage again'} →</button></> : <><p>{options.online ? 'Your shared world keeps sailing while this menu is open.' : 'Your solo voyage is paused and saved automatically.'}</p><button className="g-primary" onClick={() => setMenu(false)}>Back aboard →</button><label className="g-range">Music<input type="range" min={0} max={1} step={.05} value={settings.music} onChange={e => { setSettings({ ...settings, music: Number(e.target.value) }); void runtime.current?.audio.unlock() }}/></label><label className="g-range">Effects<input type="range" min={0} max={1} step={.05} value={settings.effects} onChange={e => setSettings({ ...settings, effects: Number(e.target.value) })}/></label><label className="g-check"><input type="checkbox" checked={settings.reducedMotion} onChange={e => setSettings({ ...settings, reducedMotion: e.target.checked })}/> Reduce motion</label><button onClick={exportSave}>Export voyage save</button></>}
+        {state.story && <SongControls song={song} compact/>}
         <button className="g-text-button" onClick={exit}>Save & return home</button><small className="g-engine-credit">{engine || 'Godot browser edition'}</small>
       </section></div>}
+      {state.story?.pending && <StoryEncounter state={state} captain={Boolean(session?.isHost)} connected={Boolean(session?.connected)} action={action => session?.action(action)} exit={exit} song={song}/>}
+      {journal && !state.story?.pending && <StoryJournal state={state} song={song} online={Boolean(options.online)} close={() => setJournal(false)}/>}
     </>}
     {!engine && <div className="g-loading"><img src={shipArt} alt=""/><p className="g-eyebrow">PREPARING THE STARLING</p><h2>A world worth getting lost in.</h2><p>Loading the Godot browser engine…</p><span>First launch downloads the game. Your crew waits for you.</span><button className="g-text-button" onClick={exit}>Return home</button></div>}
     {error && <div className="g-error" role="alert">{error}<button aria-label="Dismiss message" onClick={() => setError('')}>×</button></div>}
