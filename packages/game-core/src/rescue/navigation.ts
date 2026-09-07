@@ -94,9 +94,9 @@ export function routeRescueCrew(p: RescueCrew, destination: StationId, tick: num
   return input
 }
 
-export function petRescueInput(s: RescueState, p: RescueCrew, dt: number): RescueInput {
+export function petRescueInput(s: RescueState, p: RescueCrew, dt: number, assist = false): RescueInput {
   // Until explicitly commanded, pick a useful gun. Explicit orders never get overridden.
-  if (p.commandSeq < 0 && s.tick % 120 === 0) {
+  if (p.commandSeq < 0 && s.tick % 120 === 0 && !(assist && ['north', 'east', 'south', 'west', 'starburst'].includes(p.order))) {
     const target = [...s.enemies].sort((a, b) => Math.hypot(a.x - s.ship.x, a.y - s.ship.y) - Math.hypot(b.x - s.ship.x, b.y - s.ship.y))[0]
       ?? [...s.world.cages].filter(c => !c.open).sort((a, b) => Math.hypot(a.x - s.ship.x, a.y - s.ship.y) - Math.hypot(b.x - s.ship.x, b.y - s.ship.y))[0]
     if (target) {
@@ -127,7 +127,7 @@ export function petRescueInput(s: RescueState, p: RescueCrew, dt: number): Rescu
   if (p.seat === 'galley') { if (s.meal.cooldown <= 0) input.buttons = RESCUE_BUTTON.fire; return input }
   const spec = stationSpec(p.seat)
   const station = s.stations.find(v => v.id === p.seat)!
-  const muzzleAngle = spec.rail ? station.angle : spec.angle
+  const muzzleAngle = spec.rail || assist ? station.angle : spec.angle
   const muzzleX = s.ship.x + Math.cos(muzzleAngle) * (HULL_RADIUS + .6), muzzleY = s.ship.y + Math.sin(muzzleAngle) * (HULL_RADIUS + .6)
   const aim = (target: { x: number; y: number }) => {
     const distance = Math.hypot(target.x - muzzleX, target.y - muzzleY)
@@ -135,7 +135,7 @@ export function petRescueInput(s: RescueState, p: RescueCrew, dt: number): Rescu
     return { x: target.x - muzzleX - s.ship.vx * flight, y: target.y - muzzleY - s.ship.vy * flight }
   }
   const candidates = [...s.enemies, ...s.world.cages.filter(c => !c.open)]
-    .filter(t => { const a = aim(t); return spec.rail || Math.abs(Math.atan2(Math.sin(Math.atan2(a.y, a.x) - spec.angle), Math.cos(Math.atan2(a.y, a.x) - spec.angle))) < Math.PI / 3 })
+    .filter(t => { const a = aim(t); return assist || spec.rail || Math.abs(Math.atan2(Math.sin(Math.atan2(a.y, a.x) - spec.angle), Math.cos(Math.atan2(a.y, a.x) - spec.angle))) < Math.PI / 3 })
     .filter(t => Math.hypot(t.x - s.ship.x, t.y - s.ship.y) < 30)
     .sort((a, b) => Math.hypot(a.x - s.ship.x, a.y - s.ship.y) - Math.hypot(b.x - s.ship.x, b.y - s.ship.y))
   const target = candidates[0]

@@ -25,27 +25,17 @@ async function verifyDeployment() {
   const script = await scriptResponse.text()
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
   invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
-  for (const text of ['Starling Rescue', 'Open five cages.', 'Friends for the journey', 'Lantern Wake', 'starling-pack.json', 'galley.glb']) {
+  for (const text of ['godot/index.html', 'Auto aim · auto fire', 'Walking to ', 'Play together', 'starling-pack.json', '__STARLING_BRIDGE__']) {
     invariant(script.includes(text), `PongApp bundle is missing Starling release marker: ${text}`)
   }
-  const legacyChunk = script.match(/App-[A-Za-z0-9_-]+\.js/)?.[0]
-  invariant(legacyChunk, 'Legacy game entry is missing')
-  const legacyResponse = await fetchCurrent('/pongapp/assets/' + legacyChunk)
-  const legacy = await legacyResponse.text()
-  invariant(legacyResponse.ok && legacy.includes('TWO CREW. FOUR ROOMS. ONE SHIP.'), 'Preserved classic modes are missing')
-  const sceneChunk = legacy.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0] ?? script.match(/TinyWorldScene-[A-Za-z0-9_-]+\.js/)?.[0]
-  invariant(sceneChunk, 'PongApp bundle did not include the lazy 3D renderer')
-  const sceneResponse = await fetchCurrent('/pongapp/assets/' + sceneChunk)
-  const sceneScript=await sceneResponse.text()
-  invariant(sceneResponse.ok && sceneScript.includes('tiny-worlds.glb') && sceneScript.includes('rolling-cylinder'), 'Rolling-world 3D renderer chunk missing or stale')
-  for (const name of ['tiny-worlds.glb', 'painted-material.jpg']) {
-    const response = await fetchCurrent('/pongapp/art/' + name)
-    invariant(response.ok, `${name} returned ${response.status}`)
-    const served = Buffer.from(await response.arrayBuffer())
-    const expected = readFileSync(new URL('../apps/web/public/art/' + name, import.meta.url))
-    const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-    invariant(hash(served) === hash(expected), `${name} does not match this release`)
-  }
+  invariant(!script.includes('galley.glb') && !script.includes('Classic voyages'), 'The previous gameplay client is still in the main bundle')
+  const engineResponse = await fetchCurrent('/pongapp/godot/index.html')
+  const engine = await engineResponse.text()
+  invariant(engineResponse.ok && engine.includes('GODOT_CONFIG') && engine.includes('index.pck'), 'The playable Godot export is missing')
+  const wasmResponse = await fetchCurrent('/pongapp/godot/index.wasm')
+  invariant(wasmResponse.ok && /application\/wasm/.test(wasmResponse.headers.get('content-type') ?? ''), 'Godot WebAssembly has the wrong response or MIME type')
+  const wasm = Buffer.from(await wasmResponse.arrayBuffer())
+  invariant(wasm.subarray(0, 4).equals(Buffer.from([0, 97, 115, 109])) && wasm.length > 1000000, 'The Godot engine is not a valid WebAssembly artifact')
 
   const workerResponse = await fetchCurrent('/pongapp/sw.js')
   invariant(workerResponse.ok, `Offline service worker returned ${workerResponse.status}`)
@@ -56,6 +46,9 @@ async function verifyDeployment() {
   invariant(packResponse.ok, 'Offline pack manifest is missing')
   const pack = await packResponse.json()
   invariant(pack.format === 'starling-pack-v1' && pack.files.length >= 25, 'Offline pack is incomplete')
+  for (const name of ['index.html', 'index.js', 'index.pck', 'index.wasm', 'index.audio.worklet.js', 'index.audio.position.worklet.js']) {
+    invariant(pack.files.some(file => file.url === '/pongapp/godot/' + name), `Offline pack omits Godot ${name}`)
+  }
   if (process.env.DEPLOYMENT_ID) invariant(pack.revision === deploymentId, `Served revision ${pack.revision} does not match ${deploymentId}`)
   for (let offset = 0; offset < pack.files.length; offset += 5) await Promise.all(pack.files.slice(offset, offset + 5).map(async file => {
     const response = await fetchCurrent(file.url), bytes = Buffer.from(await response.arrayBuffer())

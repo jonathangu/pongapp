@@ -1,8 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import App from './StarlingApp'
-import './styles/app.css'
-import './styles/expedition.css'
-import './styles/crew.css'
+import App from './GodotApp'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('PongApp root element is missing.')

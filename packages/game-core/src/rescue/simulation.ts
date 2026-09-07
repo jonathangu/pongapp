@@ -13,7 +13,8 @@ export function validRescueInput(value: unknown): value is RescueInput {
     [v.x, v.y, v.aimX, v.aimY].every(n => typeof n === 'number' && Number.isFinite(n) && n >= -1 && n <= 1) &&
     Number.isInteger(v.buttons) && v.buttons >= 0 && v.buttons <= 31 && typeof v.active === 'boolean' &&
     (v.command === null || ['engine', 'shield', 'north', 'east', 'south', 'west', 'starburst', 'map', 'galley'].includes(v.command)) &&
-    (v.commandCrew === null || typeof v.commandCrew === 'string' && v.commandCrew.length <= 80)
+    (v.commandCrew === null || typeof v.commandCrew === 'string' && v.commandCrew.length <= 80) &&
+    (v.assist === undefined || typeof v.assist === 'boolean')
 }
 
 function socketGem(s: RescueState, id: number, stationId: StationId) {
@@ -82,7 +83,7 @@ function operateRescueStation(s: RescueState, p: RescueCrew, input: RescueInput,
   const ay = Math.abs(input.aimX) + Math.abs(input.aimY) > .1 ? input.aimY : input.y
   if (Math.hypot(ax, ay) > .15) {
     let target = Math.atan2(ay, ax)
-    if (!spec.rail) target = spec.angle + clampRescue(rescueAngle(target - spec.angle), -Math.PI / 3, Math.PI / 3)
+    if (!spec.rail && !input.assist) target = spec.angle + clampRescue(rescueAngle(target - spec.angle), -Math.PI / 3, Math.PI / 3)
     station.angle = rescueAngle(station.angle + clampRescue(rescueAngle(target - station.angle), -actionDt * (p.seat === 'shield' ? 3.8 : 5), actionDt * (p.seat === 'shield' ? 3.8 : 5)))
   }
   const fire = Boolean(input.buttons & RESCUE_BUTTON.fire)
@@ -93,6 +94,17 @@ function operateRescueStation(s: RescueState, p: RescueCrew, input: RescueInput,
     station.flailAngle = rescueAngle(station.flailAngle + station.flailSpeed * actionDt)
   }
   if (p.seat === 'engine') {
+    if (input.assist) {
+      const length = Math.max(1, Math.hypot(input.x, input.y))
+      const speedLimit = 10 * (1 + s.campaign.upgrades.drive * .08)
+      const response = 1 - Math.exp(-7 * dt)
+      s.ship.vx += (input.x / length * speedLimit - s.ship.vx) * response
+      s.ship.vy += (input.y / length * speedLimit - s.ship.vy) * response
+      s.ship.thrust = Math.min(1, Math.hypot(input.x, input.y))
+      station.firing = s.ship.thrust > .1
+      if (station.firing) station.angle = Math.atan2(-input.y, -input.x)
+      return
+    }
     if (fire) {
       const thrust = (station.upgrade === 'power' ? 30 : station.upgrade === 'beam' ? 18 : 22) * speed * (1 + s.campaign.upgrades.drive * .12) * (p.ability === 'pilot' ? 1.25 : 1)
       s.ship.vx -= Math.cos(station.angle) * thrust * dt; s.ship.vy -= Math.sin(station.angle) * thrust * dt; s.ship.thrust = 1
@@ -108,7 +120,7 @@ function operateRescueStation(s: RescueState, p: RescueCrew, input: RescueInput,
     }
     return
   }
-  const muzzleAngle = spec.rail ? station.angle : spec.angle, x = s.ship.x + Math.cos(muzzleAngle) * (HULL_RADIUS + .6), y = s.ship.y + Math.sin(muzzleAngle) * (HULL_RADIUS + .6)
+  const muzzleAngle = spec.rail || input.assist ? station.angle : spec.angle, x = s.ship.x + Math.cos(muzzleAngle) * (HULL_RADIUS + .6), y = s.ship.y + Math.sin(muzzleAngle) * (HULL_RADIUS + .6)
   if (p.seat === 'starburst') {
     if (fire && station.cooldown <= 0) {
       if (!station.charge) rescueEvent(s, 'charge', x, y, station.angle, 1, 0, p.id)
@@ -263,12 +275,30 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
     const rate = (s.meal.remaining > 0 ? 1.2 : 1) * (operator?.ability === 'spark' ? 1.2 : 1) * (1 + s.campaign.upgrades.reactor * .1)
     station.operated = false; station.firing = false; station.cooldown = Math.max(0, station.cooldown - dt * rate); station.heat = Math.max(0, station.heat - dt * .19 * rate); station.lingering = Math.max(0, station.lingering - dt)
   }
+  const assisted = Object.values(inputs).some(input => input.active && input.assist && validRescueInput(input))
   for (const p of s.crew) {
-    const raw = inputs[p.id], input = p.pet ? petRescueInput(s, p, dt) : raw?.active && validRescueInput(raw) ? raw : neutralRescueInput(Math.max(0, p.lastSeq))
+    const raw = inputs[p.id]
+    let input = p.pet ? { ...petRescueInput(s, p, dt, assisted), assist: assisted } : raw?.active && validRescueInput(raw) ? raw : neutralRescueInput(Math.max(0, p.lastSeq))
     if (!p.pet && input.command && input.seq > p.commandSeq) {
       p.commandSeq = input.seq
-      const pet = s.crew.find(c => c.pet && (!input.commandCrew || c.id === input.commandCrew))
-      if (pet) { pet.order = input.command; pet.route = []; pet.commandSeq = input.seq; rescueEvent(s, 'order', s.ship.x, s.ship.y, 0, 1, 0, input.command) }
+      const crew = input.assist && input.commandCrew === p.id ? p : s.crew.find(c => c.pet && (!input.commandCrew || c.id === input.commandCrew))
+      const occupant = s.crew.find(c => c.id !== crew?.id && (c.seat === input.command || c.commandSeq >= 0 && c.order === input.command))
+      if (crew && (!occupant || occupant.pet)) {
+        if (occupant?.pet) {
+          const free = s.stations.find(st => st.id !== input.command && !s.crew.some(c => c.id !== occupant.id && (c.seat === st.id || c.order === st.id)))
+          // A full crew can still swap jobs: use the human's vacated seat, or
+          // wait near another station when every seat is currently occupied.
+          occupant.order = free?.id ?? (crew.seat && crew.seat !== input.command ? crew.seat : input.command === 'galley' ? 'map' : 'galley')
+          occupant.route = []; occupant.commandSeq = input.seq
+        }
+        crew.order = input.command; crew.route = []; crew.commandSeq = input.seq
+        rescueEvent(s, 'order', s.ship.x, s.ship.y, 0, 1, 0, input.command)
+      }
+    }
+    if (!p.pet && input.assist) {
+      const seq = input.seq
+      if (p.seat !== p.order) input = { ...routeRescueCrew(p, p.order, s.tick, dt), seq, assist: true }
+      else if (p.seat !== 'engine') input = { ...petRescueInput(s, p, dt, true), seq, assist: true }
     }
     interactCrew(s, p, input)
     advanceRescueCrew(p, input, dt, s.meal.remaining > 0 ? 1.2 : 1)
@@ -276,6 +306,13 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
     p.lastButtons = input.buttons; p.lastSeq = input.seq
   }
   for (const station of s.stations) if (!station.operated) station.charge = Math.max(0, station.charge - dt)
+  if (assisted) {
+    for (const gem of s.gems) if (!gem.socket && !gem.heldBy) {
+      const targets = gem.kind === 'metal' ? ['engine', 'shield'] : ['east', 'north', 'south', 'west', 'starburst']
+      const free = s.stations.filter(st => targets.includes(st.id) && !st.upgrade).sort((a, b) => Number(b.operated) - Number(a.operated))[0]
+      if (free) socketGem(s, gem.id, free.id)
+    }
+  }
   advanceGems(s, dt); advanceRescueWeather(s, dt); advanceRescueShip(s, dt); advanceRescueVessels(s, dt); advanceRescueEnemies(s, dt); advanceRescueBullets(s, dt)
   if (s.phase === 'playing') advanceObjectives(s, dt)
   if (s.tick % 30 === 0) {

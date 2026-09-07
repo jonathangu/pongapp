@@ -1,0 +1,89 @@
+{
+  "status": "passed",
+  "runtimeSession": "01a0369d-0914-7190-ac0e-b4d37e1fc052",
+  "verifiedAt": "2026-09-06T23:53:33.357Z",
+  "candidateCount": 60,
+  "repositoryCount": 56,
+  "assetLibraryCount": 4,
+  "pinnedLicenseHashes": 56,
+  "pinnedSourceFiles": 68,
+  "localLinksChecked": 11,
+  "checks": [
+    "six requested fields plus identity and source for every candidate",
+    "unique candidate/repository mapping",
+    "no repository/source lookup failures",
+    "immutable commit and SHA-256 evidence shape",
+    "all source records match repository commit",
+    "catalog regeneration byte-identical",
+    "all local Markdown artifact links resolve",
+    "no internal web citation handles in artifacts",
+    "tracked worktree changes limited to AGENTS/docs"
+  ],
+  "limitations": [
+    "No candidate builds, phone benchmarks, security audit or shipping license approvals",
+    "External links were researched, not exhaustively re-crawled by this offline verifier",
+    "Pre-existing AGENTS.md edits are preserved and not part of this task commit"
+  ],
+  "artifactHashes": [
+    {
+      "path": "CATALOG.md",
+      "sha256": "88fb652b803386d32ac917f2e98641bc58b9a941e2184c77a437302d367698ea",
+      "bytes": 55278
+    },
+    {
+      "path": "CONTENT-PATTERNS.md",
+      "sha256": "4030f2490da36589b9dc357edfc5b062ff18343dc1bed73de0c5e4363b1396f4",
+      "bytes": 8632
+    },
+    {
+      "path": "PROGRESS.md",
+      "sha256": "e269336d73e950ade1d2234e8e1dd489969d291d6ea23cb3166b535f7fca3c0e",
+      "bytes": 3674
+    },
+    {
+      "path": "PROVENANCE.md",
+      "sha256": "d4b37c4b75d22797d6ddcdfc1dd03690aba75ccf251dd006d427483a3f4f9605",
+      "bytes": 5831
+    },
+    {
+      "path": "README.md",
+      "sha256": "2b2a88932eea38a4963bae3fd04764f5a61f12349858dc2e5abb18cd7144704f",
+      "bytes": 16310
+    },
+    {
+      "path": "catalog-data.mjs",
+      "sha256": "470aab2837ecf1e61bbe3d0addb389045f0e5434436ee6c9afea54ea72dd1217",
+      "bytes": 28873
+    },
+    {
+      "path": "collect-evidence.mjs",
+      "sha256": "9beaa07fea6305a97a4b73e746d5c3a45eb397535fcac4d17c476a150cacd3fd",
+      "bytes": 3722
+    },
+    {
+      "path": "inspect-sources.mjs",
+      "sha256": "46d7c3138b796084bfa4e83608ac2ed1b02771b0e3a4d3e4fb6f66b55c9eb8d9",
+      "bytes": 2640
+    },
+    {
+      "path": "render-catalog.mjs",
+      "sha256": "57cdfa54fc70800c79f67434804f7e3e67f0ef0265628a0ca8462aff98692645",
+      "bytes": 3793
+    },
+    {
+      "path": "repository-evidence.json",
+      "sha256": "da37ed021d34aaacda701e501437b31118fb658d396ed32a9765d514b8634fb5",
+      "bytes": 58894
+    },
+    {
+      "path": "source-evidence.json",
+      "sha256": "4c00d88b6db727bfff5b18097c41549ea286782860a0e89a493744f054cde02e",
+      "bytes": 24379
+    },
+    {
+      "path": "verify-research.mjs",
+      "sha256": "6ee48696903a371bfdc7c7ae8919893e52939abab89c102232a0a400f6fc6691",
+      "bytes": 4091
+    }
+  ]
+}

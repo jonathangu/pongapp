@@ -29,7 +29,11 @@ async function cachedResponse(request) {
   if (!active) return undefined
   const cache = await caches.open(active.cache)
   if (!await cache.match(COMPLETE)) return undefined
-  const response = await cache.match(request.mode === 'navigate' ? new URL(BASE, self.location.origin).href : request.url)
+  // Godot runs in a same-origin child navigation. Never substitute the app home
+  // document for that engine document when offline.
+  const requested = new URL(request.url)
+  const key = request.mode === 'navigate' && [BASE, BASE + 'index.html'].includes(requested.pathname) ? new URL(BASE, self.location.origin).href : request.url
+  const response = await cache.match(key)
   if (response || request.mode === 'navigate') return response
   // An already-open old tab may still request its old hashed lazy chunk after an update.
   for (const key of await caches.keys()) if (key.startsWith(PACK_PREFIX) && key !== active.cache) {
@@ -46,6 +50,13 @@ self.addEventListener('fetch', event => {
     event.respondWith((async () => {
       try { const response = await fetch(request, { cache: 'no-store', signal: AbortSignal.timeout(4500) }); if (response.ok) return response } catch {}
       return await cachedResponse(request) || new Response('<!doctype html><meta name="viewport" content="width=device-width"><title>Starling Rescue — offline</title><body style="background:#102b36;color:#fff1d8;font:18px system-ui;padding:32px"><h1>Your voyage is safe.</h1><p>Reconnect once, open Starling Rescue and download the offline pack. Then solo works without internet.</p><button onclick="location.reload()">Try again</button></body>', { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } })
+    })())
+  } else if (url.pathname.startsWith(BASE + 'godot/')) {
+    // Engine export names are stable: prefer the current online release, with
+    // the verified atomic pack as the offline fallback.
+    event.respondWith((async () => {
+      try { const response = await fetch(request, { cache: 'no-store' }); if (response.ok) return response } catch {}
+      return await cachedResponse(request) || new Response('Offline game pack missing', { status: 503 })
     })())
   } else if (url.pathname.startsWith(BASE + 'assets/') || url.pathname.startsWith(BASE + 'art/starling/') || /\.(png|webmanifest|svg)$/.test(url.pathname)) {
     event.respondWith((async () => await cachedResponse(request) || fetch(request))())

@@ -1,6 +1,6 @@
 import type { VoyagePack } from '../bestiary'
 /** Starling Rescue: simulation data only. No browser, renderer, clock or network imports. */
-export const RESCUE_RULESET = 12 as const
+export const RESCUE_RULESET = 13 as const
 export const RESCUE_STEP = 1 / 60
 export const HULL_RADIUS = 4.7
 export const CREW_HEIGHT = .82
@@ -27,6 +27,8 @@ export interface RescueInput {
   command: StationId | null
   commandCrew: string | null
   active: boolean
+  /** Tap-to-route, automatic station operation and direct helm steering. */
+  assist?: boolean
 }
 export interface RescueCrew extends Vec {
   id: string; name: string; color: typeof RESCUE_CREW_COLORS[number]; pet: boolean
