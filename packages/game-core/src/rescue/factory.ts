@@ -3,9 +3,10 @@ import { clearRescueDockApproaches, makeRescueDocks } from './campaign'
 import { validateVoyage, type VoyagePack } from '../bestiary'
 import { RESCUE_STATIONS, createRescueCrew } from './interior'
 import { createRescueWorld, revealRescueFog } from './world'
-import { createRescueStory } from './story'
+import { createRescueStory, storyHas } from './story'
+import { type OdysseyId } from './odyssey'
 
-export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo?: boolean; players?: Array<{ id: string; name: string }>; epoch?: number; inspiration?: string; region?: RescueRegion; voyage?: VoyagePack | null; story?: boolean } = {}): RescueState {
+export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo?: boolean; players?: Array<{ id: string; name: string }>; epoch?: number; inspiration?: string; region?: RescueRegion; voyage?: VoyagePack | null; story?: boolean; guided?: boolean } = {}): RescueState {
   const seed = (options.seed ?? 20260906) >>> 0, biome = options.biome ?? 0, solo = options.solo ?? true
   const crew = (options.players ?? [{ id: 'captain', name: 'You' }, { id: 'pip', name: 'Pip' }]).slice(0, MAX_RESCUE_HUMANS).map((p, i) => {
     const c = createRescueCrew(p.id, p.name, i > 0, !options.players && solo && i === 1)
@@ -30,6 +31,8 @@ export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo
     region: options.region ?? 'sea', docks: makeRescueDocks(options.region ?? 'sea'), docked: null,
     meal: { remaining: 0, progress: 0, cooldown: 0 }, weather: { phase: 'clear', intensity: 0, nextStrike: 62, strike: null, wave: 0, flash: 0 },
     story: options.story ? createRescueStory(crew[0]!.id, 'story-finn') : null,
+    ...(options.guided ? { seamanship: { step: 0, difficulty: 'gentle' as const, travelStart: 0 } } : {}),
+    ...(options.story && options.guided ? { littleWing: { remaining: 0, cooldown: 0, arrivals: 0 } } : {}),
   }
   clearRescueDockApproaches(state)
   for (const [i, role] of (['ally', 'merchant', 'raider'] as const).entries()) {
@@ -44,18 +47,55 @@ export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo
   return state
 }
 
-export function restartRescueGame(s: RescueState, nextBiome = false): RescueState {
+function resetRescueVoyage(s: RescueState, nextBiome = false): RescueState {
   const next = createRescueGame({ seed: nextBiome ? (s.initialSeed + 1777) >>> 0 : s.initialSeed, biome: nextBiome ? ((s.biome + 1) % 3) as BiomeId : s.biome,
     solo: s.solo, players: s.crew.filter(c => c.origin === 'human').map(c => ({ id: c.id, name: c.name })), epoch: s.epoch + 1, inspiration: s.inspiration, region: s.region, voyage: s.voyage })
   next.campaign = structuredClone(s.campaign)
   next.story = s.story ? structuredClone(s.story) : null
+  if (s.seamanship) next.seamanship = { ...s.seamanship, travelStart: 0 }
+  if (s.littleWing) next.littleWing = { ...s.littleWing, remaining: 0 }
   if (nextBiome) next.campaign.voyages++
   next.crew = s.crew.map(c => ({ ...createRescueCrew(c.id, c.name, c.pet, c.pet), color: c.color, origin: c.origin, ability: c.ability, tourEnds: c.tourEnds, order: c.order }))
   next.ship.maxHp = 12 + next.campaign.upgrades.hull * 3; next.ship.hp = next.ship.maxHp
   return next
 }
 
+function odysseyChapter(s: RescueState, stage: NonNullable<RescueState['odyssey']>['stage'], pending: OdysseyId | null): RescueState {
+  const next = resetRescueVoyage(s, true)
+  next.region = stage === 'sky' ? 'sky' : stage === 'gate' ? 'space' : 'jungle'
+  next.odyssey = { stage, pending, history: [...(s.odyssey?.history ?? [])], pulse: s.odyssey?.pulse ?? false }
+  next.littleWing ??= { remaining: 0, cooldown: 0, arrivals: 0 }
+  next.seamanship ??= { step: 5, difficulty: 'gentle', travelStart: 0 }
+  next.seamanship.step = 5
+  next.docks = makeRescueDocks(next.region); next.world.cages = []; next.world.portal = { x: stage === 'inner' ? 20 : 0, y: 28 }
+  next.world.title = stage === 'sky' ? 'The Last Blue Sky' : stage === 'gate' ? 'The Forbidden Gate' : 'The Living Sphere'
+  next.world.obstacles = next.world.obstacles.filter(o => Math.abs(o.x - (stage === 'inner' ? (o.y + 24) / 52 * 20 : 0)) > o.radius + 9)
+  next.vessels = next.vessels.filter(v => v.role !== 'raider'); next.nextWave = 20
+  return next
+}
+
+export function restartRescueGame(s: RescueState, nextBiome = false): RescueState {
+  if (s.odyssey) return odysseyChapter(s, s.odyssey.stage, null)
+  if (nextBiome && s.phase === 'won' && storyHas(s, 'home')) return odysseyChapter(s, 'sky', 'launch')
+  return resetRescueVoyage(s, nextBiome)
+}
+
+export function continueOdyssey(s: RescueState, encounter: OdysseyId): RescueState | null {
+  const chapter = s.odyssey
+  if (!chapter || chapter.pending !== encounter || chapter.history.includes(encounter)) return null
+  chapter.history.push(encounter); chapter.pending = null; s.extraction = 0
+  if (encounter === 'flare') { chapter.pulse = true; return odysseyChapter(s, 'gate', null) }
+  if (encounter === 'gate') {
+    if (!chapter.pulse) { chapter.history.pop(); chapter.pending = encounter; return null }
+    return odysseyChapter(s, 'inner', null)
+  }
+  if (encounter === 'dragon') { if (s.littleWing) { s.littleWing.remaining = 6; s.littleWing.arrivals++; s.littleWing.cooldown = 60 } }
+  if (encounter === 'unwritten') { s.phase = 'won'; s.guardianDefeated = true; s.campaign.salvage += 30 }
+  return s
+}
+
 export function travelRescueDock(s: RescueState): RescueState | null {
+  if (s.odyssey || s.story) return null
   const dock = s.docks.find(d => d.id === s.docked)
   if (!dock?.destination) return null
   const next = restartRescueGame(s, true)

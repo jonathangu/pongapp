@@ -1,7 +1,7 @@
 import { advanceRescueGame, applyRescueAction, createRescueGame, encodeRescueSave, neutralRescueInput, restartRescueGame, resumeRescueSolo, type RescueAction, type RescueInput, type RescueState, type VoyagePack } from '@pongapp/game-core'
 import { mergeRescueFrame, RESCUE_PROTOCOL_VERSION, type RescuePresence, type RescueServerMessage } from '@pongapp/protocol'
 
-export type RescueSessionOptions = { name: string; guestId: string; saved?: RescueState; online?: boolean; code?: string; server: string; voyage?: VoyagePack; story?: boolean }
+export type RescueSessionOptions = { name: string; guestId: string; saved?: RescueState; online?: boolean; code?: string; server: string; voyage?: VoyagePack; story?: boolean; guided?: boolean }
 export const SAVE_KEY = 'starling-rescue.save.v2'
 export class RescueSession {
   state: RescueState
@@ -39,7 +39,7 @@ export class RescueSession {
     this.clearRetry(); this.attempts++; void this.connect()
   }
   constructor(readonly options: RescueSessionOptions) {
-    this.state = options.saved ? resumeRescueSolo(options.saved) : createRescueGame({ players: [{ id: options.guestId, name: options.name }], seed: crypto.getRandomValues(new Uint32Array(1))[0]!, story: options.story, voyage: options.voyage?.source === 'generated' ? options.voyage : null })
+    this.state = options.saved ? resumeRescueSolo(options.saved) : createRescueGame({ players: [{ id: options.guestId, name: options.name }], seed: crypto.getRandomValues(new Uint32Array(1))[0]!, story: options.story, guided: options.guided, voyage: options.voyage?.source === 'generated' ? options.voyage : null })
     this.authoritative = this.state; this.playerId = this.state.crew.find(c => !c.pet)!.id
     if (options.online) {
       window.addEventListener('offline', this.offline); window.addEventListener('online', this.online)
@@ -69,7 +69,7 @@ export class RescueSession {
       if (!this.code) {
         this.code = this.options.code ?? null
         if (!this.code) {
-          const response = await fetch(this.options.server + '/api/rescue/rooms', { method: 'POST', signal: this.abort.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: this.options.name, guestId: this.options.guestId, biome: this.state.biome, seed: this.state.initialSeed, story: this.options.story === true, ...(this.state.voyage?.source === 'generated' ? { voyageKey: this.state.voyage.key } : {}), ...(this.options.saved ? { save: encodeRescueSave(this.options.saved) } : {}) }) })
+          const response = await fetch(this.options.server + '/api/rescue/rooms', { method: 'POST', signal: this.abort.signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: this.options.name, guestId: this.options.guestId, biome: this.state.biome, seed: this.state.initialSeed, story: this.options.story === true, guided: this.options.guided === true, ...(this.state.voyage?.source === 'generated' ? { voyageKey: this.state.voyage.key } : {}), ...(this.options.saved ? { save: encodeRescueSave(this.options.saved) } : {}) }) })
           if (!response.ok) throw new Error('The invitation could not be created. Try again when connected.')
           const body = await response.json() as { roomCode: string }; this.code = body.roomCode
         }

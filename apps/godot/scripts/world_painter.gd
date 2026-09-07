@@ -1,7 +1,8 @@
 extends Node2D
 
 const UNIT := 24.0
-const SHIP = preload("res://assets/starling.png")
+const SHIP = preload("res://assets/starling-deck-v2.png")
+const SURVEY_SHIP = preload("res://assets/royal-survey-ship.png")
 const ISLAND = preload("res://assets/island.png")
 const WILD_ISLAND = preload("res://assets/wild-island.png")
 const MANTA = preload("res://assets/manta.png")
@@ -91,17 +92,39 @@ func _draw() -> void:
 	# Docks are destinations, with generous readable labels.
 	for dock in state.docks:
 		var at := point(dock)
-		sprite(ISLAND, at - Vector2(0, 65), Vector2(260, 260))
+		if state.region == "space" or state.region == "sky":
+			# Orbital and sky docks are built platforms, not ocean islands.
+			draw_rect(Rect2(at - Vector2(95, 70), Vector2(190, 140)), Color("#244655"))
+			draw_rect(Rect2(at - Vector2(95, 70), Vector2(190, 140)), Color("#b69867"), false, 5.0)
+			for side in [-1, 1]:
+				draw_rect(Rect2(at + Vector2(side * 130 - 25, -45), Vector2(50, 90)), Color("#456d86"))
+				draw_line(at + Vector2(side * 95, 0), at + Vector2(side * 130, 0), Color("#b69867"), 8.0)
+			ring(at, 43, Color("#94e2e5"), 5.0)
+		else:
+			sprite(ISLAND, at - Vector2(0, 65), Vector2(260, 260))
 		ring(at, 115.0, Color(0.55, 0.9, 0.83, 0.24), 3.0)
 		label(dock.name, at + Vector2(0, 104), Color("#bae8d3"), 28)
 	# Return beacon remains visible, inactive until its rescue requirements are met.
 	var portal := point(state.world.portal)
+	var odyssey: Dictionary = state.get("odyssey", {})
 	var ready: bool = state.guardianDefeated
 	var portal_color := Color("#a6ffe0") if ready else Color("#7797b1")
 	for i in range(3):
 		ring(portal, 56.0 + float(i) * 14.0 + sin(time * 1.6 + float(i)) * 4.0, Color(portal_color, 0.2 + float(i) * 0.12), 4.0)
 	draw_circle(portal, 25.0, Color(portal_color, 0.14), true, -1, true)
-	label("HOME" if ready else "RETURN BEACON", portal + Vector2(0, 117), portal_color, 26)
+	var beacon_name := "HOME" if ready else "RETURN BEACON"
+	if not odyssey.is_empty():
+		beacon_name = "CLOUDBREAK" if odyssey.stage == "sky" else "THE FORBIDDEN GATE" if odyssey.stage == "gate" else "FOLLOW THE GOLDEN WINGS"
+		if odyssey.stage == "gate":
+			for i in range(12):
+				var a := float(i) / 12.0 * TAU + time * 0.025
+				var moon := portal + Vector2.from_angle(a) * 145.0
+				draw_circle(moon, 20.0 + float(i % 3) * 5.0, Color("#272636"), true, -1, true)
+				draw_arc(moon, 21.0, a, a + PI, 18, Color("#8f5970"), 3.0, true)
+			ring(portal, 132.0, Color("#68d0f4"), 5.0)
+		elif odyssey.stage == "inner":
+			draw_golden_wings(portal + Vector2(0, -90.0 + sin(time) * 8.0), time)
+	label(beacon_name, portal + Vector2(0, 117), Color("#f3dc99") if not odyssey.is_empty() else portal_color, 26)
 	for gift in state.world.gifts:
 		if gift.opened:
 			continue
@@ -194,20 +217,52 @@ func draw_enemy(enemy: Dictionary, time: float) -> void:
 	if enemy.kind == "guardian":
 		label("THE BREAKWATER KEEPER" if state.get("story") else "THE LANTERN GUARDIAN", at - Vector2(0, radius * 1.6), Color("#ffe0b0"), 34)
 
+func draw_golden_wings(at: Vector2, time: float) -> void:
+	# Six distinct wings answer Luma's lights; a calm guide, never a target.
+	for side in [-1, 1]:
+		for i in range(3):
+			var root := at + Vector2(side * 10, float(i) * 18 - 20)
+			var tip := at + Vector2(side * (110 - i * 17), -85 + i * 55 + sin(time * 1.4 + i) * 10)
+			var wing := PackedVector2Array([root, root.lerp(tip, 0.6) + Vector2(0, -24), tip, root.lerp(tip, 0.5) + Vector2(0, 24), root + Vector2(0, 12)])
+			draw_colored_polygon(wing, Color("#d0a653") if i % 2 == 0 else Color("#eec87d"))
+			draw_polyline(PackedVector2Array([wing[0], wing[1], wing[2], wing[3], wing[4], wing[0]]), Color("#ffe5a5"), 3.0, true)
+	draw_line(at + Vector2(0, 70), at + Vector2(0, -30), Color("#d6ac55"), 18.0, true)
+	draw_circle(at + Vector2(0, -37), 16.0, Color("#ffdf91"), true, -1, true)
+	draw_circle(at + Vector2(-6, -41), 3.0, Color("#83f4e8"), true, -1, true)
+	draw_circle(at + Vector2(6, -41), 3.0, Color("#83f4e8"), true, -1, true)
+	for i in range(5):
+		var color: Color = [Color("#ffb879"), Color("#fa8bad"), Color("#bfa0ff"), Color("#91eacb"), Color("#a4e9ff")][i]
+		draw_circle(at + Vector2(float(i - 2) * 17, -80), 4.0 + sin(time * 2 + i) * 1.5, color, true, -1, true)
+
 func draw_ship(at: Vector2, ship: Dictionary, stations: Array, crew: Array, tint: Color, player_ship: bool) -> void:
 	var radius := 4.7 * UNIT
 	var velocity := Vector2(float(ship.vx), -float(ship.vy))
 	var speed := velocity.length()
+	var flying: bool = state.has("odyssey") and (player_ship or state.region in ["sky", "space"])
+	var hull: Texture2D = SURVEY_SHIP if flying else SHIP
+	if flying:
+		for side in [-1, 1]:
+			draw_line(at + Vector2(side * 24, 129), at + Vector2(side * 24, 151 + speed * 4), Color(0.45, 0.9, 1.0, 0.45), 12.0, true)
 	if speed > 0.2:
 		var behind := -velocity.normalized()
 		for i in range(6):
 			var distance := radius * 0.7 + float(i) * 23.0 + fmod(clock * 35.0, 23.0)
 			var position := at + behind * distance
 			draw_arc(position, 12.0 + float(i) * 5.0, behind.angle() - 1.5, behind.angle() + 1.5, 12, Color(0.68, 1.0, 0.9, (1.0 - float(i) / 6.0) * minf(0.4, speed * 0.05)), 3.0, true)
-	draw_circle(at + Vector2(8, 20), radius, Color(0.01, 0.05, 0.08, 0.44), true, -1, true)
-	if player_ship:
-		ring(at, radius + 7, Color(0.58, 1.0, 0.86, 0.3), 2.0)
-	sprite(SHIP, at, Vector2.ONE * radius * 2.38, 0.0, Color("#ffc4b3") if float(ship.invulnerable) > 0.0 and fmod(clock * 10.0, 1.0) > 0.5 else tint)
+	# A wooden bow, broad working deck and squared stern. Interior gravity stays stable.
+	sprite(hull, at + Vector2(8, 15), Vector2(radius * 2.85, radius * 2.85), 0.0, Color(0.01, 0.05, 0.08, 0.4))
+	sprite(hull, at, Vector2(radius * 2.85, radius * 2.85), 0.0, Color("#ffc4b3") if float(ship.invulnerable) > 0.0 and fmod(clock * 10.0, 1.0) > 0.5 else tint)
+	# These rails/ladder marks match the authoritative walking geometry.
+	for deck in [[-2.65, 2.65, -3.4], [-4.1, 4.1, -1.3], [-3.5, 3.5, 0.8], [-1.95, 1.95, 2.8]]:
+		draw_line(at + Vector2(deck[0], -deck[2]) * UNIT, at + Vector2(deck[1], -deck[2]) * UNIT, Color(1.0, 0.82, 0.49, 0.48), 2.0, true)
+	for ladder in [[-2.15, -3.4, 0.8], [2.15, -1.3, 0.8], [1.15, 0.8, 2.8]]:
+		var foot := at + Vector2(ladder[0], -ladder[1]) * UNIT
+		var head := at + Vector2(ladder[0], -ladder[2]) * UNIT
+		for side in [-4, 4]:
+			draw_line(foot + Vector2(side, 0), head + Vector2(side, 0), Color("#ac784b"), 2.0, true)
+		for rung in range(int((foot.y - head.y) / 8.0)):
+			var y := head.y + float(rung) * 8.0
+			draw_line(Vector2(head.x - 4, y), Vector2(head.x + 4, y), Color("#e2b977"), 2.0, true)
 	for station in stations:
 		var id: String = station.id
 		var angle: float = -float(station.angle)
@@ -216,12 +271,8 @@ func draw_ship(at: Vector2, ship: Dictionary, stations: Array, crew: Array, tint
 			draw_arc(at, radius + 24, angle - 0.66, angle + 0.66, 24, Color(1.0, 0.85, 0.4, 0.2), 21.0, true)
 			draw_arc(at, radius + 24, angle - 0.66, angle + 0.66, 24, Color("#ffe9a1"), 5.0, true)
 		elif id in ["north", "east", "south", "west", "starburst"]:
-			var base_angle: float = -PI / 2.0 if id in ["north", "starburst"] else PI / 2.0 if id == "south" else PI if id == "west" else 0.0
-			if player_ship:
-				base_angle = angle
-			var base := at + Vector2.from_angle(base_angle) * radius
-			if id == "starburst":
-				base += Vector2(22, 7)
+			var mounts := {"north": Vector2(-0.9, -2.8), "east": Vector2(3.45, 1.3), "south": Vector2(-1.15, 3.4), "west": Vector2(-3.45, 1.3), "starburst": Vector2(0.4, -2.8)}
+			var base: Vector2 = at + mounts[id] * UNIT
 			draw_circle(base, 11.0, Color("#86633e"), true, -1, true)
 			draw_line(base, base + direction * 28.0, Color("#152b35"), 15.0, true)
 			draw_line(base, base + direction * 26.0, Color("#a7b9ac") if not station.operated else Color("#ffe0a0"), 8.0, true)
@@ -230,6 +281,16 @@ func draw_ship(at: Vector2, ship: Dictionary, stations: Array, crew: Array, tint
 			if float(station.charge) > 0.0:
 				ring(base, 14.0 + float(station.charge) * 14.0, Color("#c6acff"), 4.0)
 	var family: Dictionary = state.get("story") if state.get("story") is Dictionary else {}
+	var little_wing: Dictionary = state.get("littleWing", {})
+	if player_ship and float(little_wing.get("remaining", 0)) > 0:
+		for i in range(3):
+			ring(at, radius + 19.0 + float(i) * 8.0, Color(0.72, 0.84, 1.0, 0.55 - float(i) * 0.15), 3.0)
+		var child := at + Vector2(sin(clock * 2.5) * 13.0, -18)
+		draw_line(child + Vector2(0, -9), at + Vector2(0, -100), Color("#d8b779"), 2.0, true)
+		draw_circle(child, 7.0, Color("#b99dde"), true, -1, true)
+		draw_circle(child + Vector2(0, -8), 5.0, Color("#eac5a1"), true, -1, true)
+		draw_arc(child + Vector2(0, -9), 5.0, PI, TAU, 12, Color("#413238"), 3.0, true)
+		label("LUMA · 4", child + Vector2(0, -24), Color("#e2d5ff"), 16)
 	for person in crew:
 		var local := Vector2(float(person.x), -float(person.y) - 0.42) * UNIT
 		var color: Color = COLORS.get(person.color, Color.WHITE)

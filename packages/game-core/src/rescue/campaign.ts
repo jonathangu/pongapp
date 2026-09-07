@@ -12,10 +12,14 @@ export const RESCUE_ABILITIES: Record<CrewAbility, { name: string; description: 
   scout: { name: 'Starlight nose', description: 'Reveals a wider circle of the map every 8 seconds.' },
 }
 const RECRUITS = [
-  { name: 'Tavi', ability: 'pilot' }, { name: 'Mochi', ability: 'medic' }, { name: 'Luma', ability: 'prism' },
+  { name: 'Tavi', ability: 'pilot' }, { name: 'Mochi', ability: 'medic' }, { name: 'Pippa', ability: 'prism' },
   { name: 'Zip', ability: 'spark' }, { name: 'Fern', ability: 'scout' },
 ] as const
 export function makeRescueDocks(region: RescueRegion): RescueDock[] {
+  if (region === 'sky') return [
+    { id: 'sky-dock', name: 'The Abandoned Sky Docks', kind: 'city', x: -15, y: -22, destination: null },
+    { id: 'cloud-rest', name: 'Cloudbreak Shelter', kind: 'island', x: 24, y: -22, destination: null },
+  ]
   if (region === 'space') return [
     { id: 'orbital', name: 'Lantern Orbital', kind: 'city', x: -15, y: -22, destination: null },
     { id: 'reentry', name: 'Bluewater Descent', kind: 'launch', x: 24, y: -22, destination: 'sea' },
@@ -96,6 +100,9 @@ export function advanceRescueAbilities(s: RescueState, dt: number) {
   }
 }
 export function advanceRescueWeather(s: RescueState, dt: number) {
+  if (s.seamanship && (s.seamanship.step < 5 || s.seamanship.difficulty === 'gentle' && s.stats.rescues < 2)) {
+    s.weather.phase = 'clear'; s.weather.intensity = 0; s.weather.strike = null; s.weather.flash = 0; s.weather.wave += dt; return
+  }
   const w = s.weather, cycle = (s.time + s.biome * 20) % 180
   w.phase = cycle < 40 ? 'clear' : cycle < 60 ? 'building' : cycle < 140 ? 'storm' : 'eye'
   const target = w.phase === 'storm' ? 1 : w.phase === 'building' ? (cycle - 40) / 20 : 0

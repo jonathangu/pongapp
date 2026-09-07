@@ -13,6 +13,10 @@
 .story-song-toggle { width: 42px; height: 42px; min-height: 42px; padding: 0; border-radius: 50%; color: #edcea0; border-color: #cead703f; background: #d6bf8610; flex-shrink: 0; }
 .story-song-credit { flex: 1; min-width: 130px; }
 .story-song-credit strong { font-size: 12px; font-weight: 600; display: block; color: #ebd5ad; }
+.story-song-credit select { display: block; width: 100%; max-width: 310px; min-height: 27px; padding: 2px 20px 2px 0; border: 0; border-radius: 0; color: #ebd5ad; background-color: transparent; font-size: 12px; font-weight: 600; cursor: pointer; }
+.story-song-credit select:focus-visible { outline: 2px solid #dbc38d; outline-offset: 3px; }
+.story-song-credit option { background: #102b32; color: #ebd5ad; }
+.story-song.compact .story-song-credit select { font-size: 11px; min-height: 24px; }
 .story-song-credit small { display: block; color: #9bad9e; font-size: 10px; margin-top: 5px; }
 .story-song-volume { display: flex; align-items: center; gap: 12px; font-size: 10px; color: #b0bba5; }
 .story-song-volume input { width: 92px; min-height: 30px; padding: 0; accent-color: #dbbd84; }
@@ -95,6 +99,14 @@
 .story-overheard p+p { color: #8fada0; }
 .story-source, .story-empty { font-size: 11px; color: #a2b49f; line-height: 1.7; }
 .story-source a { text-decoration: underline; text-underline-offset: 3px; }
+.story-growth { margin: 28px 0 24px; padding: 22px; border: 1px solid #cab07944; border-radius: 14px; background: #d7b97008; }
+.story-growth>.g-eyebrow { font-size: 8px; color: #cfb17b; letter-spacing: .16em; margin: 0; }
+.story-growth h2 { margin: 10px 0; }
+.story-growth-lyric { font: italic 16px/1.6 Georgia, serif; color: #d8c292; }
+.story-growth article { border-top: 1px solid #b4ad8029; padding-top: 13px; margin-top: 16px; }
+.story-growth h3 { font: 18px/1.4 Georgia, serif; color: #e2d1ac; margin: 0 0 8px; }
+.story-growth article p { color: #b9c8b9; font: 14px/1.7 Georgia, serif; margin: 0; }
+.story-growth>small { display: block; color: #93ab9a; font-size: 10px; line-height: 1.6; margin-top: 18px; }
 @media(max-width:1300px) { .story-home-song { margin-left: 26px; margin-right: 26px; } }
 @media(max-width:900px) {
   .story-home .g-landing { gap: 24px; min-height: 640px; }

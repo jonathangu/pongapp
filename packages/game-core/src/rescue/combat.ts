@@ -33,13 +33,15 @@ export function spawnRescueBullet(s: RescueState, x: number, y: number, angle: n
     radius: enemy ? kind === 'orb' ? .32 : .14 : .13, damage, life: enemy ? 9 : 2.1, owner, enemy, kind, pierce, hit: [] })
 }
 export function shieldCovers(s: RescueState, angle: number): boolean {
+  if ((s.littleWing?.remaining ?? 0) > 0) return true
   const shield = s.stations.find(v => v.id === 'shield')!
   return (shield.operated || shield.lingering > 0) && angleDistance(angle, shield.angle) < (shield.upgrade === 'power' ? Math.PI / 3 : Math.PI / 4)
 }
 export function damageRescueShip(s: RescueState, amount: number, x: number, y: number) {
-  if (s.ship.invulnerable > 0 || s.phase !== 'playing') return
+  if (s.ship.invulnerable > 0 || s.phase !== 'playing' || s.seamanship && s.seamanship.step < 5) return
+  if ((s.littleWing?.remaining ?? 0) > 0) { s.stats.blocks++; rescueEvent(s, 'shield', s.ship.x, s.ship.y, 0, 2, 0, 'Luma'); return }
   const engine = s.stations.find(v => v.id === 'engine')!
-  const damage = engine.upgrade === 'metal' ? Math.max(1, amount - 1) : amount
+  const damage = (engine.upgrade === 'metal' ? Math.max(1, amount - 1) : amount) * (s.seamanship?.difficulty === 'gentle' ? .5 : s.seamanship?.difficulty === 'tempest' ? 1.5 : 1)
   s.ship.hp = Math.max(0, s.ship.hp - damage); s.ship.invulnerable = 1; s.ship.hitAngle = Math.atan2(y - s.ship.y, x - s.ship.x)
   s.stats.damage += damage; rescueEvent(s, 'hit', s.ship.x, s.ship.y, s.ship.hitAngle, 1, damage)
   if (!s.ship.hp) { s.phase = 'lost'; rescueEvent(s, 'lose') }

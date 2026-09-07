@@ -25,7 +25,7 @@ async function verifyDeployment() {
   const script = await scriptResponse.text()
   invariant(script.includes(roomServerUrl), `PongApp bundle did not target ${roomServerUrl}`)
   invariant(!script.includes('pongapp-room.fly.dev'), 'PongApp bundle still targeted the regional Fly room endpoint')
-  for (const text of ['godot/index.html', 'Auto aim · auto fire', 'Walking to ', 'Play together', 'starling-pack.json', '__STARLING_BRIDGE__']) {
+  for (const text of ['godot/index.html', 'Auto aim · auto fire', 'Walking to ', 'Play together', 'starling-pack.json', '__STARLING_BRIDGE__', 'Three hearts. One stolen ship.', 'Replay guided practice', 'Turn music off', 'Required phone installation']) {
     invariant(script.includes(text), `PongApp bundle is missing Starling release marker: ${text}`)
   }
   invariant(!script.includes('galley.glb') && !script.includes('Classic voyages'), 'The previous gameplay client is still in the main bundle')
@@ -46,6 +46,7 @@ async function verifyDeployment() {
   invariant(packResponse.ok, 'Offline pack manifest is missing')
   const pack = await packResponse.json()
   invariant(pack.format === 'starling-pack-v1' && pack.files.length >= 25, 'Offline pack is incomplete')
+  for (const track of ['tides-of-the-old-world', 'each-way-i-turn', 'tide-rope', 'saltwake-run', 'moonshot-fever', 'tiger-map', 'three-hearts']) invariant(pack.files.some(file => file.url.includes('/assets/' + track + '-') && file.url.endsWith('.m4a')), `Offline pack omits ${track}`)
   for (const name of ['index.html', 'index.js', 'index.pck', 'index.wasm', 'index.audio.worklet.js', 'index.audio.position.worklet.js']) {
     invariant(pack.files.some(file => file.url === '/pongapp/godot/' + name), `Offline pack omits Godot ${name}`)
   }

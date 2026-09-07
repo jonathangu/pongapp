@@ -8,8 +8,10 @@ const server = process.env.ROOM_SERVER_URL || 'http://127.0.0.1:8787'
 const evidence = process.env.GODOT_EVIDENCE || 'artifacts/godot-voyage'
 const latency = Number(process.env.GODOT_LATENCY_MS || 150), dropEvery = Number(process.env.GODOT_DROP_EVERY || 10)
 const story = process.env.GODOT_STORY === '1'
+const guided = process.env.GODOT_GUIDED === '1'
+const odyssey = process.env.GODOT_ODYSSEY === '1'
 await mkdir(evidence, { recursive: true })
-const response = await fetch(server + '/api/rescue/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Godot Captain', guestId: crypto.randomUUID(), seed: 73599, biome: 0, story }) })
+const response = await fetch(server + '/api/rescue/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Godot Captain', guestId: crypto.randomUUID(), seed: 73599, biome: 0, story, guided }) })
 assert.equal(response.status, 201)
 const { roomCode } = await response.json() as { roomCode: string }
 console.log('Assisted full voyage room', roomCode)
@@ -63,6 +65,19 @@ try {
   timer = setInterval(() => {
     const s = host.state
     const decision = host.authoritative
+    if (odyssey && decision.phase === 'won' && !decision.odyssey && storyHas(decision, 'home') && !decision.story?.pending) {
+      if (!sentStoryActions.has('lift-off')) { sentStoryActions.add('lift-off'); host.ws.send(JSON.stringify({ type: 'rematch', epoch: decision.epoch, next: true })) }
+      return
+    }
+    if (decision.odyssey?.pending) {
+      const encounter = decision.odyssey.pending, key = 'odyssey:' + encounter
+      if (!sentStoryActions.has(key)) {
+        sentStoryActions.add(key)
+        host.ws.send(JSON.stringify({ type: 'action', epoch: decision.epoch, action: { kind: 'odyssey-continue', encounter } }))
+        trace.push({ odyssey: encounter, stage: decision.odyssey.stage, time: decision.time }); console.log('odyssey', encounter)
+      }
+      return
+    }
     if (decision.story?.pending) {
       const encounter = decision.story.pending, result = decision.story.result, key = encounter + ':' + (result ?? 'choice')
       if (!sentStoryActions.has(key)) {
@@ -97,17 +112,20 @@ try {
     command(host, input, 'engine'); send(host, input)
     const f = friend.state
     cooked ||= f.meal.remaining > 0
-    const destination = cooked ? 'shield' : 'galley', friendInput = neutralRescueInput()
+    const destination = guided && s.seamanship?.step === 2 ? 'east' : guided && s.seamanship?.step === 4 ? 'galley' : cooked ? 'shield' : 'galley', friendInput = neutralRescueInput()
     command(friend, friendInput, destination); send(friend, friendInput)
   }, 1000 / 30)
-  while ((host.authoritative.phase === 'playing' || host.authoritative.story?.pending || story && !storyHas(host.authoritative, 'home') && host.authoritative.phase !== 'lost') && Date.now() - started < 240000) await new Promise(resolve => setTimeout(resolve, 500))
+  while ((host.authoritative.phase === 'playing' || host.authoritative.story?.pending || story && !storyHas(host.authoritative, 'home') && host.authoritative.phase !== 'lost' || odyssey && host.authoritative.phase !== 'lost' && !host.authoritative.odyssey?.history.includes('unwritten')) && Date.now() - started < 300000) await new Promise(resolve => setTimeout(resolve, 500))
   const final = host.authoritative
   await writeFile(`${evidence}/assisted-voyage-save.json`, encodeRescueSave(final))
   report = { runtimeSession: '01a0369d-0914-7190-ac0e-b4d37e1fc052', server, roomCode, ruleset: final.rulesetVersion, latencyEachWayMs: latency, dropEvery, seconds: (Date.now() - started) / 1000, phase: final.phase, rescued: final.stats.rescues, guardian: final.guardianDefeated, minHp, hp: final.ship.hp, cooked, trace, story: final.story ?? null, peers: peers.map(p => ({ frames: p.frames, logicalBytes: p.bytes, droppedPackets: p.dropped, errors: p.errors })), crew: final.crew.map(c => ({ name: c.name, seat: c.seat, order: c.order })) }
+  Object.assign(report, { odyssey: final.odyssey ?? null, seamanship: final.seamanship ?? null, littleWing: final.littleWing ?? null })
   console.log(JSON.stringify(report, null, 2))
   assert.equal(final.phase, 'won'); assert.ok(cooked); assert.ok(final.crew.length > 3)
   assert.deepEqual(peers.flatMap(p => p.errors), [])
   if (story) { assert.equal(final.story?.history.length, 8); assert.equal(final.story?.pending, null); assert.ok(final.crew.some(c => c.id === final.story?.sonId)) }
+  if (guided) { assert.equal(final.seamanship?.step, 5); assert.equal(final.seamanship.difficulty, 'gentle'); assert.ok((final.littleWing?.arrivals ?? 0) > 0) }
+  if (odyssey) { assert.deepEqual(final.odyssey?.history, ['launch', 'flare', 'gate', 'dragon', 'unwritten']); assert.ok(final.odyssey?.pulse) }
 } finally {
   done = true; if (timer) clearInterval(timer)
   for (const peer of peers) peer.ws.close(1000, 'Assisted full voyage verification')

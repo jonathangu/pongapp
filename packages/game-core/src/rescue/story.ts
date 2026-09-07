@@ -27,6 +27,7 @@ export function storyEncounter(s: RescueState, id: StoryId): StoryEncounter {
         'Our harbor went dark before supper. Now five lifeboats are trapped behind the Keeper’s lantern cages. Their crews know the bearings through the breakwater. We need each other to get out.',
         'Finn is nine. He is supposed to be asleep. Instead, he finds a brass watch beneath the charts—my father’s, stopped at eleven seventeen.',
         '“Did he know the way?” Finn asks. I look out at a coastline my father never saw. “Not this way.”',
+        'The harbor thins to a thread behind us. I used to think leaving would make me someone else. Finn needs a dry sleeve and supper. I start there.',
       ],
       choices: [
         { id: 'wind', label: 'Wind the watch together.', consequence: 'Keep the ticking watch. Finn will remember this.', response: 'I guide his fingers around the crown. One turn. A small, stubborn ticking. “It doesn’t tell us where to go,” I say. “We can still bring it.”', effect: {} },
@@ -49,9 +50,10 @@ export function storyEncounter(s: RescueState, id: StoryId): StoryEncounter {
       paragraphs: [
         'Our first rescued crewmate brings a wet bearing slip and a radio that works only when held sideways. A nearby launch answers. They have children aboard and a cracked pump.',
         'Six of our spare parts would get it running. Finn looks at the parts, then at me. For once he does not tell me what he thinks we should do.',
+        'The voice on the radio gives us a name: Iona. Finn writes it beside the launch. “So we’ll know it’s her next time.”',
       ],
       choices: [
-        { id: 'share', label: 'Send the six parts across.', consequence: 'Spend 6 salvage · the launch sends a hot meal (75s crew boost).', response: 'The launch’s cook insists on passing over a pot before we leave. Finn makes room on the stove. “Is that enough for everyone?” he asks. I find another bowl.', effect: { salvage: -6, meal: 75 } },
+        { id: 'share', label: 'Send the six parts across.', consequence: 'Spend 6 salvage · the launch sends a hot meal (75s crew boost).', response: 'The launch’s cook insists on passing over a pot before we leave. Finn makes room on the stove. “Is that enough for everyone?” he asks. I find another bowl. Iona asks us to keep her frequency. A stranger has become someone we can call.', effect: { salvage: -6, meal: 75 } },
         { id: 'signal', label: 'Keep the parts; relay their position.', consequence: 'No supply cost · repair 1 hull while the radio connects.', response: 'We stay until a harbor tender answers. Finn writes the launch’s name in the margin so we can ask about it later. There is more than one way to keep someone in sight.', effect: { hull: 1 } },
       ],
     },
@@ -85,6 +87,7 @@ export function storyEncounter(s: RescueState, id: StoryId): StoryEncounter {
         'Four crews safe. The final bearing lies beyond a wall of broken white water. Finn reads the compass out loud, then checks it against the chart.',
         chose(s, 'whale', 'whale') ? 'His whale is still there, salt-blurred at the tail. “I know which line this is,” he says.' : 'He points to the depth marks we checked together. “This is the deep one. Isn’t it?”',
         'The helm pulls hard. He reaches toward it, then waits for me. There is room for both our hands.',
+        chose(s, 'sometimes', 'spoon') ? 'He checks the radio before I ask. We have done it together often enough that he no longer waits for the reminder. I wonder which of my other habits he is learning.' : 'He brings the tool roll and checks the hatch. We did that together when the leak opened. Now he does it before I ask. Some lessons arrive without a speech.',
       ],
       choices: [
         { id: 'teach', label: 'Tune the helm. Let him learn beside you.', consequence: 'Spend 8 salvage · Finn learns Tailwind (+25% helm thrust).', response: 'I ease the stiff gearing. Finn takes the wheel with my hand over his, first one correction, then another. When he gets it wrong, we correct it together. Nobody lets go.', effect: { salvage: -8, finn: 'pilot' } },
@@ -96,6 +99,7 @@ export function storyEncounter(s: RescueState, id: StoryId): StoryEncounter {
       paragraphs: [
         'Five bearing slips make one narrow passage. Five rescued voices answer when Finn calls the roll. Beyond the breakwater, the Keeper’s red lantern turns toward us.',
         'Finn asks whether Grandad would have liked him. I tighten the loose strap on his life jacket. “He would have loved being here with you.”',
+        chose(s, 'first-light', 'share') ? 'The radio crackles. Iona recognizes Finn’s call; her repaired launch is through the shallows. She stays on the channel with us. He does not need to look up her name.' : 'The harbor tender we called for Iona answers our check-in. Her launch is safe. Finn ticks the name in the chart’s margin. Keeping the radio open counted for something.',
         'We have one moment to prepare the Starling. Then we face the Keeper and make for the return beacon together.',
       ],
       choices: [
@@ -110,6 +114,7 @@ export function storyEncounter(s: RescueState, id: StoryId): StoryEncounter {
         chose(s, 'coat', 'patch') ? 'Below our feet, his grandfather’s coat keeps the sea out. Finn says we should write that in the log. We do.' : 'The old coat hangs beside Finn’s yellow one. The locker door will not quite close. I leave it.',
         chose(s, 'small-hands', 'teach') ? 'He takes the next quiet stretch at the wheel. I stay beside him, but my hand rests on his shoulder now.' : 'He reads me the next bearing, then yawns halfway through it. I tell him I can take this watch.',
         'My father is not waiting beyond this harbor. But I know where I learned to put my hand. For a moment, that is enough.',
+        chose(s, 'whale', 'whale') ? 'Finn does not rub out the shallow water we scraped through. “So we remember what happened.” What we found did not undo the scrape. We can still choose the next bearing.' : 'Finn draws the deeper channel again, this time without asking me where it goes. We did not become different people all at once. We kept doing small things beside each other.',
       ],
       choices: [
         { id: 'pass', label: 'Put the watch in Finn’s keeping.', consequence: 'Your ending: a watch to carry forward.', response: chose(s, 'watch', 'wind') ? 'He winds it once, carefully. Later, when he sleeps below, I can still hear it beside his bunk. I take the wheel. The old sea vanishes. And ours begins.' : 'It is still stopped at eleven seventeen. He says he will learn to mend it. I believe him. I take the wheel. The old sea vanishes. And ours begins.', effect: {} },
@@ -118,6 +123,23 @@ export function storyEncounter(s: RescueState, id: StoryId): StoryEncounter {
     },
   }
   return scenes[id]
+}
+
+export interface StoryReflection { id: string; title: string; body: string }
+/** Reflections are rebuilt from existing choices: no personality scores or new save fields. */
+export function storyReflections(s: RescueState): StoryReflection[] {
+  const reflections: StoryReflection[] = []
+  if (storyHas(s, 'whale')) reflections.push(chose(s, 'whale', 'whale')
+    ? { id: 'course', title: 'Making room for another line', body: 'Mara followed Finn’s whale. The scratched keel had a real cost; the parts they found did not erase it. His mark stayed on the chart, beside the warning for next time.' }
+    : { id: 'course', title: 'Caution can be shared', body: 'Mara kept the deeper channel and explained the depth marks. Finn’s whale stayed. Protecting him did not have to mean keeping the reasons to herself.' })
+  if (storyHas(s, 'first-light')) reflections.push(chose(s, 'first-light', 'share')
+    ? { id: 'neighbors', title: 'A name, not just a light', body: 'Six spare parts crossed the water; a pot of food came back. Finn kept Iona’s frequency.' + (storyHas(s, 'keeper') ? ' When her voice returned, they already knew who was there.' : ' A light on the water had become someone they knew by name.') }
+    : { id: 'neighbors', title: 'Staying on the channel', body: 'They kept their spare parts, but stayed until help answered. Finn kept Iona’s name. Help was a thing they followed through, not only something they gave away.' })
+  if (storyHas(s, 'small-hands')) reflections.push(chose(s, 'small-hands', 'teach')
+    ? { id: 'practice', title: 'One correction, then another', body: 'Mara spent the parts to ease the helm and let Finn practice beside her. His hands still needed hers. Becoming capable was something they repeated together.' }
+    : { id: 'practice', title: 'A voice growing steadier', body: 'Finn read the bearings while Mara held the wheel. On the second number his voice steadied. A place in the crew can begin with one task done carefully, then done again.' })
+  if (storyHas(s, 'home')) reflections.push({ id: 'next', title: 'Not finished choosing', body: 'This crossing is part of them, not all of them. They cannot sail back and make every turn again. The next time a light calls, there is still a wheel to turn.' })
+  return reflections
 }
 
 export const STORY_BANTER = {

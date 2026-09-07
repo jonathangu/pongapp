@@ -1,13 +1,13 @@
 {
   "name": "Starling — The Sea We Carry",
   "short_name": "Starling",
-  "description": "Mara, her nine-year-old son Finn, and an inherited ship. Choose what to carry through their crossing. Solo offline or invited co-op, with Tides of the Old World.",
+  "description": "One little boat. A crossing for two. Learn to steer, rescue and cook together. Offline solo or online co-op, with six original songs.",
   "start_url": "/pongapp/",
   "scope": "/pongapp/",
   "display": "standalone",
   "background_color": "#071c22",
   "theme_color": "#071c22",
-  "orientation": "any",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "starling-icon-192.png",

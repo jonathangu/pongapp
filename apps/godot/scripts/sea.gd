@@ -65,13 +65,16 @@ func _process(delta: float) -> void:
 	var target := Vector2(float(ship.x), -float(ship.y)) * UNIT
 	var span := get_viewport_rect().size
 	var map_open := bool(snapshot.get("mapView", false))
-	var zoom_target := minf(0.48, minf(span.x / (124.0 * UNIT), span.y * 0.62 / (116.0 * UNIT))) if map_open else 1.0
+	# Keep the working boat legible on a narrow phone; the map is a separate overview.
+	var portrait := span.y > span.x * 1.2
+	var sailing_zoom := span.x / ((29.0 if portrait else 55.0) * UNIT)
+	var zoom_target := minf(0.48, minf(span.x / (124.0 * UNIT), span.y * 0.62 / (116.0 * UNIT))) if map_open else sailing_zoom
 	camera.zoom = camera.zoom.lerp(Vector2.ONE * zoom_target, 1.0 - exp(-delta * 7.0))
 	if map_open:
 		target = Vector2.ZERO
 	else:
-		target += Vector2(float(ship.vx), -float(ship.vy)) * UNIT * 0.65
-		target.y += span.y * 0.035
+		target += Vector2(float(ship.vx), -float(ship.vy)) * UNIT * 0.28
+		target.y -= span.y * (0.005 if portrait else 0.02) / maxf(0.1, zoom_target)
 	if not has_camera:
 		camera.position = target
 		has_camera = true
@@ -80,9 +83,10 @@ func _process(delta: float) -> void:
 	water.size = span
 	water.material.set_shader_parameter("camera_world", camera.position / UNIT)
 	water.material.set_shader_parameter("world_span", span / UNIT / camera.zoom)
-	water.material.set_shader_parameter("region", 1.0 if snapshot.region == "space" else 2.0 if snapshot.region == "jungle" else 0.0)
+	water.material.set_shader_parameter("region", 3.0 if snapshot.region == "sky" else 1.0 if snapshot.region == "space" else 2.0 if snapshot.region == "jungle" else 0.0)
 	water.material.set_shader_parameter("storm", float(snapshot.weather.intensity))
 	water.material.set_shader_parameter("motion", 0.0 if snapshot.get("reducedMotion", false) else 1.0)
+	water.material.set_shader_parameter("inner_world", 1.0 if snapshot.has("odyssey") and snapshot.odyssey.stage == "inner" else 0.0)
 	effects.reduced_motion = bool(snapshot.get("reducedMotion", false))
 	if bridge and frames % 30 == 0:
 		bridge.metrics(frames, Engine.get_frames_per_second(), span.x / UNIT / camera.zoom.x)
