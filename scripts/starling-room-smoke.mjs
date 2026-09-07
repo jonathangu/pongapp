@@ -42,9 +42,21 @@ const jump = input(host); jump.input.buttons = 1
 host.ws.send(JSON.stringify(jump)); host.ws.send(JSON.stringify(input(host)))
 const command = input(host); command.input.command = 'west'; command.input.commandCrew = host.state.crew.find(c => c.origin === 'companion').id
 host.ws.send(JSON.stringify(command)); host.ws.send(JSON.stringify(input(host)))
-await new Promise(resolve => setTimeout(resolve, 160))
-assert.ok(host.state.crew.find(c => c.id === host.id).y > -.8, 'Quick jump was dropped')
-assert.equal(host.state.crew.find(c => c.origin === 'companion').order, 'west', 'Quick order was dropped')
+// Observe replicated state, not a 160 ms wall-clock guess. The room publishes
+// at 10 Hz and a real network round trip can exceed that old observation window.
+const quickInputObservations = []
+let quickJumpObserved = false, quickOrderObserved = false
+const quickDeadline = Date.now() + 2500
+while (Date.now() < quickDeadline && !(quickJumpObserved && quickOrderObserved)) {
+  const captain = host.state.crew.find(c => c.id === host.id), companion = host.state.crew.find(c => c.origin === 'companion')
+  quickJumpObserved ||= captain.y > -.8
+  quickOrderObserved ||= companion.order === 'west' && companion.commandSeq >= command.input.seq
+  quickInputObservations.push({ tick: host.state.tick, seq: captain.lastSeq, y: captain.y, grounded: captain.grounded, petOrder: companion.order, petCommandSeq: companion.commandSeq })
+  if (!(quickJumpObserved && quickOrderObserved)) await new Promise(resolve => setTimeout(resolve, 25))
+}
+await writeFile(`${evidence}/quick-input-observations.json`, JSON.stringify(quickInputObservations, null, 2))
+assert.ok(quickJumpObserved, 'Quick jump was dropped')
+assert.ok(quickOrderObserved, 'Quick order was dropped')
 // Non-host requests cannot mutate shared voyage decisions.
 peers[1].ws.send(JSON.stringify({ type: 'action', epoch: host.state.epoch, action: { kind: 'dock' } }))
 await new Promise(resolve => setTimeout(resolve, 150))
