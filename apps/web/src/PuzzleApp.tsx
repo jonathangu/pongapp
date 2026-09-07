@@ -262,7 +262,7 @@ export default function PuzzleApp() {
       <header className="puzzle-header"><a href={import.meta.env.BASE_URL} className="puzzle-brand"><span>✦</span> STARLING</a><div><button className="round-control" aria-label={sound ? 'Turn sound off' : 'Turn sound on'} onClick={() => setSound(!sound)}>{sound ? '♪' : '♪̸'}</button><button className="round-control" aria-label="Settings and help" onClick={() => setPanel(true)}>☰</button></div></header>
       <section className="puzzle-goal" aria-label="Level goal">
         <div className="level-pill">LEVEL {game.level}</div>
-        <h1>A little closer to home.</h1>
+        <h1>Bring the family home.</h1>
         <p>Match 3 to move the boat.</p>
         <div className="puzzle-counts"><span><b>{Math.min(game.collected, game.target)}</b> / {game.target} pieces</span><span><b>{game.moves}</b> moves</span></div>
         <div className="goal-meter" role="progressbar" aria-label="Rescue progress" aria-valuenow={Math.min(game.collected, game.target)} aria-valuemin={0} aria-valuemax={game.target}><div style={{ width: `${fraction * 100}%` }}/></div>

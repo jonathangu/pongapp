@@ -11,7 +11,7 @@ async function verify() {
   const path = html.match(/src="(\/pongapp\/assets\/index-[^"]+\.js)"/)?.[1]; assert.ok(path)
   const scriptResponse = await current(path); assert.equal(scriptResponse.status, 200)
   const script = await scriptResponse.text()
-  for (const marker of ['A little closer to home.', 'Play together', 'Make a line of 3.', 'starling.puzzle.v1', 'Luma cheers you on!', server]) assert.ok(script.includes(marker), 'Missing puzzle marker: ' + marker)
+  for (const marker of ['Bring the family home.', 'Play together', 'Make a line of 3.', 'starling.puzzle.v1', 'Luma cheers you on!', server]) assert.ok(script.includes(marker), 'Missing puzzle marker: ' + marker)
   for (const retired of ['__STARLING_BRIDGE__', 'godot/index.html', 'Required phone installation', 'galley.glb']) assert.ok(!script.includes(retired), 'Retired client remains: ' + retired)
   assert.ok(Buffer.byteLength(script) < 350000, 'Initial JavaScript exceeds 350 KB')
   const worker = await current('/pongapp/sw.js'); assert.equal(await worker.text(), readFileSync(new URL('../apps/web/public/sw.js', import.meta.url), 'utf8'))
