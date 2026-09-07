@@ -56,10 +56,17 @@ async function cachedResponse(request) {
   }
   return undefined
 }
+async function packManifestResponse(request) {
+  try { const response = await fetch(request, { cache: 'no-store', signal: AbortSignal.timeout(4500) }); if (response.ok) return response } catch {}
+  const active = await activePack()
+  const manifest = active && await (await caches.open(active.cache)).match(COMPLETE)
+  return manifest || new Response('Offline pack not downloaded', { status: 503 })
+}
 self.addEventListener('fetch', event => {
   const request = event.request, url = new URL(request.url)
   if (request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith(BASE) || url.pathname.includes('/api/')) return
-  if (url.pathname.endsWith('sw.js') || url.pathname.endsWith('starling-pack.json')) return
+  if (url.pathname.endsWith('sw.js')) return
+  if (url.pathname.endsWith('starling-pack.json')) { event.respondWith(packManifestResponse(request)); return }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { const response = await fetch(request, { cache: 'no-store', signal: AbortSignal.timeout(4500) }); if (response.ok) return response } catch {}

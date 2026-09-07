@@ -82,7 +82,7 @@ try {
   await shot(page, 'live-deck-phone')
   await page.getByRole('button', { name: 'Close deck' }).click()
   await page.getByRole('button', { name: 'Open world map' }).click()
-  await page.waitForTimeout(800)
+  await page.waitForFunction(() => window.__STARLING__.stats().visibleWorldWidth > 115)
   const map = await stats(page)
   assert.ok(map.visibleWorldWidth > 115)
   await shot(page, 'world-map-phone')

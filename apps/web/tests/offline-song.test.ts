@@ -28,4 +28,11 @@ describe('offline theme song byte ranges', () => {
     const response = audio()
     expect(await context.rangeResponse(new Request('https://example.test/pongapp/'), response)).toBe(response)
   })
+  it('serves the installed pack manifest when the network is down despite an online browser signal', async () => {
+    const manifest = { version: 'installed', files: [] }
+    const offline = { ...context, AbortSignal, fetch: async () => { throw new Error('Offline') }, caches: { open: async (name: string) => ({ match: async () => Response.json(name === 'starling-meta-v1' ? { cache: 'starling-pack-installed' } : manifest) }) }, packManifestResponse: undefined as unknown as (request: Request) => Promise<Response> }
+    runInNewContext(source + '\nglobalThis.packManifestResponse = packManifestResponse', offline)
+    const response = await offline.packManifestResponse(new Request('https://example.test/pongapp/starling-pack.json'))
+    expect(response.status).toBe(200); expect(await response.json()).toEqual(manifest)
+  })
 })

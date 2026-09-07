@@ -62,14 +62,15 @@ try {
   const started = Date.now()
   timer = setInterval(() => {
     const s = host.state
-    if (s.story?.pending) {
-      const encounter = s.story.pending, result = s.story.result, key = encounter + ':' + (result ?? 'choice')
+    const decision = host.authoritative
+    if (decision.story?.pending) {
+      const encounter = decision.story.pending, result = decision.story.result, key = encounter + ':' + (result ?? 'choice')
       if (!sentStoryActions.has(key)) {
         sentStoryActions.add(key)
         const choices = { watch: 'wind', whale: 'channel', 'first-light': 'signal', coat: 'patch', sometimes: 'spoon', 'small-hands': 'read', keeper: 'together', home: 'pass' }
         const action = result ? { kind: 'story-continue', encounter } : { kind: 'story-choice', encounter, choice: choices[encounter] }
-        setTimeout(() => { if (!done && host.ws.readyState === WebSocket.OPEN) host.ws.send(JSON.stringify({ type: 'action', epoch: s.epoch, action })) }, latency)
-        trace.push({ story: encounter, action, time: s.time }); console.log('story', key)
+        setTimeout(() => { if (!done && host.ws.readyState === WebSocket.OPEN) host.ws.send(JSON.stringify({ type: 'action', epoch: decision.epoch, action })) }, latency)
+        trace.push({ story: encounter, action, time: decision.time }); console.log('story', key)
       }
       return
     }

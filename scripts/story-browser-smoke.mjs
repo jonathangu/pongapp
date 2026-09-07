@@ -13,7 +13,8 @@ async function tab(viewport, label) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, reducedMotion: 'reduce' }); contexts.push(context)
   const page = await context.newPage()
   page.on('pageerror', error => report.errors.push({ label, message: error.message }))
-  page.on('console', message => { if (message.type() === 'error') report.errors.push({ label, message: message.text() }) })
+  page.on('console', message => { if (message.type() === 'error') report.errors.push({ label, message: message.text(), location: message.location() }) })
+  page.on('requestfailed', request => { (report.networkFailures ??= []).push({ label, url: request.url(), reason: request.failure()?.errorText }) })
   return { page, context }
 }
 const snapshot = page => page.evaluate(() => window.__STARLING__.snapshot())
