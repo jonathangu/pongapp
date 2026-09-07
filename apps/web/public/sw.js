@@ -18,6 +18,9 @@ async function checkedPack() {
   const cache = await caches.open(active.cache), marker = await cache.match(COMPLETE)
   if (!marker) return { ready: false, reason: 'evicted', version: active.version }
   const manifest = await marker.json()
+  // A completed engine-era pack cannot make the new puzzle available offline.
+  // Keep it recoverable until the player explicitly saves the replacement pack.
+  if (manifest.files.some(file => file.url.startsWith(BASE + 'godot/'))) return { ready: false, reason: 'update_available', version: active.version }
   for (const file of manifest.files) {
     const entry = await cache.match(new URL(file.url, self.location.origin).href)
     if (!entry || entry.headers.get('x-starling-sha256') !== file.sha256) return { ready: false, reason: 'evicted', version: active.version }
