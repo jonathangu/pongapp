@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { createMatchGame, findMatchMove, MATCH_SIZE, matchNeighbors, matchPhase, playMatchSwap, restoreMatchGame, type MatchBoard, type MatchGame } from '@pongapp/game-core'
 import { diagnosticsReport, logDiagnostic, supportId } from './diagnostics'
 import { createPuzzleRoom, PuzzleConnection, puzzleInvitation } from './puzzle-connection'
+import { currentOfflineWorker } from './offline-worker'
 import type { PuzzleServerMessage } from '@pongapp/protocol'
 import themeSong from './assets/story/each-way-i-turn.m4a'
 import './styles/puzzle.css'
@@ -53,7 +54,7 @@ export default function PuzzleApp() {
   const connection = useRef<PuzzleConnection | null>(null), receive = useRef<(message: PuzzleServerMessage) => void>(() => {})
   const drag = useRef<{ index: number; x: number; y: number } | null>(null), skipClick = useRef(false), busyRef = useRef(false)
   const generation = useRef(0), audio = useRef<AudioContext | null>(null), song = useRef<HTMLAudioElement>(null)
-  const worker = useRef<ServiceWorker | null>(null), packPort = useRef<MessagePort | null>(null)
+  const packPort = useRef<MessagePort | null>(null)
   const phase = matchPhase(game), connectionPaused = Boolean(roomCode && connectionStatus)
   const hintMove = hint && !busy && phase === 'playing' ? findMatchMove(board) : null
   const fraction = Math.min(1, game.collected / game.target)
@@ -102,6 +103,8 @@ export default function PuzzleApp() {
   }, [music])
   useEffect(() => {
     let alive = true
+    let removeListener = () => {}
+    let statusPort: MessagePort | null = null
     const timeout = setTimeout(() => { if (alive) setOffline('Play works now. Offline setup can be retried below.') }, 12000)
     if (!('serviceWorker' in navigator) || !isSecureContext || import.meta.env.DEV) { clearTimeout(timeout); setOffline('Play online. Offline saving needs the published app.'); return }
     void (async () => {
@@ -109,17 +112,22 @@ export default function PuzzleApp() {
         const registration = await navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js', { scope: import.meta.env.BASE_URL, updateViaCache: 'none' })
         const ready = registration.active ? registration : await navigator.serviceWorker.ready
         if (!alive) return
-        worker.current = ready.active
-        const channel = new MessageChannel(); packPort.current = channel.port1
-        channel.port1.onmessage = event => {
+        const checkStatus = () => {
           if (!alive) return
-          clearTimeout(timeout)
-          setOffline(event.data.ready ? 'Ready offline ✓' : 'Save this little game for offline play.')
+          const channel = new MessageChannel(); statusPort?.close(); statusPort = channel.port1
+          channel.port1.onmessage = event => {
+            if (!alive) return
+            clearTimeout(timeout)
+            setOffline(event.data.ready ? 'Ready offline ✓' : 'Save this little game for offline play.')
+          }
+          ready.active?.postMessage({ type: 'starling-status' }, [channel.port2])
         }
-        worker.current?.postMessage({ type: 'starling-status' }, [channel.port2])
+        navigator.serviceWorker.addEventListener('controllerchange', checkStatus)
+        removeListener = () => navigator.serviceWorker.removeEventListener('controllerchange', checkStatus)
+        checkStatus()
       } catch { if (alive) { clearTimeout(timeout); setOffline('Offline setup unavailable. You can still play.'); logDiagnostic('offline_failed', { code: 'worker_unavailable' }) } }
     })()
-    return () => { alive = false; clearTimeout(timeout); packPort.current?.close() }
+    return () => { alive = false; clearTimeout(timeout); removeListener(); statusPort?.close() }
   }, [])
 
   const animate = async (before: MatchGame, a: number, b: number, authoritative?: MatchGame, teamwork = false) => {
@@ -232,8 +240,9 @@ export default function PuzzleApp() {
     saveGame(next); setGame(next); setBoard(next.board); setSelected(null); setCleared([]); setHint(false); setBurst(''); setNotice(''); setBusy(false); busyRef.current = false
   }
   const extraMoves = () => { if (roomCode) { connection.current?.send({ kind: 'more' }); return }; const next = { ...game, moves: 5 }; saveGame(next); setGame(next); setHint(true) }
-  const download = () => {
-    if (!worker.current) { setOffline('Reload once to retry offline setup. Your puzzle is saved.'); return }
+  const download = async () => {
+    const active = await currentOfflineWorker(navigator.serviceWorker, import.meta.env.BASE_URL).catch(() => null)
+    if (!active) { setOffline('Reload once to retry offline setup. Your puzzle is saved.'); return }
     packPort.current?.close()
     const channel = new MessageChannel(); packPort.current = channel.port1
     setOffline('Saving the game…')
@@ -244,7 +253,7 @@ export default function PuzzleApp() {
       else if (data.type === 'error') { clearTimeout(timeout); setOffline(data.message ?? 'Could not save offline. Please retry.'); logDiagnostic('offline_failed', { code: 'download_failed' }) }
       else if (data.type === 'progress') setOffline(`Saving · ${Math.round(data.bytes / data.totalBytes * 100)}%`)
     }
-    worker.current.postMessage({ type: 'starling-download' }, [channel.port2])
+    active.postMessage({ type: 'starling-download' }, [channel.port2])
   }
   const copyReport = async () => {
     const report = diagnosticsReport()
