@@ -5,6 +5,7 @@ import { RescueAudio } from '../rescue/RescueAudio'
 import shipArt from '../../../../godot/assets/starling.png'
 import { StoryBanter, StoryEncounter, StoryFamily, StoryJournal } from './Story'
 import { SongControls, type StorySong } from './StorySong'
+import { storySongCue } from './story-song-cues'
 
 type Bridge = { snapshot: () => string; ready: (engine: string) => void; metrics: (frames: number, fps: number, view: number) => void; steer: (x: number, y: number) => void }
 type Settings = { music: number; effects: number; reducedMotion: boolean }
@@ -39,7 +40,7 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
   const [journal, setJournal] = useState(false)
   const menuRef = useRef(menu), mapRef = useRef(mapView), settingsRef = useRef(settings), songRef = useRef(song)
   menuRef.current = menu || journal; mapRef.current = mapView; settingsRef.current = settings; songRef.current = song
-  const cue = !state ? null : state.story?.pending === 'watch' ? 'opening' : state.phase === 'won' && state.story ? 'ending' : 'sailing'
+  const cue = state ? storySongCue(state) : null
   useEffect(() => { if (cue) song.setCue(cue) }, [cue, song.setCue])
   useEffect(() => {
     const session = new RescueSession(options), audio = new RescueAudio()

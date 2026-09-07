@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import { STORY_BANTER, storyChoiceUnavailable, storyCrewName, storyEncounter, type RescueAction, type RescueState, type StoryBanterId } from '@pongapp/game-core'
+import { STORY_BANTER, storyChoiceUnavailable, storyCrewName, storyEncounter, storyReflections, type RescueAction, type RescueState, type StoryBanterId } from '@pongapp/game-core'
 import familyArt from '../../assets/story/mara-finn-helm.png'
 import { SongControls, type StorySong } from './StorySong'
 
@@ -14,7 +14,7 @@ function Dialog({ children, title, className = '', onClose }: { children: ReactN
     event.stopPropagation()
     if (event.key === 'Escape' && onClose) { event.preventDefault(); onClose() }
     if (event.key !== 'Tab') return
-    const items = [...dialog.current!.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), summary, [tabindex="0"]')].filter(el => el.getClientRects().length)
+    const items = [...dialog.current!.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]')].filter(el => el.getClientRects().length)
     const first = items[0], last = items.at(-1)
     if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus() }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
@@ -43,7 +43,7 @@ export function StoryEncounter({ state, captain, connected, action, exit, song }
           })}
         </div>
         {!captain || !connected ? <p className="story-wait">{connected ? 'The captain is choosing. Your whole crew shares this moment.' : 'Connecting your crew…'}</p> : <p className="story-wait">Take your time. The sea waits while you decide.</p>}
-        {(opening || finale) && <SongControls song={song} compact/>}
+        {(opening || finale || scene.id === 'small-hands') && <SongControls song={song} compact/>}
         <button className="story-save" onClick={exit}>Save & return home</button>
       </div>
     </div>
@@ -52,6 +52,7 @@ export function StoryEncounter({ state, captain, connected, action, exit, song }
 
 export function StoryJournal({ state, song, online, close }: { state: RescueState; song: StorySong; online: boolean; close: () => void }) {
   const history = state.story?.history ?? [], picked = (id: string) => history.find(r => r.encounter === id)?.choice
+  const reflections = storyReflections(state)
   return <Dialog title="The Starling logbook" className="story-journal" onClose={close}>
     <header><div><p className="g-eyebrow">THE THINGS WE KEEP</p><h1>The Starling logbook</h1><p>{online ? 'Your shared sea keeps sailing outside this book.' : 'Your solo voyage is paused while you read.'}</p></div><button aria-label="Close logbook" className="g-round" onClick={close}>×</button></header>
     <div className="story-journal-pages">
@@ -65,8 +66,9 @@ export function StoryJournal({ state, song, online, close }: { state: RescueStat
       {!history.length && <p className="story-empty">The first page is waiting. Your choices will be kept here.</p>}
       {history.map(entry => { const scene = storyEncounter(state, entry.encounter), choice = scene.choices.find(c => c.id === entry.choice)!; return <details key={entry.encounter} className="story-entry"><summary><span>{scene.chapter.slice(0, 2)}</span><div><strong>{scene.title}</strong><small>{choice.label}</small></div><b>＋</b></summary><div>{scene.paragraphs.map(p => <p key={p}>{p}</p>)}<blockquote>{choice.response}</blockquote><small>{choice.consequence}</small></div></details> })}
       {Boolean(state.story?.heard.length) && <section className="story-overheard"><h2>Heard aboard</h2>{state.story!.heard.map(id => { const b = STORY_BANTER[id as StoryBanterId]; return <div key={id}><p><b>{b.speaker}:</b> {b.line}</p><p>{b.reply}</p></div> })}</section>}
+      <section className="story-growth" aria-label="Who we are becoming"><p className="g-eyebrow">EACH WAY I TURN</p><h2>Who we are becoming</h2><p className="story-growth-lyric">“Each way I turn is turning me.”</p>{reflections.length ? reflections.map(reflection => <article key={reflection.id}><h3>{reflection.title}</h3><p>{reflection.body}</p></article>) : <p className="story-empty">No verdict yet. The small things you do will find their way onto this page.</p>}<small>Reflections on your choices—not a score or a fixed idea of who you are.</small></section>
       <SongControls song={song}/>
-      <p className="story-source">Original song and story inspiration by Jonathan Gu. <a href="https://suno.com/s/CM7yXgXxHqT7iF97" target="_blank" rel="noreferrer">Listen on Suno ↗</a></p>
+      <p className="story-source">Two original songs and story inspirations by Jonathan Gu: Tides of the Old World · family and inheritance; Each Way I Turn · choices and becoming. Both complete recordings are included in the offline pack. <a href="https://suno.com/s/CM7yXgXxHqT7iF97" target="_blank" rel="noreferrer">Tides on Suno ↗</a></p>
     </div>
   </Dialog>
 }

@@ -40,6 +40,6 @@ export default function GodotApp() {
     <section className="g-promise"><article><span>01</span><div><strong>Keep them afloat.</strong><p>Steer the Starling. Tap a station to walk there. Your crew handles the aiming.</p></div></article><article><span>02</span><div><strong>Choose what to carry.</strong><p>A coat can be a memory or a hull patch. Supplies matter. So does what Finn remembers.</p></div></article><article><span>03</span><div><strong>Make a new way home.</strong><p>Answer five rescue signals. Face the Keeper. Write an ending that belongs to the two of them.</p></div></article></section>
     <div className="story-home-song"><SongControls song={song}/></div>
     <details className="g-offline"><summary>Play offline & install on your phone <span>＋</span></summary><OfflinePack/></details>
-    <footer className="g-home-footer"><span>STARLING · TIDES OF THE OLD WORLD</span><span>Song by Jonathan Gu · Godot browser edition</span></footer>
+    <footer className="g-home-footer"><span>STARLING · MEMORY & BECOMING</span><span>Two original songs by Jonathan Gu · Godot browser edition</span></footer>
   </div>}</>
 }
