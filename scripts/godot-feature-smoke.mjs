@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 const site = process.env.GODOT_SITE_URL || 'http://127.0.0.1:5173/pongapp/'
 const evidence = resolve(process.env.GODOT_EVIDENCE || 'artifacts/godot-features')
 const root = resolve(import.meta.dirname, '..')
-const coreUrl = new URL('/@fs' + resolve(root, 'packages/game-core/src/rescue/index.ts'), site).href
+const coreUrl = new URL('@fs' + resolve(root, 'packages/game-core/src/rescue/index.ts'), site).href
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
 const page = await context.newPage(), errors = []
