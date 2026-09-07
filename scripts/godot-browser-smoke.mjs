@@ -85,7 +85,7 @@ try {
   await page.getByRole('button', { name: 'Close world map' }).click()
   await page.getByRole('button', { name: 'Pause and settings' }).click()
   await page.waitForTimeout(200)
-  const pausedTime = (await snapshot(page)).time
+  const pausedState = await snapshot(page), pausedTime = pausedState.time
   await page.waitForTimeout(650)
   assert.equal((await snapshot(page)).time, pausedTime)
   const downloadPromise = page.waitForEvent('download')
@@ -96,10 +96,16 @@ try {
   report.controls.audio = (await stats(page)).audio
   assert.equal(report.controls.audio.state, 'running')
   await page.getByRole('button', { name: 'Save & return home' }).click()
+  const homeSave = await page.evaluate(() => JSON.parse(localStorage.getItem('starling-rescue.save.v2')).state)
+  assert.equal(homeSave.tick, pausedState.tick, 'Returning home did not save the current tick')
   await page.getByRole('button', { name: /Continue your voyage/ }).click()
+  await page.waitForFunction(() => Boolean(window.__STARLING__))
+  const firstResumed = await snapshot(page)
+  assert.ok(firstResumed.tick >= pausedState.tick, 'Continue loaded an older autosave')
   await ready(page)
   assert.ok((await snapshot(page)).time >= pausedTime)
   report.controls.resumed = true
+  report.controls.saveResume = { pausedTick: pausedState.tick, savedTick: homeSave.tick, firstResumedTick: firstResumed.tick, pausedTime, firstResumedTime: firstResumed.time }
   await soloContext.close()
 
   for (const viewport of [{ width: 320, height: 740 }, { width: 844, height: 390 }, { width: 1440, height: 1000 }]) {
@@ -119,6 +125,12 @@ try {
   console.log('Godot smoke: two independent online browsers and reconnect')
   const hostContext = await context({ width: 1440, height: 1000 }), host = await hostContext.newPage()
   observe(host, 'host')
+  // Ensure cached engine startup precedes room creation: station commands must use
+  // the authoritative welcome identity, never the temporary solo placeholder.
+  await host.route('**/api/rescue/rooms', async route => {
+    await new Promise(resolve => setTimeout(resolve, 8000))
+    await route.continue()
+  })
   await start(host, 'Captain Proof', true)
   await waitSeat(host, 'Captain Proof', 'engine')
   const invite = await host.getByRole('button', { name: /Invite ·/ }).innerText()

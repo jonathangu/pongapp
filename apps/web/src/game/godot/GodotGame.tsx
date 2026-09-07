@@ -79,7 +79,7 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
         const input = neutralRescueInput(); input.assist = true
         input.x = menuRef.current || document.hidden ? 0 : controls.current.x; input.y = menuRef.current || document.hidden ? 0 : controls.current.y
         const player = session.state.crew.find(c => c.id === session.playerId)
-        if (player && player.commandSeq < 0 && !controls.current.command) {
+        if (session.connected && player && player.commandSeq < 0 && !controls.current.command) {
           const helmTaken = session.state.crew.some(c => !c.pet && c.id !== player.id && (c.seat === 'engine' || c.commandSeq >= 0 && c.order === 'engine'))
           controls.current.command = helmTaken ? 'east' : 'engine'; controls.current.crew = player.id
         }
@@ -120,6 +120,7 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
   const session = runtime.current?.session, player = state?.crew.find(c => c.id === session?.playerId)
   const order = (station: StationId, targetCrew = crewSelection || session?.playerId) => {
     if (!session || !state) return
+    if (!session.connected) { setToast('Joining your crew…'); return }
     const crewId = targetCrew || session.playerId
     const occupant = state.crew.find(c => c.id !== crewId && !c.pet && (c.seat === station || c.commandSeq >= 0 && c.order === station))
     if (occupant) { setToast(`${occupant.name} is using ${stationLabels[station].toLowerCase()}.`); return }
@@ -155,6 +156,7 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
     const url = URL.createObjectURL(new Blob([session.exportSave()], { type: 'application/json' })), anchor = document.createElement('a')
     anchor.href = url; anchor.download = 'starling-voyage.json'; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+  const exit = () => { runtime.current?.session.save(); onExit() }
   return <div className={'g-game' + (settings.reducedMotion ? ' g-reduced' : '')}>
     <iframe className="g-engine" title="Starling Godot game world" src={import.meta.env.BASE_URL + 'godot/index.html'} allow="autoplay; fullscreen; gamepad" onError={() => setError('The Godot game could not load. Please reload.')}/>
     <header className="g-game-top"><button className="g-round" onClick={() => { setMenu(true); controls.current.x = 0; controls.current.y = 0 }} aria-label="Pause and settings">☰</button><div><strong>{state?.region === 'space' ? 'THE HIGH STARS' : state?.region === 'jungle' ? 'FERNHEART' : 'LANTERN SEA'}</strong><small>{options.online ? status : 'A STARLING ADVENTURE'}</small></div><button className={'g-round' + (mapView ? ' active' : '')} onClick={() => setMapView(!mapView)} aria-label={mapView ? 'Close world map' : 'Open world map'}>⌖</button></header>
@@ -171,10 +173,10 @@ export function GodotGame({ options, onExit }: { options: RescueSessionOptions; 
         <p className="g-eyebrow">{dock ? 'A SAFE HARBOUR' : state.phase === 'won' ? 'EVERYONE MADE IT HOME' : state.phase === 'lost' ? 'THE SEA GETS ANOTHER CHANCE' : 'TAKE A BREATHER'}</p>
         <h2>{dock ? dock.name : state.phase === 'won' ? 'A little braver. Together.' : state.phase === 'lost' ? 'Your crew will try again.' : 'Your voyage.'}</h2>
         {dock ? <><p>Ship repaired. Spend your {state.campaign.salvage} salvage, meet returning crew, or keep exploring.</p><div className="g-upgrades">{(['hull', 'drive', 'reactor', 'tractor'] as ShipUpgrade[]).map(upgrade => <button key={upgrade} disabled={!session?.isHost || state.campaign.salvage < rescueUpgradeCost(state, upgrade)} onClick={() => session?.action({ kind: 'upgrade', upgrade })}>{upgrade}<small>Lv {state.campaign.upgrades[upgrade]} · {rescueUpgradeCost(state, upgrade)} ✧</small></button>)}</div>{availableRescueCrew(state).map(c => <button key={c.id} onClick={() => session?.action({ kind: 'recruit', crew: c.id })}>Welcome {c.name} aboard</button>)}{dock.destination && <button className="g-primary" disabled={!session?.isHost} onClick={() => session?.action({ kind: 'travel' })}>Travel to {dock.destination} →</button>}<button className="g-secondary" disabled={!session?.isHost} onClick={() => session?.action({ kind: 'undock' })}>Back to the sea</button></> : state.phase !== 'playing' ? <><p>{state.stats.rescues}/5 friends rescued · {state.stats.kills} dangers defeated</p><button className="g-primary" disabled={!session?.isHost} onClick={() => session?.rematch(state.phase === 'won')}>{state.phase === 'won' ? 'Sail into the next chapter' : 'Try the voyage again'} →</button></> : <><p>{options.online ? 'Your shared world keeps sailing while this menu is open.' : 'Your solo voyage is paused and saved automatically.'}</p><button className="g-primary" onClick={() => setMenu(false)}>Back aboard →</button><label className="g-range">Music<input type="range" min={0} max={1} step={.05} value={settings.music} onChange={e => { setSettings({ ...settings, music: Number(e.target.value) }); void runtime.current?.audio.unlock() }}/></label><label className="g-range">Effects<input type="range" min={0} max={1} step={.05} value={settings.effects} onChange={e => setSettings({ ...settings, effects: Number(e.target.value) })}/></label><label className="g-check"><input type="checkbox" checked={settings.reducedMotion} onChange={e => setSettings({ ...settings, reducedMotion: e.target.checked })}/> Reduce motion</label><button onClick={exportSave}>Export voyage save</button></>}
-        <button className="g-text-button" onClick={onExit}>Save & return home</button><small className="g-engine-credit">{engine || 'Godot browser edition'}</small>
+        <button className="g-text-button" onClick={exit}>Save & return home</button><small className="g-engine-credit">{engine || 'Godot browser edition'}</small>
       </section></div>}
     </>}
-    {!engine && <div className="g-loading"><img src={shipArt} alt=""/><p className="g-eyebrow">PREPARING THE STARLING</p><h2>A world worth getting lost in.</h2><p>Loading the Godot browser engine…</p><span>First launch downloads the game. Your crew waits for you.</span><button className="g-text-button" onClick={onExit}>Return home</button></div>}
+    {!engine && <div className="g-loading"><img src={shipArt} alt=""/><p className="g-eyebrow">PREPARING THE STARLING</p><h2>A world worth getting lost in.</h2><p>Loading the Godot browser engine…</p><span>First launch downloads the game. Your crew waits for you.</span><button className="g-text-button" onClick={exit}>Return home</button></div>}
     {error && <div className="g-error" role="alert">{error}<button aria-label="Dismiss message" onClick={() => setError('')}>×</button></div>}
   </div>
 }
