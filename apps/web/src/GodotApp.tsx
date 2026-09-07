@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { decodeRescueSave, type RescueState } from '@pongapp/game-core'
 import { loadProfile, saveProfile } from './store'
 import { GodotGame } from './game/godot/GodotGame'
-import { OfflinePack } from './game/rescue/OfflinePack'
+import { OfflinePack, isStandalone } from './game/rescue/OfflinePack'
 import { SAVE_KEY, type RescueSessionOptions } from './game/rescue/RescueSession'
 import departureArt from './assets/story/starling-departure.png'
 import { SongControls, useStorySong } from './game/godot/StorySong'
+import { SaveTransfer } from './game/godot/SaveTransfer'
 import './styles/godot.css'
 import './styles/story.css'
 import './styles/crossing.css'
@@ -38,6 +39,7 @@ export default function GodotApp() {
     <main className="crossing-main"><section className="crossing-intro"><p className="g-eyebrow">A LITTLE BOAT. A CROSSING FOR TWO.</p><h1>Bring each<br/>other <em>home.</em></h1><p>Play as Mara and Finn.<br/>Little Luma lends her silver wings.<br/>From the sea to unwritten stars.</p></section>
       <section className="crossing-board" aria-label="Start your voyage"><p className="crossing-tag">ONE PHONE EACH · PORTRAIT · NO ACCOUNT</p>
         <h2>{ready ? 'All aboard?' : 'Your boat is waiting.'}</h2><p className="crossing-explain">Steer. Rescue. Cook. Look after each other.<br/>We’ll teach you one small job at a time.</p>
+        {saved && !isStandalone() && <p className="g-small">Your existing voyage is saved in this browser. <button className="g-text-button" onClick={() => document.querySelector('.crossing-save-section')?.scrollIntoView({ block: 'center' })}>Save a copy before installing ↗</button></p>}
         {ready ? <div className="g-start-actions"><button className="g-primary" aria-label="Play together — Sail together" onClick={() => start({ online: true })}>Play together <span>→</span></button><button className="g-secondary" aria-label="Play solo — Begin their voyage" onClick={() => start({ online: false })}>Play solo <span>→</span></button></div> : <button className="g-primary crossing-install" onClick={setup}>Install & prepare to sail <span>→</span></button>}
         <p className="g-small">{ready ? 'Gentle first voyage · harder seas whenever you’re ready.' : 'Required once. Offline solo · online together.'}</p>
         {ready && saved && <button className="g-continue" onClick={() => start({ online: false, saved })}>Continue your voyage <span>{saved.stats.rescues}/5 rescued →</span></button>}
@@ -50,6 +52,7 @@ export default function GodotApp() {
     <section className="crossing-story"><p className="g-eyebrow">WHY WE SAIL</p><h2>First the sea.<br/>Then the sky. Then the stars.</h2><p>Answer their signals, bring them aboard, and find a safe passage through the breakwater. Then rise into the sky with Mara, Finn, and little Luma. A dying sun. A stolen ship. A forbidden gate. Keep your family together beneath unwritten stars.</p><div><span>◈<b>One steers.</b><small>Drag the helm. Release to brake.</small></span><span>♨<b>One lends a hand.</b><small>Switch jobs. The crew handles aiming.</small></span><span>♡<b>Both belong.</b><small>Share a boat, a story, and the odd burnt dinner.</small></span></div></section>
     <section className="crossing-songs"><p className="g-eyebrow">YOUR CROSSING HAS A SOUNDTRACK</p><SongControls song={song}/><p className="g-small">Seven original recordings by Jonathan Gu. Included offline. Music controls stay aboard.</p></section>
     <section className="crossing-setup" aria-label="Play offline & install on your phone"><header><div><p className="g-eyebrow">PLAY OFFLINE & INSTALL ON YOUR PHONE</p><h2>{ready ? 'Your ship is packed.' : 'Before your first crossing'}</h2></div>{ready && <span>✓ READY</span>}</header><OfflinePack required onReady={setReady}/>{ready && <button className="g-primary" onClick={() => document.querySelector('.crossing-board')?.scrollIntoView({ block: 'center' })}>Choose your voyage →</button>}</section>
+    <section className="crossing-save-section" aria-label="Voyage save transfer"><SaveTransfer saved={saved} onImport={setSaved}/></section>
     <footer className="crossing-footer">STARLING · THE SEA WE CARRY <span>Made for a little time together.</span></footer>
   </div>}</>
 }

@@ -41,6 +41,8 @@ Source: `/Users/guclaw/Downloads/Three Hearts Inside a Stolen.m4a`, 304.720 s, 4
 - Repeated station taps could reset a character's ladder route. Reissuing the same job now preserves the route; a core regression repeats the helm order every six simulation ticks and requires arrival.
 - Offline setup initially offered Download while it was still checking an existing pack. It now waits for the status and manifest, and the copy consistently says install → open icon → download there.
 - Invitation hash changes now populate the join form even when Starling was already open; the player still explicitly taps Join ship, and installation remains required.
+- Save transfer is available before installation and after opening the installed icon. Exports preserve the full validated voyage; imports preview first, reject malformed/oversized files, and require an explicit replacement action if a device already has a save. The install gate never blocks making a backup.
+- The first public acceptance attempt exposed a test race: the storage reply arrived before the manifest, so the test skipped the not-yet-enabled Download button. The harness now waits for an enabled Download or Play control. The unchanged deployed setup flow then passed fresh public downloads.
 - Automated standalone display-mode emulation is explicitly marked. This is not evidence of an actual iPhone/Android installation or a hardware playtest; those remain a device acceptance follow-up, not a claim made by this release.
 
 ## Platform evidence
