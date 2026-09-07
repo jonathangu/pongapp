@@ -16,6 +16,7 @@ export function OfflinePack({ required = false, onReady }: { required?: boolean;
     const display = matchMedia('(display-mode: standalone)')
     const checkDisplay = () => { setStandalone(isStandalone()); if (isStandalone()) setInstalled(true) }
     display.addEventListener('change', checkDisplay)
+    window.addEventListener('focus', checkDisplay)
     window.addEventListener('beforeinstallprompt', showInstall); window.addEventListener('appinstalled', didInstall)
     if (!('serviceWorker' in navigator) || !window.isSecureContext) setMessage('Offline installation needs a secure, supported browser.')
     else if (import.meta.env.DEV) setMessage('Offline packs are available in the published build.')
@@ -32,7 +33,7 @@ export function OfflinePack({ required = false, onReady }: { required?: boolean;
         if (response.ok && alive) setManifest(await response.json())
       } catch { if (alive) setMessage('Cannot check the pack right now. Connect once and try again.') }
     })()
-    return () => { alive = false; port.current?.close(); display.removeEventListener('change', checkDisplay); window.removeEventListener('beforeinstallprompt', showInstall); window.removeEventListener('appinstalled', didInstall) }
+    return () => { alive = false; port.current?.close(); display.removeEventListener('change', checkDisplay); window.removeEventListener('focus', checkDisplay); window.removeEventListener('beforeinstallprompt', showInstall); window.removeEventListener('appinstalled', didInstall) }
   }, [])
   useEffect(() => { onReady?.(standalone && Boolean(status.ready) && Boolean(manifest && status.version === manifest.version)) }, [standalone, status.ready, status.version, manifest, onReady])
   const download = async () => {

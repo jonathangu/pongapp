@@ -62,7 +62,7 @@ export interface RescueBullet extends Vec {
   id: number; vx: number; vy: number; radius: number; damage: number; life: number
   owner: string | null; enemy: boolean; kind: 'bolt' | 'needle' | 'orb'; pierce: number; hit: number[]
 }
-export type RescueEventKind = 'shot' | 'beam' | 'flail' | 'shield' | 'hit' | 'boom' | 'cage' | 'rescue' | 'gem' | 'socket' | 'thrust' | 'charge' | 'starburst' | 'guardian' | 'win' | 'lose' | 'seat' | 'order' | 'meal' | 'lightning' | 'thunder' | 'ability' | 'recruit' | 'depart' | 'reunion' | 'dock' | 'upgrade'
+export type RescueEventKind = 'together' | 'shot' | 'beam' | 'flail' | 'shield' | 'hit' | 'boom' | 'cage' | 'rescue' | 'gem' | 'socket' | 'thrust' | 'charge' | 'starburst' | 'guardian' | 'win' | 'lose' | 'seat' | 'order' | 'meal' | 'lightning' | 'thunder' | 'ability' | 'recruit' | 'depart' | 'reunion' | 'dock' | 'upgrade'
 export interface RescueEvent extends Vec { id: number; kind: RescueEventKind; angle: number; size: number; value: number; color?: GemKind; actor?: string }
 export interface RescueWorld {
   width: number; height: number; obstacles: RescueObstacle[]; cages: RescueCage[]; gifts: RescueGift[]
@@ -90,6 +90,7 @@ export interface RescueState {
   meal: { remaining: number; progress: number; cooldown: number }
   weather: RescueWeather
   story?: RescueStory | null
+  captainMode?: boolean
   seamanship?: { step: number; difficulty: 'gentle' | 'adventure' | 'tempest'; travelStart: number }
   littleWing?: { remaining: number; cooldown: number; arrivals: number }
   odyssey?: { stage: 'sky' | 'gate' | 'inner'; pending: 'launch' | 'flare' | 'gate' | 'dragon' | 'unwritten' | null; history: Array<'launch' | 'flare' | 'gate' | 'dragon' | 'unwritten'>; pulse: boolean }

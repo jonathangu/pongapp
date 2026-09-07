@@ -5,6 +5,7 @@ import { RESCUE_STATIONS, createRescueCrew } from './interior'
 import { createRescueWorld, revealRescueFog } from './world'
 import { createRescueStory, storyHas } from './story'
 import { type OdysseyId } from './odyssey'
+import { prepareSoloCrossing } from './solo'
 
 export function createRescueGame(options: { seed?: number; biome?: BiomeId; solo?: boolean; players?: Array<{ id: string; name: string }>; epoch?: number; inspiration?: string; region?: RescueRegion; voyage?: VoyagePack | null; story?: boolean; guided?: boolean } = {}): RescueState {
   const seed = (options.seed ?? 20260906) >>> 0, biome = options.biome ?? 0, solo = options.solo ?? true
@@ -53,10 +54,12 @@ function resetRescueVoyage(s: RescueState, nextBiome = false): RescueState {
   next.campaign = structuredClone(s.campaign)
   next.story = s.story ? structuredClone(s.story) : null
   if (s.seamanship) next.seamanship = { ...s.seamanship, travelStart: 0 }
+  if (s.captainMode) next.captainMode = true
   if (s.littleWing) next.littleWing = { ...s.littleWing, remaining: 0 }
   if (nextBiome) next.campaign.voyages++
   next.crew = s.crew.map(c => ({ ...createRescueCrew(c.id, c.name, c.pet, c.pet), color: c.color, origin: c.origin, ability: c.ability, tourEnds: c.tourEnds, order: c.order }))
   next.ship.maxHp = 12 + next.campaign.upgrades.hull * 3; next.ship.hp = next.ship.maxHp
+  prepareSoloCrossing(next)
   return next
 }
 

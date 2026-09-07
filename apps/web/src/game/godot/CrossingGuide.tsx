@@ -1,6 +1,19 @@
-import { learningToSail, rescueTarget, storyCrewName, type RescueState } from '@pongapp/game-core'
+import { isSoloCrossing, learningToSail, rescueTarget, storyCrewName, type RescueState } from '@pongapp/game-core'
 
 export function crossingObjective(state: RescueState, captain: boolean) {
+  if (isSoloCrossing(state)) {
+    const step = state.seamanship!.step, target = rescueTarget(state)
+    if (state.odyssey?.history.includes('unwritten')) return { title: 'A sea of your own', body: 'Both chapters are safe in your logbook. Explore at your pace, visit a harbor, or save and return home.', job: 'Helm' }
+    if (state.odyssey) return { title: state.odyssey.stage === 'sky' ? 'Rise through the cloudbreak' : state.odyssey.stage === 'gate' ? 'Reach the forbidden gate' : 'Follow the golden wings', body: 'Follow the gold arrow. Finn covers you. Save Together! for danger, and slow down in the beacon’s light.', job: 'Helm' }
+    if (step === 0) return { title: '1 · Your hands on the helm', body: 'Drag to steer. Release to brake. You are Mara; Finn aims the cannons and your crew cooks. Practice is safe.', job: 'Helm' }
+    if (step === 1) return { title: '2 · Answer the gold light', body: 'Follow the arrow to the trapped crew. Slip around islands. Finn fires when you bring him close.', job: 'Helm' }
+    if (step === 2) return { title: '3 · A little courage. Together!', body: 'Tap Together! (Space on keyboard). Its golden ring cracks nearby cages and clears enemy shots. You never leave the helm.', job: 'Together' }
+    if (step === 3) return { title: '4 · Bring them aboard', body: 'Sail close to the green rescue light. Finn keeps watch while you bring the crew in from the cold.', job: 'Helm' }
+    if (step === 4) return { title: '5 · A warm welcome', body: 'Your crew is making dinner. Keep steering—they take care of each other. Food makes their work faster.', job: 'Helm' }
+    if (state.stats.rescues < 5) return { title: `${state.stats.rescues} / 5 crews safe · the next light awaits`, body: target?.open ? 'Cage open! Sail close. Every rescued crew repairs one heart.' : 'Follow the gold arrow. Finn fires for you; Together! clears danger within the golden ring. Harbors offer repairs.', job: 'Helm' }
+    if (!state.guardianDefeated) return { title: 'One last passage', body: 'Circle the Breakwater Keeper while Finn fires. Dodge its warnings. Time Together! to clear incoming shots.', job: 'Together' }
+    return { title: 'Bring everyone home', body: 'Follow the green home beacon. Release the helm inside its light. All five crews are counting on you.', job: 'Helm' }
+  }
   if (state.odyssey) {
     const chapter = state.odyssey
     if (chapter.history.includes('unwritten')) return { title: 'Beneath unwritten stars', body: 'Explore the living sea together. Visit a harbor, cook a meal, and keep learning this world. Your two-part story is safe in the logbook.', job: 'Helm' }

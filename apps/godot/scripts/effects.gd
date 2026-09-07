@@ -5,6 +5,9 @@ var reduced_motion := false
 const UNIT = 24.0
 
 func add_event(event: Dictionary) -> void:
+	if event.kind == "together":
+		particles.append({"kind": "ring", "position": Vector2(float(event.x), -float(event.y)) * UNIT, "age": 0.0, "life": 0.65, "size": float(event.size) * UNIT, "color": Color("#ffe0a0")})
+		return
 	if event.kind in ["beam", "starburst", "lightning"]:
 		particles.append({"kind": "beam", "position": Vector2(float(event.x), -float(event.y)) * UNIT, "angle": -float(event.angle), "age": 0.0, "life": 0.28, "size": maxf(4.0, float(event.size)) * UNIT, "color": Color("#c2fff0")})
 	elif event.kind in ["hit", "boom", "cage", "rescue", "socket", "shield", "shot"]:

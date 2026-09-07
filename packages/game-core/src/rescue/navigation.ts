@@ -1,5 +1,6 @@
 import { HULL_RADIUS, RESCUE_BUTTON, neutralRescueInput, type RescueCrew, type RescueInput, type RescueState, type StationId } from './types'
 import { RESCUE_LADDERS, RESCUE_PLATFORMS, RESCUE_STATIONS, advanceRescueCrew, createRescueCrew, stationSpec, supportingPlatform } from './interior'
+import { isSoloCrossing } from './solo'
 
 export interface RescueNavNode { id: number; x: number; y: number; platform: string }
 export interface RescueNavEdge { to: number; kind: 'walk' | 'climb' | 'jump' | 'drop'; cost: number }
@@ -134,7 +135,9 @@ export function petRescueInput(s: RescueState, p: RescueCrew, dt: number, assist
     const flight = !station.upgrade || station.upgrade === 'power' ? distance / 24 : 0
     return { x: target.x - muzzleX - s.ship.vx * flight, y: target.y - muzzleY - s.ship.vy * flight }
   }
-  const candidates = [...s.enemies, ...s.world.cages.filter(c => !c.open)]
+  // Let the first cage demonstrate the captain's pulse before automatic support takes over.
+  const teachingPulse = isSoloCrossing(s) && s.seamanship!.step < 3
+  const candidates = [...s.enemies, ...s.world.cages.filter(c => !c.open && !teachingPulse)]
     .filter(t => { const a = aim(t); return assist || spec.rail || Math.abs(Math.atan2(Math.sin(Math.atan2(a.y, a.x) - spec.angle), Math.cos(Math.atan2(a.y, a.x) - spec.angle))) < Math.PI / 3 })
     .filter(t => Math.hypot(t.x - s.ship.x, t.y - s.ship.y) < 30)
     .sort((a, b) => Math.hypot(a.x - s.ship.x, a.y - s.ship.y) - Math.hypot(b.x - s.ship.x, b.y - s.ship.y))

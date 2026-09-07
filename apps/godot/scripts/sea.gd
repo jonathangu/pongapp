@@ -104,6 +104,8 @@ func _input(event: InputEvent) -> void:
 		direction = direction.limit_length(1.0)
 		bridge.steer(direction.x, -direction.y)
 	if event is InputEventKey:
+		if event.keycode == KEY_SPACE and event.pressed and not event.echo:
+			bridge.together()
 		if event.keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 			var x := float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 			var y := float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)) - float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))

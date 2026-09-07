@@ -1,4 +1,4 @@
-import { advanceRescueGame, applyRescueAction, createRescueGame, encodeRescueSave, neutralRescueInput, restartRescueGame, resumeRescueSolo, type RescueAction, type RescueInput, type RescueState, type VoyagePack } from '@pongapp/game-core'
+import { advanceRescueGame, applyRescueAction, createRescueGame, encodeRescueSave, neutralRescueInput, prepareSoloCrossing, restartRescueGame, resumeRescueSolo, type RescueAction, type RescueInput, type RescueState, type VoyagePack } from '@pongapp/game-core'
 import { mergeRescueFrame, RESCUE_PROTOCOL_VERSION, type RescuePresence, type RescueServerMessage } from '@pongapp/protocol'
 
 export type RescueSessionOptions = { name: string; guestId: string; saved?: RescueState; online?: boolean; code?: string; server: string; voyage?: VoyagePack; story?: boolean; guided?: boolean }
@@ -40,6 +40,11 @@ export class RescueSession {
   }
   constructor(readonly options: RescueSessionOptions) {
     this.state = options.saved ? resumeRescueSolo(options.saved) : createRescueGame({ players: [{ id: options.guestId, name: options.name }], seed: crypto.getRandomValues(new Uint32Array(1))[0]!, story: options.story, guided: options.guided, voyage: options.voyage?.source === 'generated' ? options.voyage : null })
+    if (!options.online && options.guided && this.state.story) {
+      this.state.captainMode = true
+      this.state.seamanship ??= { step: 5, difficulty: 'gentle', travelStart: this.state.stats.travel }
+      prepareSoloCrossing(this.state)
+    } else delete this.state.captainMode
     this.authoritative = this.state; this.playerId = this.state.crew.find(c => !c.pet)!.id
     if (options.online) {
       window.addEventListener('offline', this.offline); window.addEventListener('online', this.online)

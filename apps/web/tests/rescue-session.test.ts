@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RescueSession } from '../src/game/rescue/RescueSession'
+import { createRescueGame, isSoloCrossing, type RescueState } from '@pongapp/game-core'
 
 class SilentSocket {
   static OPEN = 1
@@ -38,6 +39,26 @@ describe('Starling connection lifecycle', () => {
   function welcome(socket: SilentSocket) {
     socket.receive({ type: 'welcome', version: 1, playerId: session!.playerId, token: 'same-private-reconnect-token', code: 'ABC234', state: structuredClone(session!.authoritative), presence: [], started: true })
   }
+  it('launches guided solo at the helm, with automatic cannon and meal support', () => {
+    session = new RescueSession({ name: 'Mara', guestId: 'solo-guest-123', story: true, guided: true, server: 'https://room.example' })
+    expect(isSoloCrossing(session.state)).toBe(true)
+    expect(session.state.crew.find(c => c.id === session!.playerId)?.seat).toBe('engine')
+    expect(session.state.crew.find(c => c.id === session!.state.story!.sonId)?.seat).toBe('east')
+    expect(session.state.crew.find(c => c.id === 'pip')?.seat).toBe('galley')
+    expect(SilentSocket.instances).toHaveLength(0)
+  })
+  it('upgrades an older story save to solo without rewriting its decisions or source save', () => {
+    const saved = createRescueGame({ story: true }), original = structuredClone(saved)
+    session = new RescueSession({ name: 'Mara', guestId: 'solo-guest-123', story: true, guided: true, saved, server: 'https://room.example' })
+    expect(isSoloCrossing(session.state)).toBe(true)
+    expect(session.state.story).toEqual(original.story); expect(saved).toEqual(original)
+    expect(session.state.seamanship?.step).toBe(5)
+  })
+  it('does not enable solo captain mode for an online invitation or imported solo save', () => {
+    const saved: RescueState = createRescueGame({ story: true, guided: true }); saved.captainMode = true
+    session = new RescueSession({ name: 'Mara', guestId: 'online-guest-123', story: true, guided: true, online: true, code: 'ABC234', saved, server: 'https://room.example' })
+    expect(session.state.captainMode).toBeUndefined(); expect(isSoloCrossing(session.state)).toBe(false)
+  })
   it('recovers on network return even if the old socket never emits close', () => {
     const old = start(), lateClose = old.onclose!, lateMessage = old.onmessage!
     network.onLine = false; events.dispatchEvent(new Event('offline'))
