@@ -26,7 +26,8 @@ No authentication, public matchmaking, chat, purchases or unrelated RackeTapp ch
 | Local checks | Node 22 `pnpm check`: 204 tests, typecheck, lint, Godot import/runtime/export and production web build passed. Full log `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-mobile-final-check.log`. Pack: 36 files, 93.00 MiB (under the 100,000,000-byte safety limit). |
 | Browser / offline | Fresh install and invite gates, 320/390/844/1440 px layouts, opening and sailing playback passed. Actual visible pointer/station controls complete tutorial and all five Part II scenes. Seven offline tracks play and seek; range request returns 206/1000 bytes; chapter and mute survive offline cold restart. Evidence in `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-mobile-couples/local-final-layouts/` and `local-journey/`. |
 | Authoritative full journey | Local Durable Object: all eight sea moments, all five Part II scenes and final `won`, 150 ms each-way simulated latency, every tenth input dropped, 107.248 seconds wall time, 2 peers / 1066+ frames each / zero peer errors. Save and trace: `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-mobile-couples/local-full-two-act/`. Legacy room smoke also passed. |
-| Release | Not yet deployed; do not treat this ledger as completion. |
+| Two-phone UI | Two independent 390×844 installed-mode contexts passed shared mother-helm / son-cook play, meal propagation, guest authority restrictions and reconnect identity/story retention. Evidence: `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-mobile-couples/local-coop/crossing-journey-smoke.json`. |
+| Release tracking | PR #26. CI, deployed Worker version, merged application revision and public acceptance are recorded in `/Users/guclaw/.openclaw/workspace/task-artifacts/starling-mobile-couples/release.json` at release closeout. Local checks alone are not proof of deployment. |
 
 ## Added family / second-act request
 
