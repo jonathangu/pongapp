@@ -286,7 +286,10 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
       if (crew && (!occupant || occupant.pet)) {
         if (occupant?.pet) {
           const free = s.stations.find(st => st.id !== input.command && !s.crew.some(c => c.id !== occupant.id && (c.seat === st.id || c.order === st.id)))
-          if (free) { occupant.order = free.id; occupant.route = []; occupant.commandSeq = input.seq }
+          // A full crew can still swap jobs: use the human's vacated seat, or
+          // wait near another station when every seat is currently occupied.
+          occupant.order = free?.id ?? (crew.seat && crew.seat !== input.command ? crew.seat : input.command === 'galley' ? 'map' : 'galley')
+          occupant.route = []; occupant.commandSeq = input.seq
         }
         crew.order = input.command; crew.route = []; crew.commandSeq = input.seq
         rescueEvent(s, 'order', s.ship.x, s.ship.y, 0, 1, 0, input.command)

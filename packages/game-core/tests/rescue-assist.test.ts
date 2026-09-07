@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { RESCUE_STATIONS, advanceRescueGame, createRescueGame, neutralRescueInput, stationSpec, validRescueInput } from '../src/rescue/index'
+import { RESCUE_STATIONS, advanceRescueGame, createRescueCrew, createRescueGame, neutralRescueInput, stationSpec, validRescueInput } from '../src/rescue/index'
 
 it('tap-to-route reaches every station through physical crew movement', () => {
   for (const station of RESCUE_STATIONS) {
@@ -47,4 +47,18 @@ it('never takes an occupied human station or commands another human', () => {
   expect(s.crew[0]!.order).not.toBe('engine'); expect(friend.seat).toBe('engine')
   advanceRescueGame(s, { captain: { ...neutralRescueInput(11), assist: true, command: 'galley', commandCrew: friend.id } })
   expect(friend.order).toBe('engine')
+})
+it('AI yields a station even when every seat is occupied', () => {
+  const s = createRescueGame({ solo: false }); s.nextWave = 999
+  const captain = s.crew[0]!, engine = stationSpec('engine')
+  Object.assign(captain, { seat: 'engine', order: 'engine', commandSeq: 0, x: engine.x, y: engine.y })
+  s.crew = [captain]
+  for (const station of RESCUE_STATIONS.filter(st => st.id !== 'engine')) {
+    const p = createRescueCrew('ai-' + station.id, station.id, true, true)
+    Object.assign(p, { seat: station.id, order: station.id, commandSeq: 0, x: station.x, y: station.y })
+    s.crew.push(p)
+  }
+  for (let i = 0; i < 900 && captain.seat !== 'north'; i++) advanceRescueGame(s, { captain: { ...neutralRescueInput(i + 1), assist: true, command: i === 0 ? 'north' : null, commandCrew: captain.id } })
+  expect(captain.seat).toBe('north')
+  expect(s.crew.find(c => c.id === 'ai-north')!.order).toBe('engine')
 })
