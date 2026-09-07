@@ -8,6 +8,7 @@ import { advanceRescueAbilities, advanceRescueWeather, recruitRescueCrew } from 
 import { advanceRescueStory } from './story'
 import { advanceSeamanship, learningToSail } from './seamanship'
 import { advanceLittleWing, advanceOdyssey } from './odyssey'
+import { callTogether } from './solo'
 
 export function validRescueInput(value: unknown): value is RescueInput {
   if (!value || typeof value !== 'object') return false
@@ -292,6 +293,7 @@ export function advanceRescueGame(s: RescueState, inputs: Record<string, RescueI
     station.operated = false; station.firing = false; station.cooldown = Math.max(0, station.cooldown - dt * rate); station.heat = Math.max(0, station.heat - dt * .19 * rate); station.lingering = Math.max(0, station.lingering - dt)
   }
   const assisted = Object.values(inputs).some(input => input.active && input.assist && validRescueInput(input))
+  if (s.captainMode) callTogether(s, Object.fromEntries(Object.entries(inputs).filter(([, input]) => validRescueInput(input))))
   for (const p of s.crew) {
     const raw = inputs[p.id]
     let input = p.pet ? { ...petRescueInput(s, p, dt, assisted), assist: assisted } : raw?.active && validRescueInput(raw) ? raw : neutralRescueInput(Math.max(0, p.lastSeq))

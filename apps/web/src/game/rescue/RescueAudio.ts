@@ -100,6 +100,7 @@ export class RescueAudio {
     const c = this.context!, fx = this.fx!, at = c.currentTime
     if (e.kind === 'shot') this.note(e.value ? 58 : 85, at, .10, .1, fx, 'triangle', e.value ? 48 : 66)
     else if (e.kind === 'beam' || e.kind === 'starburst') { this.note(95, at, .65, .25, fx, 'sawtooth', 39); this.hiss(at, .5, .15, 2800, fx) }
+    else if (e.kind === 'together') { for (const [i, n] of [62, 69, 74, 81].entries()) this.note(n, at + i * .05, .6, .14, fx, 'triangle'); this.hiss(at, .3, .12, 1800, fx) }
     else if (e.kind === 'shield') { this.note(86, at, .28, .18, fx); this.note(93, at, .36, .1, fx) }
     else if (e.kind === 'hit' || e.kind === 'boom') { this.hiss(at, e.kind === 'boom' ? .7 : .15, .25, 1000, fx); this.note(43, at, .28, .2, fx, 'sine', 22) }
     else if (e.kind === 'thunder') { this.hiss(at, 1.8, .65, 450, fx); this.note(29, at, 1.4, .24, fx, 'sine', 17) }

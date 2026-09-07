@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import { RESCUE_STATIONS, availableRescueCrew, nearestRescueDock, neutralRescueInput, rescueUpgradeCost, stationSpec, storyCrewName, type RescueState, type ShipUpgrade, type StationId } from '@pongapp/game-core'
+import { RESCUE_BUTTON, RESCUE_STATIONS, availableRescueCrew, isSoloCrossing, nearestRescueDock, neutralRescueInput, rescueUpgradeCost, stationSpec, storyCrewName, type RescueState, type ShipUpgrade, type StationId } from '@pongapp/game-core'
 import { RescueSession, type RescueSessionOptions } from '../rescue/RescueSession'
 import { RescueAudio } from '../rescue/RescueAudio'
 import shipArt from '../../../../godot/assets/starling-deck-v2.png'
@@ -9,7 +9,7 @@ import { storySongCue } from './story-song-cues'
 import { CrossingGuide, crossingObjective } from './CrossingGuide'
 import { OdysseyEncounter } from './Odyssey'
 
-type Bridge = { snapshot: () => string; ready: (engine: string) => void; metrics: (frames: number, fps: number, view: number) => void; steer: (x: number, y: number) => void }
+type Bridge = { snapshot: () => string; ready: (engine: string) => void; metrics: (frames: number, fps: number, view: number) => void; steer: (x: number, y: number) => void; together: () => void }
 type Settings = { music: number; effects: number; reducedMotion: boolean }
 const settingsDefault = (): Settings => {
   const defaults = { music: .5, effects: .6, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches }
@@ -35,7 +35,7 @@ function Deck({ state, playerId, order }: { state: RescueState; playerId: string
 
 export function GodotGame({ options, onExit, song }: { options: RescueSessionOptions; onExit: () => void; song: StorySong }) {
   const runtime = useRef<{ session: RescueSession; audio: RescueAudio } | null>(null)
-  const controls = useRef({ x: 0, y: 0, command: null as StationId | null, crew: '', ready: false })
+  const controls = useRef({ x: 0, y: 0, together: false, command: null as StationId | null, crew: '', ready: false })
   const [state, setState] = useState<RescueState | null>(null), [engine, setEngine] = useState(''), [status, setStatus] = useState('Preparing your ship…')
   const [error, setError] = useState(''), [toast, setToast] = useState(''), [deck, setDeck] = useState(false), [menu, setMenu] = useState(false), [mapView, setMapView] = useState(false)
   const [settings, setSettings] = useState<Settings>(settingsDefault), [crewSelection, setCrewSelection] = useState('')
@@ -49,12 +49,13 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
     const session = new RescueSession(options), audio = new RescueAudio()
     runtime.current = { session, audio }
     let rendered = '', frames = 0, fps = 0, visibleWorldWidth = 0, engineName = '', raf = 0, last = performance.now(), accumulator = 0, lastUI = 0, lastSnapshot = 0, lastEvent = -1, epoch = -1, disposed = false
-    const clear = () => { controls.current.x = 0; controls.current.y = 0 }
+    const clear = () => { controls.current.x = 0; controls.current.y = 0; controls.current.together = false }
     const bridge: Bridge = {
       snapshot: () => rendered,
       ready: name => { controls.current.ready = true; engineName = name; setEngine(name) },
       metrics: (count, rate, width) => { frames = count; fps = rate; visibleWorldWidth = width },
       steer: (x, y) => { if (!Number.isFinite(x) || !Number.isFinite(y)) return; controls.current.x = Math.max(-1, Math.min(1, x)); controls.current.y = Math.max(-1, Math.min(1, y)); void audio.unlock().catch(() => {}) },
+      together: () => { if (isSoloCrossing(session.state) && session.state.phase === 'playing' && !menuRef.current && !session.state.story?.pending && !session.state.odyssey?.pending && !session.state.docked) controls.current.together = true },
     }
     Object.assign(window, { __STARLING_BRIDGE__: bridge, __STARLING__: {
       snapshot: () => structuredClone(session.authoritative), renderState: () => structuredClone(session.state),
@@ -71,6 +72,7 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
         controls.current.y = Number(keys.has('KeyW') || keys.has('ArrowUp')) - Number(keys.has('KeyS') || keys.has('ArrowDown'))
       }
       if (event.type === 'keydown' && !event.repeat) {
+        if (event.code === 'Space' && isSoloCrossing(session.state) && session.state.phase === 'playing' && !menuRef.current && !session.state.story?.pending && !session.state.odyssey?.pending && !session.state.docked) { event.preventDefault(); bridge.together() }
         if (event.code === 'Escape') { setMenu(value => !value); clear() }
         if (event.code === 'KeyM') setMapView(value => !value)
       }
@@ -87,6 +89,8 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
       const events: RescueState['events'] = []
       while (accumulator >= 1 / 60) {
         const input = neutralRescueInput(); input.assist = true
+        if (controls.current.together && !menuRef.current && !document.hidden) input.buttons = RESCUE_BUTTON.fire
+        controls.current.together = false
         input.x = menuRef.current || document.hidden ? 0 : controls.current.x; input.y = menuRef.current || document.hidden ? 0 : controls.current.y
         const player = session.state.crew.find(c => c.id === session.playerId)
         if (session.connected && player && player.commandSeq < 0 && !controls.current.command) {
@@ -108,6 +112,7 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
         if (event.kind === 'rescue') setToast('A friend is safe! +1 heart · new crewmate aboard')
         if (event.kind === 'socket') setToast(`${event.color ?? 'New'} gem fitted automatically`)
         if (event.kind === 'meal') setToast('Dinner is ready. Everyone works 20% faster!')
+        if (event.kind === 'together') setToast('“Together!” · danger cleared · keep steering')
         if (event.kind === 'reunion') setToast(`${event.actor} is back aboard!`)
         if (event.kind === 'ability' && event.actor === 'Luma · silver wings') setToast('Luma · 4: “My turn!” Silver wings shield your family for six seconds.')
       }
@@ -130,6 +135,7 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
   useEffect(() => { try { localStorage.setItem('starling.godot.settings', JSON.stringify(settings)) } catch { /* optional device storage */ } }, [settings])
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer) }, [toast])
   const session = runtime.current?.session, player = state?.crew.find(c => c.id === session?.playerId)
+  const solo = Boolean(state && isSoloCrossing(state)), togetherCooldown = state?.stations.find(st => st.id === 'starburst')?.cooldown ?? 0
   const order = (station: StationId, targetCrew = crewSelection || session?.playerId) => {
     if (!session || !state) return
     if (!session.connected) { setToast('Joining your crew…'); return }
@@ -170,7 +176,7 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
   }
   const exit = () => { runtime.current?.session.save(); onExit() }
   const suggestedJob = state ? crossingObjective(state, Boolean(session?.isHost)).job : ''
-  return <div className={'g-game crossing-game' + (settings.reducedMotion ? ' g-reduced' : '') + (state?.story ? ' story-game' : '')} data-next-job={suggestedJob}>
+  return <div className={'g-game crossing-game' + (solo ? ' solo-crossing' : '') + (settings.reducedMotion ? ' g-reduced' : '') + (state?.story ? ' story-game' : '')} data-next-job={suggestedJob}>
     <iframe className="g-engine" title="Starling Godot game world" src={import.meta.env.BASE_URL + 'godot/index.html'} allow="autoplay; fullscreen; gamepad" onError={() => setError('The Godot game could not load. Please reload.')}/>
     <header className="g-game-top"><button className="g-round" onClick={() => { setMenu(true); controls.current.x = 0; controls.current.y = 0 }} aria-label="Pause and settings">☰</button><div><strong>{state?.odyssey?.stage === 'inner' ? 'THE LIVING SPHERE' : state?.region === 'space' ? 'THE FORBIDDEN GATE' : state?.region === 'sky' ? 'THE LAST BLUE SKY' : state?.region === 'jungle' ? 'FERNHEART' : 'LANTERN SEA'}</strong><small>{options.online ? status : state?.story ? 'MARA & FINN’S CROSSING' : 'A STARLING ADVENTURE'}</small></div>{state?.story && <button className="g-round" aria-label="Open logbook" onClick={() => { setJournal(true); controls.current.x = 0; controls.current.y = 0 }}>▤</button>}<button className={'g-round' + (mapView ? ' active' : '')} onClick={() => setMapView(!mapView)} aria-label={mapView ? 'Close world map' : 'Open world map'}>⌖</button></header>
     {state && <><div className="g-hud"><div className="g-health" role="meter" aria-label="Ship health" aria-valuemin={0} aria-valuemax={state.ship.maxHp} aria-valuenow={state.ship.hp}><span>♥</span><div><i style={{ width: `${state.ship.hp / state.ship.maxHp * 100}%` }}/></div></div><span className="g-rescue-count">♡ <b>{state.odyssey ? '3' : state.stats.rescues}</b><small>{state.odyssey ? 'hearts' : '/ 5'}</small></span><span className="g-salvage">✧ {state.campaign.salvage}</span></div>
@@ -184,7 +190,7 @@ export function GodotGame({ options, onExit, song }: { options: RescueSessionOpt
       {toast && <div className="g-toast" role="status">{toast}</div>}
       {!menu && !journal && !state.story?.pending && !state.odyssey?.pending && !state.docked && state.phase === 'playing' && <div className="g-bottom">
         <div className="g-helm-row">{helm ? <div className="g-stick" role="application" aria-label="Steering joystick" onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); move(e) }} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} onLostPointerCapture={stop}><span>↑</span><i/></div> : <button className="g-back-helm" onClick={() => { setCrewSelection(''); order('engine', session?.playerId) }}>◈<small>Take helm</small></button>}<div className="g-station-status"><strong>{travelling ? `Walking to ${stationLabels[player.order].toLowerCase()}…` : station}</strong><span>{travelling ? 'Your crewmate handles the ladders.' : helm ? 'Drag to steer · release to brake' : player?.seat === 'shield' ? 'Automatically blocks incoming fire' : player?.seat === 'galley' ? state.meal.remaining > 0 ? 'Meal ready! Switch to another job.' : `Cooking… ${Math.round(state.meal.progress / 3 * 100)}%` : player?.seat === 'map' ? 'Lookout reveals more of the world' : 'Auto aim · auto fire'}</span>{helm && <small>WASD / arrows on keyboard</small>}</div>{nearbyDock && <button className="g-dock-button" onClick={() => session?.action({ kind: 'dock' })}>⚓<small>Dock</small></button>}</div>
-        <nav className="g-stations" aria-label="Crew stations"><button aria-label="Helm" className={player?.order === 'engine' ? 'selected' : ''} onClick={() => order('engine', session?.playerId)}><span aria-hidden="true">◈</span>Helm</button><button aria-label="Cannons" className={player && ['east', 'west', 'north', 'south', 'starburst'].includes(player.order) ? 'selected' : ''} onClick={cannon}><span aria-hidden="true">✦</span>Cannons</button><button aria-label="Shield" className={player?.order === 'shield' ? 'selected' : ''} onClick={() => order('shield', session?.playerId)}><span aria-hidden="true">◒</span>Shield</button><button aria-label="Cook" className={player?.order === 'galley' ? 'selected' : ''} onClick={() => order('galley', session?.playerId)}><span aria-hidden="true">♨</span>Cook</button><button aria-label="Deck" className={deck ? 'selected' : ''} onClick={() => setDeck(!deck)}><span aria-hidden="true">▦</span>Deck</button></nav>
+        {solo ? <div className="solo-action-row"><p><strong>Finn has your back.</strong><span>Cannons & meals handled by your crew.</span></p><button className="solo-together" aria-label="Together pulse" disabled={togetherCooldown > 0 || !helm} onClick={() => { controls.current.together = true }}><b>✧ {togetherCooldown > 0 ? `${Math.ceil(togetherCooldown)}s` : 'Together!'}</b><small>{togetherCooldown > 0 ? 'Recharging' : 'Clear danger · crack cages'}</small></button></div> : <nav className="g-stations" aria-label="Crew stations"><button aria-label="Helm" className={player?.order === 'engine' ? 'selected' : ''} onClick={() => order('engine', session?.playerId)}><span aria-hidden="true">◈</span>Helm</button><button aria-label="Cannons" className={player && ['east', 'west', 'north', 'south', 'starburst'].includes(player.order) ? 'selected' : ''} onClick={cannon}><span aria-hidden="true">✦</span>Cannons</button><button aria-label="Shield" className={player?.order === 'shield' ? 'selected' : ''} onClick={() => order('shield', session?.playerId)}><span aria-hidden="true">◒</span>Shield</button><button aria-label="Cook" className={player?.order === 'galley' ? 'selected' : ''} onClick={() => order('galley', session?.playerId)}><span aria-hidden="true">♨</span>Cook</button><button aria-label="Deck" className={deck ? 'selected' : ''} onClick={() => setDeck(!deck)}><span aria-hidden="true">▦</span>Deck</button></nav>}
       </div>}
       {!state.story?.pending && !state.odyssey?.pending && !journal && (menu || state.phase !== 'playing' || dock) && <div className="g-modal-backdrop"><section className="g-modal" role="dialog" aria-modal="true" aria-label={dock ? dock.name : state.phase !== 'playing' ? 'Voyage complete' : 'Pause and settings'}>
         <p className="g-eyebrow">{dock ? 'A SAFE HARBOUR' : state.phase === 'won' ? 'EVERYONE MADE IT HOME' : state.phase === 'lost' ? 'THE SEA GETS ANOTHER CHANCE' : 'TAKE A BREATHER'}</p>

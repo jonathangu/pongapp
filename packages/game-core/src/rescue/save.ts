@@ -5,6 +5,7 @@ import { RESCUE_NAV } from './navigation'
 import { rescueMapReachable } from './world'
 import { validateMonster, validVoyageKey } from '../bestiary'
 import { validRescueStory } from './story'
+import { prepareSoloCrossing } from './solo'
 
 export const RESCUE_SAVE_VERSION = 1
 export const RESCUE_SAVE_MAX_BYTES = 512_000
@@ -48,6 +49,7 @@ const stateCheck = record({ rulesetVersion: one(RESCUE_RULESET), tick: counter, 
   meal: record({ remaining: num(0, 100), progress: num(0, 3), cooldown: num(0, 65) }),
   weather: record({ phase: one('clear', 'building', 'storm', 'eye'), intensity: num(0, 1), nextStrike: time, strike: nullable(record({ ...xy, at: time })), wave: time, flash: num(0, 1) }),
   story: optional(nullable(validRescueStory)),
+  captainMode: optional(bool),
   seamanship: optional(record({ step: num(0, 5, true), difficulty: one('gentle', 'adventure', 'tempest'), travelStart: num(0, 1e9) })),
   littleWing: optional(record({ remaining: num(0, 6), cooldown: num(0, 75), arrivals: counter })),
   odyssey: optional(record({ stage: one('sky', 'gate', 'inner'), pending: nullable(one('launch', 'flare', 'gate', 'dragon', 'unwritten')), history: array(one('launch', 'flare', 'gate', 'dragon', 'unwritten'), 5), pulse: bool })),
@@ -92,5 +94,6 @@ export function resumeRescueSolo(s: RescueState): RescueState {
   if (!captain) return createRescueGame()
   for (const c of copy.crew) { c.pet = c.id !== captain.id; c.lastButtons = 0; c.lastSeq = -1; c.commandSeq = -1 }
   copy.solo = true; copy.paused = false; copy.epoch++; copy.events = []
+  prepareSoloCrossing(copy)
   return copy
 }

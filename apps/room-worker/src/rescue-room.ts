@@ -107,6 +107,7 @@ export class RescueRoom extends DurableObject<RescueRoomEnv> {
       crew.pet = false; this.inputs[member.id] = neutralRescueInput(Math.max(0, member.seq))
       delete this.presses[member.id]; delete this.commands[member.id]
       attachment.id = member.id; socket.serializeAttachment(attachment)
+      delete r.state.captainMode
       r.started = true; r.state.paused = false; r.state.solo = r.members.filter(m => m.connected).length <= 1
       this.send(socket, { type: 'welcome', version: RESCUE_PROTOCOL_VERSION, playerId: member.id, token: member.token, code: r.config.code, state: r.state, presence: this.presence(), started: r.started })
       this.broadcast(true); await this.persist(); this.start(); return
