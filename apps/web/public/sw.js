@@ -82,7 +82,7 @@ self.addEventListener('fetch', event => {
       try { const response = await fetch(request, { cache: 'no-store' }); if (response.ok) return response } catch {}
       return await cachedResponse(request) || new Response('Offline game pack missing', { status: 503 })
     })())
-  } else if (url.pathname.startsWith(BASE + 'assets/') || url.pathname.startsWith(BASE + 'art/starling/') || /\.(png|webmanifest|svg)$/.test(url.pathname)) {
+  } else if (url.pathname.startsWith(BASE + 'assets/') || url.pathname.startsWith(BASE + 'art/starling/') || url.pathname === BASE + 'third-party-ricochet.txt' || /\.(png|webmanifest|svg)$/.test(url.pathname)) {
     event.respondWith((async () => await cachedResponse(request) || fetch(request))())
   }
 })

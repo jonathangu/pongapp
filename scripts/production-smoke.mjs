@@ -18,11 +18,18 @@ async function verify() {
   const manifestResponse = await current('/pongapp/starling-pack.json'); assert.equal(manifestResponse.status, 200)
   const pack = await manifestResponse.json(); assert.equal(pack.format, 'starling-pack-v1'); assert.ok(pack.files.length >= 8 && pack.bytes < 3000000)
   assert.ok(pack.files.some(file => file.url === path)); assert.ok(!pack.files.some(file => /godot|\.m4a$|\.wasm$|\.pck$/.test(file.url)))
+  const prototypePath = pack.files.find(file => /\/RicochetApp-[^/]+\.js$/.test(file.url))?.url
+  assert.ok(prototypePath, 'Missing lazy prototype chunk')
+  const prototypeResponse = await current(prototypePath); assert.equal(prototypeResponse.status, 200)
+  const prototypeScript = await prototypeResponse.text()
+  for (const marker of ['RICOCHET RESCUE', 'Triple fireworks!', 'starling.ricochet.v1', '/api/ricochet/rooms', 'Reflector ready']) assert.ok(prototypeScript.includes(marker), 'Missing prototype marker: ' + marker)
+  assert.ok(Buffer.byteLength(prototypeScript) < 350000, 'Prototype chunk exceeds 350 KB')
+  const notices = await current('/pongapp/third-party-ricochet.txt'); assert.equal(await notices.text(), readFileSync(new URL('../apps/web/public/third-party-ricochet.txt', import.meta.url), 'utf8'))
   if (revision) assert.equal(pack.revision, revision)
   for (let i = 0; i < pack.files.length; i += 5) await Promise.all(pack.files.slice(i, i + 5).map(async file => {
     const response = await current(file.url), bytes = Buffer.from(await response.arrayBuffer()); assert.equal(response.status, 200); assert.equal(bytes.length, file.bytes, file.url); assert.equal(createHash('sha256').update(bytes).digest('hex'), file.sha256, file.url)
   }))
-  const health = await (await fetch(server + '/api/health')).json(); assert.equal(health.protocol, 10); assert.equal(health.rescueProtocol, 1); assert.equal(health.puzzleProtocol, 1); assert.equal(health.runtime, 'cloudflare-durable-objects')
+  const health = await (await fetch(server + '/api/health')).json(); assert.equal(health.protocol, 10); assert.equal(health.rescueProtocol, 1); assert.equal(health.puzzleProtocol, 1); assert.equal(health.ricochetProtocol, 1); assert.equal(health.runtime, 'cloudflare-durable-objects')
   console.log(JSON.stringify({ test: 'production-smoke', result: 'passed', site: site.href, revision: pack.revision, javascriptBytes: Buffer.byteLength(script), offlineBytes: pack.bytes, verifiedFiles: pack.files.length }))
 }
 for (let attempt = 1; ; attempt++) {

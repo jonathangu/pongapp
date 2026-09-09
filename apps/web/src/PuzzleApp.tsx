@@ -6,6 +6,7 @@ import { currentOfflineWorker } from './offline-worker'
 import type { PuzzleServerMessage } from '@pongapp/protocol'
 import themeSong from './assets/story/each-way-i-turn.m4a'
 import './styles/puzzle.css'
+import Boat from './FamilyBoat'
 
 const SAVE = 'starling.puzzle.v1'
 const COLORS = ['Coral shell', 'Blue drop', 'Gold star', 'Green leaf', 'Purple flower']
@@ -26,19 +27,6 @@ function Gem({ color }: { color: number }) {
       color === 3 ? <><path d="M47 6C15 5 3 18 8 37C14 56 45 49 47 6Z"/><path className="gem-detail" d="M15 42L37 17M21 35L19 24M29 27L38 27"/></> :
       <><path d="M28 7C37-4 48 7 43 18C58 17 61 35 46 38C53 51 36 59 28 46C20 59 3 51 10 38C-5 35-2 17 13 18C8 7 19-4 28 7Z"/><circle className="gem-center" cx="28" cy="28" r="7"/></>}
     <path className="gem-glint" d={color === 1 ? 'M20 28Q15 34 19 40' : 'M17 17L20 14'}/>
-  </svg>
-}
-function Boat() {
-  return <svg viewBox="0 0 130 100" aria-hidden="true" className="little-boat">
-    <path d="M63 12V75" stroke="#79534d" strokeWidth="4" strokeLinecap="round"/>
-    <path d="M58 17L18 63H58Z" fill="#fff5d7" stroke="#e3c98c" strokeWidth="2"/>
-    <path d="M69 23V63H105Z" fill="#f7b693" stroke="#e2947b" strokeWidth="2"/>
-    <path d="M62 11L88 16L62 23Z" fill="#e06c70"/>
-    <g><path d="M25 75Q20 47 38 48Q53 49 49 76" fill="#513d46"/><circle cx="37" cy="64" r="11" fill="#f3ba91"/><path d="M25 60Q25 44 44 51L49 59Q35 58 34 52L29 60" fill="#513d46"/><path d="M33 67Q37 71 41 67" fill="none" stroke="#ac625b" strokeWidth="1.6"/><circle cx="33" cy="63" r="1.3"/><circle cx="42" cy="63" r="1.3"/></g>
-    <g><circle cx="85" cy="65" r="10" fill="#f3ba91"/><path d="M74 64Q69 47 89 52L96 61L86 57L77 63" fill="#513d46"/><circle cx="81" cy="65" r="1.3"/><circle cx="90" cy="65" r="1.3"/><path d="M82 70Q86 73 89 69" fill="none" stroke="#ac625b" strokeWidth="1.6"/></g>
-    <g><path d="M51 77V67Q51 53 63 56Q76 55 75 77" fill="#513d46"/><circle cx="63" cy="69" r="9" fill="#f3ba91"/><path d="M54 66Q54 55 66 58L72 64L61 62L58 67" fill="#513d46"/><path d="M71 57L77 53V61L71 58L67 61V53Z" fill="#89c8df"/><path d="M55 78Q63 72 71 78" fill="#b6a1d5"/><circle cx="59" cy="69" r="1.2"/><circle cx="67" cy="69" r="1.2"/><path d="M60 73Q63 75 66 72" fill="none" stroke="#ac625b" strokeWidth="1.5"/></g>
-    <path d="M11 74Q60 79 120 71L108 91Q61 104 23 91Z" fill="#d98d61" stroke="#805345" strokeWidth="3"/>
-    <path d="M23 84Q66 89 108 81" fill="none" stroke="#f9ce91" strokeWidth="3"/>
   </svg>
 }
 
@@ -305,6 +293,7 @@ export default function PuzzleApp() {
       {music && <small>Each Way I Turn · Jonathan Gu</small>}
       <div className="offline-option"><button onClick={download}>Save offline</button><span role="status">{offline}</span><small>Optional. Music streams separately.</small></div>
       <details className="support-details"><summary>Something not working?</summary><p>Support ID: <b>{supportId}</b></p><p>Basic error and progress diagnostics contain no names, messages, or saved voyages.</p><button onClick={() => void copyReport()}>Copy support report</button><p role="status">{reportMessage}</p></details>
+      <a className="ricochet-entry" href="#/ricochet">Try Ricochet Rescue · prototype →</a>
       <button className="puzzle-primary" onClick={() => setPanel(false)}>Back to the game</button>
     </section></div>}
   </main>

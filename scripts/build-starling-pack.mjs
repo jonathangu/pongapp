@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
 const dist = fileURLToPath(new URL('../apps/web/dist/', import.meta.url))
-const candidates = ['index.html', 'manifest.webmanifest', 'favicon.svg', 'starling-apple-touch-icon.png', 'starling-icon-192.png', 'starling-icon-512.png', 'starling-icon-maskable-512.png',
+const candidates = ['index.html', 'manifest.webmanifest', 'favicon.svg', 'starling-apple-touch-icon.png', 'starling-icon-192.png', 'starling-icon-512.png', 'starling-icon-maskable-512.png', 'third-party-ricochet.txt',
   ...(await readdir(join(dist, 'assets'), { withFileTypes: true })).filter(file => file.isFile() && /\.(js|css|woff2)$/.test(file.name)).map(file => 'assets/' + file.name)]
 const files = []
 for (const path of [...new Set(candidates)].sort()) {

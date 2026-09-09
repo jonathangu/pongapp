@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./ricochet": "./src/ricochet/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -14,5 +15,8 @@
   "devDependencies": {
     "typescript": "~6.0.2",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "planck": "1.5.0"
   }
 }

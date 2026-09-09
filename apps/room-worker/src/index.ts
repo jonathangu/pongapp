@@ -28,9 +28,11 @@ import { acceptClientTelemetry, allowedOrigin, classifyWebSocketClose, generateR
 import { VoyageService, type VoyageEnv } from './voyage-service'
 import { RescueRoom } from './rescue-room'
 import { PuzzleRoom } from './puzzle-room'
+import { RicochetRoom } from './ricochet-room'
 import { clientDiagnostics } from './client-diagnostics'
 export { RescueRoom } from './rescue-room'
 export { PuzzleRoom } from './puzzle-room'
+export { RicochetRoom } from './ricochet-room'
 
 export { allowedOrigin, generateRoomCode, validRoomCode } from './helpers'
 
@@ -39,6 +41,7 @@ interface Env extends VoyageEnv {
   VOYAGES: DurableObjectNamespace<VoyageDirector>
   RESCUE_ROOMS: DurableObjectNamespace<RescueRoom>
   PUZZLE_ROOMS: DurableObjectNamespace<PuzzleRoom>
+  RICOCHET_ROOMS: DurableObjectNamespace<RicochetRoom>
   CLIENT_DIAGNOSTICS_LIMITER: RateLimit
 }
 
@@ -117,9 +120,31 @@ export default {
         protocol: PROTOCOL_VERSION,
         rescueProtocol: RESCUE_PROTOCOL_VERSION,
         puzzleProtocol: 1,
+        ricochetProtocol: 1,
         runtime: 'cloudflare-durable-objects',
         region: request.cf?.colo ?? 'edge',
       })
+    }
+
+    if (url.pathname === '/api/ricochet/rooms' && request.method === 'POST') {
+      if (!allowedOrigin(request.headers.get('origin'))) return json(request, { error: 'origin_not_allowed' }, 403)
+      if (!(await env.CLIENT_DIAGNOSTICS_LIMITER.limit({ key: 'ricochet-create:' + (request.headers.get('cf-connecting-ip') ?? 'local') })).success) return json(request, { error: 'rate_limited' }, 429)
+      let body: unknown
+      try { body = await readJson(request, 16000) } catch { return json(request, { error: 'invalid_json' }, 400) }
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const code = generateRoomCode(), room = env.RICOCHET_ROOMS.get(env.RICOCHET_ROOMS.idFromName(code))
+        const configured = await room.fetch('https://ricochet.internal/configure', { method: 'POST', body: JSON.stringify(body) })
+        if (configured.status === 409) continue
+        if (!configured.ok) return json(request, { error: 'invalid_game' }, 400)
+        const result = await configured.json() as { token: string }
+        return json(request, { code, token: result.token }, 201)
+      }
+      return json(request, { error: 'try_again' }, 503)
+    }
+    const ricochet = /^\/api\/ricochet\/rooms\/([A-Z2-9]{6})$/.exec(url.pathname)
+    if (ricochet) {
+      if (!allowedOrigin(request.headers.get('origin'))) return json(request, { error: 'origin_not_allowed' }, 403)
+      return env.RICOCHET_ROOMS.get(env.RICOCHET_ROOMS.idFromName(ricochet[1]!)).fetch(request)
     }
 
     if (url.pathname === '/api/puzzle/rooms' && request.method === 'POST') {
