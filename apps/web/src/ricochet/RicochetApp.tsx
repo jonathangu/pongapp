@@ -239,7 +239,8 @@ export default function RicochetApp() {
     if (!('serviceWorker' in navigator) || import.meta.env.DEV) { setOffline('Offline saving is available on the published prototype.'); return }
     setOffline('Checking the offline pack…')
     try {
-      await navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js', { scope: import.meta.env.BASE_URL, updateViaCache: 'none' })
+      const registration = await navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js', { scope: import.meta.env.BASE_URL, updateViaCache: 'none' })
+      if (!registration.active) await navigator.serviceWorker.ready
       const worker = await currentOfflineWorker(navigator.serviceWorker, import.meta.env.BASE_URL)
       if (!worker) throw new Error('no_worker')
       packPort.current?.close(); clearTimeout(packTimeout.current)
