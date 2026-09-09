@@ -1,5 +1,18 @@
 # Reuse, provenance and adoption gates
 
+## 2026-09-09: bounded Ricochet Rescue prototype
+
+The approved separate, three-scene prototype uses **Planck.js 1.5.0** only behind `packages/game-core/src/ricochet/geometry.ts`. This is not a native engine decision or a replacement of the published game.
+
+- Problem: static circle/edge/box ray queries and normals shared by trajectory preview and authoritative shot resolution. Existing arena physics does not supply rotated-reflector queries.
+- Exact artifact: `https://registry.npmjs.org/planck/-/planck-1.5.0.tgz`, pinned in `pnpm-lock.yaml` with SHA-512 `dlvqJE+FscZgrGUXJ5ybd0o5bvZ5XXyZNbm08xGsXp9WjXeAyWSFT6n9s/1PQcUBo4546fDXA5RMA4wbDyZw6g==`. Inspected installed types/license and the catalog-pinned upstream ray-cast example at `93dd64df0fd2e5388551b159bebc6306e7af580a`.
+- Grant/scope: unmodified TypeScript/JavaScript MIT dependency, copyright Erin Catto and Ali Shakiba. Installed `LICENSE.txt` SHA-256 `49fd3df949edd5f294edafb22e8905263dd7560b514bee6df2f17538069aafca`. Full notice ships in `third-party-ricochet.txt`, including the offline pack. No upstream example code or assets copied.
+- Comparison: Rapier's scene queries are credible and catalogued, but require a WASM initialization/build boundary on browser and Worker. Planck's synchronous shape adapter is adequate for this small fixed scene and avoids a new custom collision solver. Neither alternative establishes physical-phone performance without a phone test.
+- Activity/quality: catalog records upstream commit/date; published 1.5.0 verified at intake. Acceptance fixtures cover corner/grazing cases, bounded 600-shot stress, literal combos, every authored target, and preview/resolution consistency.
+- Ownership/cost: PongApp game-core owns the thin adapter. No fork or integration with the legacy simulation. Update the pinned package only with regression/size checks. Prototype UI and dependency load only on the experimental route.
+- Assets: reuse the existing original family SVG and user-provided Tide Rope music; new scene vectors and synthesized effects are original code. No new asset downloads.
+- Approval boundary: approved-for-prototype by the current implementation request. Physical iPhone/Android touch feel, thermals, and the couple's enjoyment remain an explicit gate before architectural commitment or replacing the original game. Verification receipts live with the task's external artifacts.
+
 Research recommendations are not shipping approvals. No third-party game code or asset was imported in this pass. This checklist is an engineering license screen, not legal advice; unfamiliar/copyleft combinations or store-distribution conflicts require a qualified review before adoption.
 
 ## Three distinct kinds of reuse

@@ -75,9 +75,14 @@ jobs:
         env:
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
       - name: Verify authoritative production versus
+        # The prototype adds rooms; the original puzzle/arcade/rescue checks remain.
         run: node scripts/room-smoke.mjs
         env:
           GAME_MODE: versus
+          ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
+      - name: Verify Ricochet Rescue two-player prototype
+        run: node scripts/ricochet-room-smoke.mjs
+        env:
           ROOM_SERVER_URL: https://pongapp-room.pongapp-room-worker.workers.dev
       - name: Verify Starling eight-player rescue rooms
         run: node scripts/starling-room-smoke.mjs

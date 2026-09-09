@@ -30,6 +30,10 @@
       {
         "name": "PUZZLE_ROOMS",
         "class_name": "PuzzleRoom"
+      },
+      {
+        "name": "RICOCHET_ROOMS",
+        "class_name": "RicochetRoom"
       }
     ]
   },
@@ -49,6 +53,10 @@
     {
       "tag": "v4-starling-puzzle",
       "new_sqlite_classes": ["PuzzleRoom"]
+    },
+    {
+      "tag": "v5-ricochet-prototype",
+      "new_sqlite_classes": ["RicochetRoom"]
     }
   ],
   "vars": {

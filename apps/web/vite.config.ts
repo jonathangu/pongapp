@@ -9,7 +9,7 @@ export default defineConfig({
   publicDir: false,
   plugins: [react(), { name: 'puzzle-public-assets', async closeBundle() {
     // Older game sources remain available in Git; none of their engines or art ships here.
-    for (const file of ['sw.js', 'manifest.webmanifest', 'favicon.svg', 'og.jpg', 'starling-apple-touch-icon.png', 'starling-icon-192.png', 'starling-icon-512.png', 'starling-icon-maskable-512.png']) await copyFile(resolve('public', file), resolve('dist', file))
+    for (const file of ['sw.js', 'manifest.webmanifest', 'favicon.svg', 'og.jpg', 'starling-apple-touch-icon.png', 'starling-icon-192.png', 'starling-icon-512.png', 'starling-icon-maskable-512.png', 'third-party-ricochet.txt']) await copyFile(resolve('public', file), resolve('dist', file))
   } }],
   define: { 'import.meta.env.VITE_RELEASE_ID': JSON.stringify(process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()) },
   server: {
